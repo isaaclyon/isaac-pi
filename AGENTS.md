@@ -3,6 +3,12 @@
 ## Purpose
 Project-specific instructions for the isaac-pi package repo.
 
+## Portability (required)
+- Build and modify everything with portability as a default requirement.
+- Assume this package will be installed and used in many different repos and environments.
+- Prefer repo-relative configuration and sensible fallbacks over machine-specific paths.
+- Avoid hard-coded local assumptions unless explicitly requested by the user.
+
 ## Structure
 - `.pi/extensions/` — TypeScript extension modules
 - `.pi/skills/` — SKILL.md agent skills
