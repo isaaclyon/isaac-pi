@@ -4,7 +4,7 @@
   "description": "Isaac's pi coding agent configuration — extensions, skills, and conventions.",
   "keywords": ["pi-package"],
   "scripts": {
-    "postinstall": "cd .pi/extensions/pi-agent-scip && npm install --omit=dev"
+    "postinstall": "node scripts/postinstall.cjs"
   },
   "pi": {
     "extensions": [".pi/extensions"],
