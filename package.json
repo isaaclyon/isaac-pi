@@ -1,19 +1,10 @@
 {
   "name": "isaac-pi",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Isaac's shared pi configuration package",
+  "version": "1.0.0",
+  "description": "Isaac's pi coding agent configuration — extensions, skills, and conventions.",
   "keywords": ["pi-package"],
-  "dependencies": {
-    "pi-mcp-adapter": "^2.1.2"
-  },
   "pi": {
-    "extensions": [
-      ".pi/extensions/*.ts",
-      "extensions/pi-subagent/src/index.ts",
-      "node_modules/pi-mcp-adapter/index.ts"
-    ],
-    "skills": [".pi/skills"],
-    "prompts": [".pi/prompts"]
+    "extensions": [".pi/extensions"],
+    "skills": [".pi/skills"]
   }
 }
