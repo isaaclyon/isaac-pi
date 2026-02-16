@@ -10,6 +10,7 @@
   "pi": {
     "extensions": [
       ".pi/extensions/*.ts",
+      "extensions/pi-subagent/src/index.ts",
       "node_modules/pi-mcp-adapter/index.ts"
     ],
     "skills": [".pi/skills"],
