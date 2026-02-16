@@ -18,8 +18,9 @@ import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import { runIsolatedAgent } from "./runner.ts";
 import { discoverAgents } from "./agents.ts";
+import { createOneShotRuntime } from "./runtime/factory.ts";
+import type { OneShotRuntimeAdapter } from "./runtime/types.ts";
 import { oneShotTracker } from "./tracker.ts";
 import { AgentPool, type PoolLogger } from "./pool.ts";
 import type {
@@ -180,6 +181,7 @@ async function runAgent(
 	step: number | undefined,
 	signal: AbortSignal | undefined,
 	settings: SubagentSettings,
+	runtime: OneShotRuntimeAdapter,
 	eventBus: ExtensionAPI["events"],
 	log: Logger,
 	onUpdate: OnUpdateCallback | undefined,
@@ -244,7 +246,7 @@ async function runAgent(
 	// Model priority: call-site > agent config > global settings
 	const model = callSite?.model ?? agent.model ?? settings.model ?? undefined;
 
-	const isolated = await runIsolatedAgent({
+	const isolated = await runtime.runOneShot({
 		prompt: `Task: ${task}`,
 		cwd: cwd ?? defaultCwd,
 		model,
@@ -520,6 +522,8 @@ export function registerSubagentTool(
 				return text(`Provide exactly one mode (agent+task, tasks, chain, orchestrator, or action).\nAvailable agents: ${avail}`);
 			}
 
+			const runtime = createOneShotRuntime(settings, log);
+
 			// ── Confirmation for project-local agents ─────────
 			if ((scope === "project" || scope === "both") && ctx.hasUI) {
 				const requested = new Set<string>();
@@ -564,7 +568,7 @@ export function registerSubagentTool(
 
 					const r = await runAgent(
 						ctx.cwd, agents, step.agent, taskText, step.cwd, i + 1,
-						signal, settings, pi.events, log,
+						signal, settings, runtime, pi.events, log,
 						chainUpdate, makeDetails("chain"),
 						undefined, undefined,
 						{
@@ -633,7 +637,7 @@ export function registerSubagentTool(
 					async (t, index) => {
 						const result = await runAgent(
 							ctx.cwd, agents, t.agent, t.task, t.cwd, undefined,
-							signal, settings, pi.events, log,
+							signal, settings, runtime, pi.events, log,
 							// Per-task streaming update
 							(partial) => {
 								if (partial.details?.results?.[index]) {
@@ -676,7 +680,7 @@ export function registerSubagentTool(
 			if (params.agent && params.task) {
 				const r = await runAgent(
 					ctx.cwd, agents, params.agent, params.task, params.cwd, undefined,
-					signal, settings, pi.events, log,
+					signal, settings, runtime, pi.events, log,
 					onUpdate, makeDetails("single"),
 					undefined, undefined,
 					{
