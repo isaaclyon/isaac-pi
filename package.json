@@ -5,13 +5,11 @@
   "description": "Isaac's shared pi configuration package",
   "keywords": ["pi-package"],
   "dependencies": {
-    "@rhubarb-pi/pi-agent-scip": "^0.3.1",
     "pi-mcp-adapter": "^2.1.2"
   },
   "pi": {
     "extensions": [
       ".pi/extensions/*.ts",
-      "node_modules/@rhubarb-pi/pi-agent-scip/dist/index.js",
       "node_modules/pi-mcp-adapter/index.ts"
     ],
     "skills": [".pi/skills"],
