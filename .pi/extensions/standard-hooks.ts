@@ -19,6 +19,7 @@ import type {
  * Create .pi/standard-hooks.json (optional):
  * {
  *   "startupNotify": true,
+ *   "skillsReminder": { "enabled": true },
  *   "usePackageDefaults": true,
  *   "scriptsRoot": ".pi/hooks",
  *   "hooks": {
@@ -59,6 +60,7 @@ type HookName = "session_start" | "input" | "tool_call" | "tool_result" | "agent
 const HOOK_NAMES: HookName[] = ["session_start", "input", "tool_call", "tool_result", "agent_end"];
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_HOOKS_ROOT = resolve(EXTENSION_DIR, "..", "hooks");
+const DEFAULT_SKILLS_REMINDER = "Before responding, consider which of your available skills could improve your output. Invoke those skills now if relevant, then respond. If none seem relevant, do not invoke them, and just respond as usual.";
 
 type HookScriptInput = string | HookScriptConfig | Array<string | HookScriptConfig>;
 
@@ -115,6 +117,10 @@ interface StandardHooksConfig {
 	enabled?: boolean;
 	startupNotify?: boolean;
 	strict?: boolean;
+	skillsReminder?: {
+		enabled?: boolean;
+		text?: string;
+	};
 	guard?: {
 		blockDangerousBash?: boolean;
 		dangerousPatterns?: string[];
@@ -169,6 +175,10 @@ const DEFAULT_CONFIG: StandardHooksConfig = {
 	enabled: true,
 	startupNotify: false,
 	strict: false,
+	skillsReminder: {
+		enabled: true,
+		text: DEFAULT_SKILLS_REMINDER,
+	},
 	guard: {
 		blockDangerousBash: true,
 		dangerousPatterns: [
@@ -230,6 +240,7 @@ function mergeConfig(base: StandardHooksConfig, incoming?: StandardHooksConfig):
 	return {
 		...base,
 		...incoming,
+		skillsReminder: { ...base.skillsReminder, ...incoming.skillsReminder },
 		guard: { ...base.guard, ...incoming.guard },
 		agentEnd: { ...base.agentEnd, ...incoming.agentEnd },
 		scriptDirs: { ...base.scriptDirs, ...incoming.scriptDirs },
@@ -460,6 +471,12 @@ function formatFailedChecksMessage(failedChecks: FailedHookCheck[]): string {
 	return [header, ...items].join("\n");
 }
 
+function getSkillsReminder(config: StandardHooksConfig): string | undefined {
+	if (!(config.skillsReminder?.enabled ?? true)) return undefined;
+	const text = config.skillsReminder?.text?.trim();
+	return text && text.length > 0 ? text : DEFAULT_SKILLS_REMINDER;
+}
+
 export default function standardHooks(pi: ExtensionAPI): void {
 	const state = createInitialState();
 
@@ -480,6 +497,16 @@ export default function standardHooks(pi: ExtensionAPI): void {
 
 	pi.on("agent_start", () => {
 		state.request = { startedAt: Date.now(), toolCalls: 0, toolErrors: 0 };
+	});
+
+	pi.on("before_agent_start", (event) => {
+		if (!state.config.enabled) return;
+		const reminder = getSkillsReminder(state.config);
+		if (!reminder) return;
+		if (event.systemPrompt.includes(reminder)) return;
+		return {
+			systemPrompt: `${event.systemPrompt}\n\n${reminder}`,
+		};
 	});
 
 	pi.on("input", async (event, ctx) => {
