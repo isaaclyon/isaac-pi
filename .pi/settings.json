@@ -1,0 +1,7 @@
+{
+  "defaultThinkingLevel": "medium",
+  "compaction": {
+    "enabled": true,
+    "keepRecentTokens": 20000
+  }
+}

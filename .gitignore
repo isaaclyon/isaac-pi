@@ -1,0 +1,19 @@
+# Pi sessions (local state, not shared)
+.pi/sessions/
+
+# Pi generated index/cache dirs
+.scip/
+
+# Node dependencies
+node_modules/
+
+# Project-local pi installed packages
+.pi/git/
+.pi/npm/
+
+# Secrets
+.env
+.env.*
+
+# OS
+.DS_Store
