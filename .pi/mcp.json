@@ -1,0 +1,7 @@
+{
+  "imports": [
+    "codex",
+    "claude-code"
+  ],
+  "mcpServers": {}
+}

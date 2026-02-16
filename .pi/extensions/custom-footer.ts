@@ -201,7 +201,7 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			const unsubscribe = footerData.onBranchChange(refreshAndRender);
-			const refreshInterval = setInterval(refreshAndRender, 3000);
+			const refreshInterval = setInterval(refreshAndRender, 10000);
 			refreshAndRender();
 
 			return {
