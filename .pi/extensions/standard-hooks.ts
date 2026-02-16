@@ -158,6 +158,13 @@ interface SessionState {
 	agentEndRunInFlight: boolean;
 }
 
+interface FailedHookCheck {
+	label: string;
+	summary: string;
+	code: number;
+	killed: boolean;
+}
+
 const DEFAULT_CONFIG: StandardHooksConfig = {
 	enabled: true,
 	startupNotify: false,
@@ -430,6 +437,29 @@ function fillTemplate(
 		.replaceAll("{isError}", String(Boolean(meta.isError)));
 }
 
+function summarizeExecFailure(result: ExecResult): string {
+	const source = result.stderr.trim() || result.stdout.trim();
+	if (!source) {
+		return result.killed ? "Process was terminated (timeout or cancellation)." : `Exited with code ${result.code}.`;
+	}
+
+	const lines = source.split(/\r?\n/).map((line) => line.trimEnd()).filter((line) => line.length > 0);
+	const tail = lines.slice(-6).join("\n");
+	const maxChars = 500;
+	if (tail.length <= maxChars) return tail;
+	return `…${tail.slice(-(maxChars - 1))}`;
+}
+
+function formatFailedChecksMessage(failedChecks: FailedHookCheck[]): string {
+	const header = `Quality checks failed (${failedChecks.length}):`;
+	const items = failedChecks.map((check) => {
+		const oneLine = check.summary.replace(/\s+/g, " ").trim();
+		const snippet = oneLine.length > 180 ? `${oneLine.slice(0, 177)}...` : oneLine;
+		return `- ${check.label}: ${snippet}`;
+	});
+	return [header, ...items].join("\n");
+}
+
 export default function standardHooks(pi: ExtensionAPI): void {
 	const state = createInitialState();
 
@@ -542,7 +572,7 @@ export default function standardHooks(pi: ExtensionAPI): void {
 				notify(ctx, `standard-hooks: ${outcome.failedCount} agent_end check(s) failed`, "warning");
 				pi.sendMessage({
 					customType: "standard-hooks",
-					content: `Quality checks failed: ${outcome.failedLabels.join(", ")}`,
+					content: formatFailedChecksMessage(outcome.failedChecks),
 					display: true,
 				});
 			} else if (outcome.ranCount > 0 && (state.config.agentEnd?.notifyOnSuccess ?? false)) {
@@ -554,6 +584,7 @@ export default function standardHooks(pi: ExtensionAPI): void {
 				ranCount: outcome.ranCount,
 				failedCount: outcome.failedCount,
 				failedLabels: outcome.failedLabels,
+				failedChecks: outcome.failedChecks,
 				toolCalls: state.request.toolCalls,
 				toolErrors: state.request.toolErrors,
 			});
@@ -569,15 +600,23 @@ async function runHookScripts(
 	hook: HookName,
 	ctx: ExtensionContext,
 	meta: { toolName?: string; source?: UserInputSource; text?: string; isError?: boolean },
-): Promise<{ shouldBlock: boolean; reason?: string; ranCount: number; failedCount: number; failedLabels: string[] }> {
+): Promise<{
+	shouldBlock: boolean;
+	reason?: string;
+	ranCount: number;
+	failedCount: number;
+	failedLabels: string[];
+	failedChecks: FailedHookCheck[];
+}> {
 	const scripts = state.hookPlans[hook] ?? [];
-	if (scripts.length === 0) return { shouldBlock: false, ranCount: 0, failedCount: 0, failedLabels: [] };
+	if (scripts.length === 0) return { shouldBlock: false, ranCount: 0, failedCount: 0, failedLabels: [], failedChecks: [] };
 
 	let shouldBlock = false;
 	let blockReason: string | undefined;
 	let ranCount = 0;
 	let failedCount = 0;
 	const failedLabels: string[] = [];
+	const failedChecks: FailedHookCheck[] = [];
 
 	for (const script of scripts) {
 		if (!matchesScript(script, meta)) continue;
@@ -615,6 +654,13 @@ async function runHookScripts(
 		if (isExecFailure(result)) {
 			failedCount += 1;
 			failedLabels.push(execSpec.label);
+			const summary = summarizeExecFailure(result);
+			failedChecks.push({
+				label: execSpec.label,
+				summary,
+				code: result.code,
+				killed: result.killed,
+			});
 			const mode = getFailureMode(script, state.config.strict ?? false);
 			if (mode === "warn") {
 				notify(ctx, `standard-hooks: failed (${hook}) ${execSpec.label}`, "warning");
@@ -629,7 +675,7 @@ async function runHookScripts(
 		}
 	}
 
-	return { shouldBlock, reason: blockReason, ranCount, failedCount, failedLabels };
+	return { shouldBlock, reason: blockReason, ranCount, failedCount, failedLabels, failedChecks };
 }
 
 function isExecFailure(result: ExecResult): boolean {
