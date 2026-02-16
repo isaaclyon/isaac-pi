@@ -8,6 +8,7 @@
   },
   "pi": {
     "extensions": [".pi/extensions"],
-    "skills": [".pi/skills"]
+    "skills": [".pi/skills"],
+    "prompts": [".pi/prompts"]
   }
 }
