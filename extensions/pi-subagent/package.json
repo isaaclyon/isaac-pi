@@ -5,8 +5,7 @@
   "type": "module",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./src/index.ts"],
-    "skills": ["./skills"]
+    "extensions": ["./src/index.ts"]
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

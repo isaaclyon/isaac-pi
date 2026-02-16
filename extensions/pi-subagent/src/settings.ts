@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import type { RuntimeMode, SubagentSettings, ViewerMode } from "./types.ts";
+import type { SubagentSettings } from "./types.ts";
 
 const SETTINGS_KEY = "pi-subagent";
 
@@ -17,8 +17,6 @@ const DEFAULT_BLOCKED = [
 	"pi-web-dashboard",
 	"pi-telemetry",
 ];
-
-const DEFAULT_LOG_DIR = "~/.pi/subagents";
 
 interface JsonObject {
 	[key: string]: unknown;
@@ -45,18 +43,7 @@ function getSettingsBlock(fileJson: JsonObject): JsonObject {
 function toNumber(value: unknown, fallback: number, min = 0): number {
 	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
 	const n = Math.floor(value);
-	if (n < min) return fallback;
-	return n;
-}
-
-function toBoolean(value: unknown, fallback: boolean): boolean {
-	return typeof value === "boolean" ? value : fallback;
-}
-
-function toString(value: unknown, fallback: string): string {
-	if (typeof value !== "string") return fallback;
-	const trimmed = value.trim();
-	return trimmed.length > 0 ? trimmed : fallback;
+	return n < min ? fallback : n;
 }
 
 function toModel(value: unknown): string | null {
@@ -75,17 +62,6 @@ function toStringArray(value: unknown): string[] {
 	return [...new Set(out)];
 }
 
-function toEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
-	if (typeof value !== "string") return fallback;
-	return (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
-}
-
-function expandHome(inputPath: string): string {
-	if (inputPath === "~") return os.homedir();
-	if (inputPath.startsWith("~/")) return path.join(os.homedir(), inputPath.slice(2));
-	return inputPath;
-}
-
 export function resolveSettings(cwd: string): SubagentSettings {
 	const globalPath = path.join(os.homedir(), ".pi", "agent", "settings.json");
 	const projectPath = path.join(cwd, ".pi", "settings.json");
@@ -102,11 +78,6 @@ export function resolveSettings(cwd: string): SubagentSettings {
 	const userBlocked = toStringArray(merged.blockedExtensions);
 	const blockedExtensions = [...new Set([...DEFAULT_BLOCKED, ...userBlocked])];
 
-	const runtimeMode = toEnum<RuntimeMode>(merged.runtimeMode, ["process", "tmux"], "process");
-	const viewerMode = toEnum<ViewerMode>(merged.viewerMode, ["none", "iterm2"], "none");
-
-	const logDirRaw = toString(merged.logDir, DEFAULT_LOG_DIR);
-
 	return {
 		maxConcurrent,
 		maxTotal,
@@ -116,10 +87,5 @@ export function resolveSettings(cwd: string): SubagentSettings {
 		blockedExtensions,
 		maxPoolSize: toNumber(merged.maxPoolSize, 20, 1),
 		maxDepth: toNumber(merged.maxDepth, 4, 0),
-		runtimeMode,
-		viewerMode,
-		openViewerOnSpawn: toBoolean(merged.openViewerOnSpawn, false),
-		tmuxSessionPrefix: toString(merged.tmuxSessionPrefix, "pi-sa"),
-		logDir: expandHome(logDirRaw),
 	};
 }

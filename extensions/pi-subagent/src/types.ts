@@ -205,9 +205,6 @@ export interface PoolDetails {
 
 // ── Settings ────────────────────────────────────────────────────
 
-export type RuntimeMode = "process" | "tmux";
-export type ViewerMode = "none" | "iterm2";
-
 export interface SubagentSettings {
 	maxConcurrent: number;
 	maxTotal: number;
@@ -221,14 +218,4 @@ export interface SubagentSettings {
 	maxPoolSize: number;
 	/** Max tree depth for orchestrator mode (root = 0) */
 	maxDepth: number;
-	/** Runtime backend for one-shot execution */
-	runtimeMode: RuntimeMode;
-	/** Optional viewer integration mode (not used in phase 1) */
-	viewerMode: ViewerMode;
-	/** Whether to auto-open a viewer when spawning (not used in phase 1) */
-	openViewerOnSpawn: boolean;
-	/** Prefix used for tmux session naming */
-	tmuxSessionPrefix: string;
-	/** Directory for runtime logs/artifacts */
-	logDir: string;
 }

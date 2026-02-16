@@ -82,12 +82,7 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
     "maxTotal": 8,
     "timeoutMs": 600000,
     "model": null,
-    "extensions": [],
-    "runtimeMode": "process",
-    "viewerMode": "none",
-    "openViewerOnSpawn": false,
-    "tmuxSessionPrefix": "pi-sa",
-    "logDir": "~/.pi/subagents"
+    "extensions": []
   }
 }
 ```
@@ -100,11 +95,6 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | `model` | `null` | Model override for subprocesses (null = use default) |
 | `extensions` | `[]` | Extension paths to whitelist for all subagents |
 | `blockedExtensions` | `[see below]` | Extensions that subagents can never load. Default: `pi-webserver`, `pi-cron`, `pi-heartbeat`, `pi-channels`, `pi-web-dashboard`, `pi-telemetry`. `pi-subagent` is always blocked. |
-| `runtimeMode` | `"process"` | Runtime backend for one-shot runs. `"tmux"` currently falls back to process in Phase 1 PR1. |
-| `viewerMode` | `"none"` | Optional viewer mode flag for future integration (`"none"` or `"iterm2"`). |
-| `openViewerOnSpawn` | `false` | Future viewer behavior flag (stored now, not used in PR1). |
-| `tmuxSessionPrefix` | `"pi-sa"` | Prefix for tmux session names (future tmux runtime). |
-| `logDir` | `"~/.pi/subagents"` | Base directory for runtime log artifacts (future tmux runtime). |
 
 ## Events
 
@@ -117,11 +107,12 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 
 ```
 src/
-├── index.ts      # Extension entry — tool registration, exports
-├── settings.ts   # Settings loader (includes extensions whitelist)
-├── tool.ts       # LLM tool (single, parallel, chain) with TUI rendering
-├── runner.ts     # Subprocess runner (pi -p -ne --no-session)
-├── agents.ts     # Agent discovery from .md files (supports extensions field)
-├── tracker.ts    # One-shot run tracking
-└── types.ts      # Shared types
+├── index.ts        # Extension entry — tool registration, exports
+├── settings.ts     # Settings loader (includes extensions whitelist)
+├── tool.ts         # LLM tool (single, parallel, chain) with TUI rendering
+├── runner.ts       # Subprocess runner (pi -p -ne --no-session)
+├── runtime/        # One-shot runtime adapter (process)
+├── agents.ts       # Agent discovery from .md files (supports extensions field)
+├── tracker.ts      # One-shot run tracking
+└── types.ts        # Shared types
 ```
