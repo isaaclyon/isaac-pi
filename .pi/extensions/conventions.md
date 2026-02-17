@@ -51,7 +51,7 @@ Skills:
 - `subagent` — use for detailed guidance on subagent orchestration patterns and modes.
 
 Prompts:
-- `/commit-all` — commit all current repo changes and optionally push or open a PR.
-- `/commit-this` — commit only the current session's work and optionally push or open a PR.
+- `/clean` — commit all intended current repo changes and optionally push or open a PR.
+- `/commit` — commit intended current changes.
 - `/generate-changelog` — generate, update, or reformat a CHANGELOG.md from git history.
 - `/prune` — prune merged branches locally and remotely.

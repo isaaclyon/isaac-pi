@@ -1,9 +1,9 @@
 ---
-description: "Commit all current repo changes and clean branch (optional: push, pr)"
+description: "Commit all intended repo changes and leave the branch clean (optional: push, pr)"
 ---
 You are helping with git workflow in this repository.
 
-Goal: commit all current work in this branch and move it to a clean working state.
+Goal: commit all intended current work in this branch and move it to a clean working state.
 
 Arguments passed to this template: $@
 
