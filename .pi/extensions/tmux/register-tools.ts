@@ -2,6 +2,9 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { randomBytes } from "node:crypto";
+import { mkdtempSync, writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	DEFAULT_CAPTURE_LINES,
 	DEFAULT_CAPTURE_TIMEOUT_SEC,
@@ -158,11 +161,19 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 			if (waitForExit && !validateDoneMarker(marker)) {
 				return buildToolResult(makeToolError("doneMarker must match ^[A-Za-z0-9_-]{1,64}$", "INVALID_ARGUMENT"));
 			}
-			const runCommand = waitForExit
-				? `${params.command}; __PI_EXIT_CODE=$?; printf '${marker}:%s\\n' "$__PI_EXIT_CODE"`
-				: params.command;
 			const target = `${params.sessionName}:${windowName}`;
-			const send = await runTmux(["send-keys", "-t", target, runCommand, "C-m"], { socketPath: params.socketPath, timeoutSec: 10 });
+			let scriptFile: string | undefined;
+			let sendCommand: string;
+			if (waitForExit) {
+				const dir = mkdtempSync(join(tmpdir(), "pi-tmux-run-"));
+				scriptFile = join(dir, "run.sh");
+				const script = `#!/usr/bin/env bash\n${params.command}\n__PI_EXIT_CODE=$?\nprintf '${marker}:%s\\n' "$__PI_EXIT_CODE"\n`;
+				writeFileSync(scriptFile, script, { mode: 0o755 });
+				sendCommand = `bash ${scriptFile}`;
+			} else {
+				sendCommand = params.command;
+			}
+			const send = await runTmux(["send-keys", "-t", target, sendCommand, "C-m"], { socketPath: params.socketPath, timeoutSec: 10 });
 			if (!send.ok) return buildToolResult(makeToolError(`Failed to send command: ${send.stderr || "unknown error"}`, "TMUX_COMMAND_FAILED"));
 
 			const startedAtEpoch = nowEpochSec();
@@ -178,6 +189,10 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 				});
 			}
 
+			const cleanupScript = () => {
+				if (scriptFile) try { unlinkSync(scriptFile); } catch { /* ignore */ }
+			};
+
 			const timeoutSec = Math.floor(params.timeoutSec ?? DEFAULT_RUN_TIMEOUT_SEC);
 			const deadline = Date.now() + timeoutSec * 1000;
 			const markerRegex = new RegExp(`${escapeRegExp(marker)}:(-?\\d+)`);
@@ -186,6 +201,7 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 				if (capture.ok) {
 					const match = capture.stdout.match(markerRegex);
 					if (match?.[1]) {
+						cleanupScript();
 						return buildToolResult({
 							ok: true,
 							sessionName: params.sessionName,
@@ -205,6 +221,7 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 				await sleep(800);
 			}
 
+			cleanupScript();
 			return buildToolResult({
 				ok: false,
 				sessionName: params.sessionName,
