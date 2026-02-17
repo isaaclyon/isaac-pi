@@ -23,7 +23,6 @@ Extensions:
 - `questionnaire` — use whenever you need to ask the user for input.
 - `review` — use for structured code review and risk checks.
 - `handoff` — use when preparing a clean transition summary for another agent/session.
-- `subagent` — use to delegate work to specialized subagents (single, parallel, chain, orchestrator, or pool modes).
 - `mcporter_*` tools (`mcporter_list`, `mcporter_call`, `mcporter_auth`) — use to interact with MCP servers and their tools.
 - `reload_runtime` — use to reload extensions, skills, prompts, and themes without restarting pi.
 
@@ -33,7 +32,6 @@ Skills:
 - `github` — use for GitHub operations via `gh` (issues, PRs, checks, runs).
 - `uv` — use for Python package/project workflows instead of pip/venv/python direct commands.
 - `changelog-generator` — use for generating, updating, or reformatting a CHANGELOG.md from git history.
-- `subagent` — use for detailed guidance on subagent orchestration patterns and modes.
 
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.

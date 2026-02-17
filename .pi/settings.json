@@ -13,12 +13,6 @@
     "enabled": true,
     "keepRecentTokens": 20000
   },
-  "pi-subagent": {
-    "runtimeMode": "tmux",
-    "timeoutMs": 120000,
-    "viewerMode": "iterm2",
-    "openViewerOnSpawn": true
-  },
   "packages": [
     "npm:@aliou/pi-processes"
   ]
