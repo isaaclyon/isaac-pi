@@ -40,6 +40,7 @@ Extensions:
 - `handoff` — use when preparing a clean transition summary for another agent/session.
 - `mcporter_*` tools (`mcporter_list`, `mcporter_call`, `mcporter_auth`) — use to interact with MCP servers and their tools.
 - `reload_runtime` — use to reload extensions, skills, prompts, and themes without restarting pi.
+- `tmux_*` tools (`tmux_ensure_session`, `tmux_run`, `tmux_capture`, `tmux_list`, `tmux_cleanup`) — use for safe managed tmux automation workflows.
 
 Skills:
 - `agent-browser` — use for interactive browser tasks (navigation, clicking, forms, screenshots, extraction).

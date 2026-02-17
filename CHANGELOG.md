@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add web search, fetch, and git workflow prompt templates
 - Add package pi setup (extensions, skills, prompts, settings) for cross-repo reuse
 - Add a `tmux` skill for safe managed-session tmux workflows
+- Add a `tmux` extension with 5 tools (`tmux_ensure_session`, `tmux_run`, `tmux_capture`, `tmux_list`, `tmux_cleanup`)
 
 ### Changed
 
