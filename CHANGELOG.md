@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Ensure postinstall sync writes packaged agents/prompts/hooks to the repo `.pi/` root for both `pi install -l npm:...` and `pi install -l git:...` installs
+- Ensure postinstall sync writes packaged agents to the repo `.pi/` root for both `pi install -l npm:...` and `pi install -l git:...` installs (without creating duplicate prompt collisions)
 - Ensure `pi-agent-scip` dependencies install during package postinstall
 - Fix shared extensions to use portable dependencies
 - Drop unnecessary scip npm dependency from package config

@@ -171,25 +171,14 @@ function syncRepoResources() {
 
   const targetPiDir = path.join(installRoot, ".pi");
 
+  // Sync agents only.
+  // Prompts/extensions/skills/themes are loaded directly from the package manifest,
+  // so copying prompts/hooks into the target repo can cause duplicate-name collisions.
   syncFiles({
     sourceDir: path.join(sourcePiDir, "agents"),
     targetDir: path.join(targetPiDir, "agents"),
     include: (relativePath) => relativePath.endsWith(".md"),
     label: "agent",
-  });
-
-  syncFiles({
-    sourceDir: path.join(sourcePiDir, "prompts"),
-    targetDir: path.join(targetPiDir, "prompts"),
-    include: (relativePath) => relativePath.endsWith(".md"),
-    label: "prompt",
-  });
-
-  syncFiles({
-    sourceDir: path.join(sourcePiDir, "hooks"),
-    targetDir: path.join(targetPiDir, "hooks"),
-    include: () => true,
-    label: "hook",
   });
 }
 
