@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Editor, type EditorTheme, Key, Text, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme, Key, Text, matchesKey, parseKey, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 interface QuestionOption {
@@ -317,6 +317,32 @@ export default function questionnaire(pi: ExtensionAPI) {
 					setStatus(null);
 				}
 
+				function parseOptionShortcutIndex(data: string): number | null {
+					if (data.length === 1 && data >= "1" && data <= "9") {
+						return Number(data) - 1;
+					}
+
+					const parsed = parseKey(data);
+					if (parsed && parsed.length === 1 && parsed >= "1" && parsed <= "9") {
+						return Number(parsed) - 1;
+					}
+
+					// Kitty protocol may send digits as CSI-u sequences, which parseKey currently
+					// does not normalize into "1"-"9" key names.
+					const kittyDigitMatch = data.match(/^\x1b\[(\d+)(?::\d*)?(?::\d+)?(?:;(\d+))?(?::(\d+))?u$/);
+					if (!kittyDigitMatch) return null;
+
+					const codepoint = Number(kittyDigitMatch[1]);
+					const modifierValue = kittyDigitMatch[2] ? Number(kittyDigitMatch[2]) : 1;
+					const eventType = kittyDigitMatch[3] ? Number(kittyDigitMatch[3]) : 1;
+					const isUnmodifiedPress = modifierValue === 1 && eventType !== 3;
+					if (isUnmodifiedPress && codepoint >= 49 && codepoint <= 57) {
+						return codepoint - 49;
+					}
+
+					return null;
+				}
+
 				function handleInput(data: string) {
 					if (inputMode) {
 						if (matchesKey(data, Key.escape)) {
@@ -362,6 +388,46 @@ export default function questionnaire(pi: ExtensionAPI) {
 
 					if (!q) return;
 
+					const shortcutIndex = parseOptionShortcutIndex(data);
+					if (shortcutIndex !== null) {
+						if (shortcutIndex < 0 || shortcutIndex >= opts.length) {
+							setStatus(`Option ${shortcutIndex + 1} is not available.`);
+							return;
+						}
+
+						optionIndex = shortcutIndex;
+						const selectedOption = opts[shortcutIndex];
+						if (!selectedOption) return;
+
+						if (q.multiSelect) {
+							const state = getMultiSelection(q.id);
+							if (selectedOption.isOther) {
+								if (state.customValue) {
+									saveMultiAnswer(q.id, opts, state.selected, undefined);
+								} else {
+									openCustomInput(q.id);
+								}
+							} else if (state.selected.has(shortcutIndex)) {
+								state.selected.delete(shortcutIndex);
+								saveMultiAnswer(q.id, opts, state.selected, state.customValue);
+							} else {
+								state.selected.add(shortcutIndex);
+								saveMultiAnswer(q.id, opts, state.selected, state.customValue);
+							}
+							setStatus(null);
+							return;
+						}
+
+						if (selectedOption.isOther) {
+							openCustomInput(q.id);
+							return;
+						}
+
+						saveSingleAnswer(q.id, selectedOption.value, selectedOption.label, false, shortcutIndex + 1);
+						advanceAfterAnswer();
+						return;
+					}
+
 					if (matchesKey(data, Key.up)) {
 						optionIndex = Math.max(0, optionIndex - 1);
 						setStatus(null);
@@ -406,7 +472,7 @@ export default function questionnaire(pi: ExtensionAPI) {
 							if (hasMultiSelection(q.id)) {
 								advanceAfterAnswer();
 							} else {
-								setStatus("Select at least one option (Space to toggle).");
+								setStatus("Select at least one option (Space or 1-9 to toggle).");
 							}
 							return;
 						}
@@ -558,8 +624,8 @@ export default function questionnaire(pi: ExtensionAPI) {
 							add(theme.fg("dim", " Enter submit • Esc cancel"));
 						} else {
 							const questionHelp = q?.multiSelect
-								? " ↑↓ navigate • Space toggle • Enter continue • Esc cancel"
-								: " ↑↓ navigate • Enter select • Esc cancel";
+								? " ↑↓ navigate • 1-9 quick toggle • Space toggle • Enter continue • Esc cancel"
+								: " ↑↓ navigate • 1-9 quick select • Enter select • Esc cancel";
 							if (isMultiQuestionnaire) {
 								add(theme.fg("dim", ` Tab/←→ switch •${questionHelp}`));
 							} else {
