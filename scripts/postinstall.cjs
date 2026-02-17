@@ -34,6 +34,28 @@ function installScipDependencies() {
   }
 }
 
+function normalizeInstallRoot(candidate) {
+  const resolved = path.resolve(candidate);
+
+  // pi package installs commonly happen inside <repo>/.pi/npm
+  // (or <repo>/.pi/npm/node_modules). In those cases, sync into <repo>/.pi.
+  const base = path.basename(resolved);
+  const parent = path.dirname(resolved);
+  const parentBase = path.basename(parent);
+  const grandParent = path.dirname(parent);
+  const grandParentBase = path.basename(grandParent);
+
+  if (base === "npm" && parentBase === ".pi") {
+    return grandParent;
+  }
+
+  if (base === "node_modules" && parentBase === "npm" && grandParentBase === ".pi") {
+    return path.dirname(grandParent);
+  }
+
+  return resolved;
+}
+
 function resolveInstallRoot() {
   const initCwd = process.env.INIT_CWD;
   const localPrefix = process.env.npm_config_local_prefix;
@@ -43,12 +65,19 @@ function resolveInstallRoot() {
     return null;
   }
 
-  const candidate = initCwd || localPrefix;
-  if (!candidate) {
+  const candidates = [initCwd, localPrefix].filter(Boolean);
+  if (candidates.length === 0) {
     return null;
   }
 
-  return path.resolve(candidate);
+  for (const candidate of candidates) {
+    const normalized = normalizeInstallRoot(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
 }
 
 function listRelativeFiles(dir, include) {

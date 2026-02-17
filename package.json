@@ -1,6 +1,6 @@
 {
   "name": "isaac-pi",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Isaac's pi coding agent configuration — extensions, skills, and conventions.",
   "keywords": ["pi-package"],
   "scripts": {
