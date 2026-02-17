@@ -24,6 +24,7 @@ Extensions:
 - `review` — use for structured code review and risk checks.
 - `handoff` — use when preparing a clean transition summary for another agent/session.
 - `mcporter_*` tools (`mcporter_list`, `mcporter_call`, `mcporter_auth`) — use to interact with MCP servers and their tools.
+- `signal_loop_success` — use to break out of a `/loop` when the breakout condition is satisfied.
 - `tmux_*` tools (`tmux_ensure_session`, `tmux_run`, `tmux_capture`, `tmux_list`, `tmux_cleanup`, `tmux_serve`, `tmux_serve_stop`, `tmux_serve_list`) — use for safe managed tmux automation workflows, including long-running process monitoring.
 - `worktree_*` tools (`worktree_create`, `worktree_remove`, `worktree_list`, `worktree_sync`) — use for git worktree lifecycle management (create with deps/config, remove safely, list status, sync with default branch).
 
