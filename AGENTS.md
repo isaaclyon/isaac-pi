@@ -38,5 +38,6 @@ Skills:
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.
 - `/commit` — commit intended current changes.
+- `/dirty` — show a terse, explainable list of current dirty files.
 - `/generate-changelog` — generate, update, or reformat a CHANGELOG.md from git history.
 - `/prune` — prune merged branches locally and remotely.
