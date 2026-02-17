@@ -15,6 +15,7 @@ interface QuestionOption {
 	value: string;
 	label: string;
 	description?: string;
+	recommended?: boolean;
 }
 
 type RenderOption = QuestionOption & { isOther?: boolean };
@@ -58,6 +59,7 @@ const QuestionOptionSchema = Type.Object({
 	value: Type.String({ description: "The value returned when selected" }),
 	label: Type.String({ description: "Display label for the option" }),
 	description: Type.Optional(Type.String({ description: "Optional description shown below label" })),
+	recommended: Type.Optional(Type.Boolean({ description: "Marks this option as the recommended choice" })),
 });
 
 const QuestionSchema = Type.Object({
@@ -115,12 +117,27 @@ export default function questionnaire(pi: ExtensionAPI) {
 				return errorResult("Error: No questions provided");
 			}
 
-			const questions: Question[] = params.questions.map((q, i) => ({
-				...q,
-				label: q.label || `Q${i + 1}`,
-				allowOther: q.allowOther !== false,
-				multiSelect: q.multiSelect === true,
-			}));
+			const questions: Question[] = params.questions.map((q, i) => {
+				const normalizedOptions = q.options.map((option) => ({ ...option, recommended: option.recommended === true }));
+				const firstRecommendedIndex = normalizedOptions.findIndex((option) => option.recommended === true);
+				if (normalizedOptions.length > 0) {
+					const enforcedRecommendedIndex = firstRecommendedIndex >= 0 ? firstRecommendedIndex : 0;
+					for (let optionIndex = 0; optionIndex < normalizedOptions.length; optionIndex++) {
+						normalizedOptions[optionIndex] = {
+							...normalizedOptions[optionIndex],
+							recommended: optionIndex === enforcedRecommendedIndex,
+						};
+					}
+				}
+
+				return {
+					...q,
+					options: normalizedOptions,
+					label: q.label || `Q${i + 1}`,
+					allowOther: q.allowOther !== false,
+					multiSelect: q.multiSelect === true,
+				};
+			});
 
 			const seenIds = new Set<string>();
 			for (const q of questions) {
@@ -180,7 +197,12 @@ export default function questionnaire(pi: ExtensionAPI) {
 				function optionsFor(question: Question): RenderOption[] {
 					const opts: RenderOption[] = [...question.options];
 					if (question.allowOther) {
-						opts.push({ value: "__other__", label: "Type something.", isOther: true });
+						opts.push({
+							value: "__other__",
+							label: "Type something.",
+							isOther: true,
+							recommended: opts.length === 0,
+						});
 					}
 					return opts;
 				}
@@ -471,6 +493,8 @@ export default function questionnaire(pi: ExtensionAPI) {
 							const cursor = selected ? theme.fg("accent", "> ") : "  ";
 							const color = selected ? "accent" : "text";
 
+							const recommendedBadge = opt.recommended ? ` ${theme.fg("warning", "★ recommended")}` : "";
+
 							if (question.multiSelect && multiState) {
 								const checked = opt.isOther ? Boolean(multiState.customValue) : multiState.selected.has(i);
 								const checkbox = checked ? "[x]" : "[ ]";
@@ -478,9 +502,9 @@ export default function questionnaire(pi: ExtensionAPI) {
 								if (opt.isOther && multiState.customValue) {
 									label += ` (${multiState.customValue})`;
 								}
-								add(cursor + theme.fg(color, label));
+								add(cursor + theme.fg(color, label) + recommendedBadge);
 							} else {
-								add(cursor + theme.fg(color, `${i + 1}. ${opt.label}`));
+								add(cursor + theme.fg(color, `${i + 1}. ${opt.label}`) + recommendedBadge);
 							}
 
 							if (opt.description) {
