@@ -12,8 +12,8 @@ import type {
  *
  * Hooks can run configured actions and auto-discovered scripts.
  * Script discovery order:
- *   1) packaged defaults in isaac-pi: .pi/hooks/<hook-name>/
- *   2) project overrides in cwd:     .pi/hooks/<hook-name>/
+ *   1) packaged defaults in isaac-pi: .pi/scripts/<hook-name>/
+ *   2) project overrides in cwd:     .pi/scripts/<hook-name>/
  * Project scripts with the same filename override packaged defaults.
  *
  * Create .pi/standard-hooks.json (optional):
@@ -21,7 +21,7 @@ import type {
  *   "startupNotify": true,
  *   "skillsReminder": { "enabled": true },
  *   "usePackageDefaults": true,
- *   "scriptsRoot": ".pi/hooks",
+ *   "scriptsRoot": ".pi/scripts",
  *   "hooks": {
  *     "session_start": "lint, format:check",
  *     "input": [
@@ -59,7 +59,7 @@ import { fileURLToPath } from "node:url";
 type HookName = "session_start" | "input" | "tool_call" | "tool_result" | "agent_end";
 const HOOK_NAMES: HookName[] = ["session_start", "input", "tool_call", "tool_result", "agent_end"];
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_HOOKS_ROOT = resolve(EXTENSION_DIR, "..", "hooks");
+const PACKAGE_HOOKS_ROOT = resolve(EXTENSION_DIR, "..", "scripts");
 const DEFAULT_SKILLS_REMINDER = "Before responding, consider which of your available skills could improve your output. Invoke those skills now if relevant, then respond. If none seem relevant, do not invoke them, and just respond as usual.";
 
 type HookScriptInput = string | HookScriptConfig | Array<string | HookScriptConfig>;
@@ -138,7 +138,7 @@ interface StandardHooksConfig {
 	autoRunScriptDirs?: boolean;
 	/** Also run packaged defaults from isaac-pi itself. */
 	usePackageDefaults?: boolean;
-	/** Base dir for project hook scripts. Defaults to .pi/hooks */
+	/** Base dir for project hook scripts. Defaults to .pi/scripts */
 	scriptsRoot?: string;
 	/** Optional per-hook project directory overrides. */
 	scriptDirs?: Partial<Record<HookName, string>>;
@@ -200,7 +200,7 @@ const DEFAULT_CONFIG: StandardHooksConfig = {
 	},
 	autoRunScriptDirs: true,
 	usePackageDefaults: true,
-	scriptsRoot: ".pi/hooks",
+	scriptsRoot: ".pi/scripts",
 	scriptDirs: {},
 	hooks: {},
 };
@@ -283,7 +283,7 @@ function normalizeHookScripts(input: HookScriptInput | undefined): HookScriptCon
 }
 
 function resolveProjectHookDir(cwd: string, hook: HookName, config: StandardHooksConfig): string {
-	const hookDir = config.scriptDirs?.[hook] ?? join(config.scriptsRoot ?? ".pi/hooks", hook);
+	const hookDir = config.scriptDirs?.[hook] ?? join(config.scriptsRoot ?? ".pi/scripts", hook);
 	return resolve(cwd, hookDir);
 }
 
