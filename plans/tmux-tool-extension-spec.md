@@ -115,11 +115,14 @@ Capture recent pane output for progress/result reporting.
 ```ts
 {
   sessionName: string;
-  windowName?: string;        // default: "main"
-  lines?: number;             // default: 200
+  windowName?: string;            // default: "main"
+  lines?: number;                 // default: 200
   socketPath?: string;
-  stripAnsi?: boolean;        // default: true
-  captureTimeoutSec?: number; // default: 30
+  stripAnsi?: boolean;            // default: true
+  joinWrappedLines?: boolean;     // default: true  (uses tmux -J)
+  trimTrailingEmptyLines?: boolean; // default: true
+  collapseEmptyLines?: boolean;   // default: true
+  captureTimeoutSec?: number;     // default: 30
 }
 ```
 
@@ -139,6 +142,7 @@ Capture recent pane output for progress/result reporting.
 
 ### Capture rules
 - If tmux does not respond within `captureTimeoutSec`, return `{ ok: false, code: "TIMEOUT" }`.
+- By default wrapped terminal lines are joined (`joinWrappedLines: true`) to reduce visual line breaks from pane width wrapping.
 
 ---
 

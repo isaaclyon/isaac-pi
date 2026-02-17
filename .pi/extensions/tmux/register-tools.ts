@@ -23,6 +23,23 @@ function validateDoneMarker(marker: string): boolean {
 	return /^[A-Za-z0-9_-]{1,64}$/.test(marker);
 }
 
+function normalizeCapturedText(
+	input: string,
+	options: { trimTrailingEmptyLines: boolean; collapseEmptyLines: boolean },
+): string {
+	let text = input.replace(/\r\n?/g, "\n");
+
+	if (options.trimTrailingEmptyLines) {
+		text = text.replace(/\n+$/g, "\n");
+	}
+
+	if (options.collapseEmptyLines) {
+		text = text.replace(/\n{3,}/g, "\n\n");
+	}
+
+	return text;
+}
+
 export function registerTmuxTools(pi: ExtensionAPI): void {
 	const EnsureSessionParams = Type.Object({
 		sessionName: Type.Optional(Type.String({ description: "Optional managed session name (must start with pi-)" })),
@@ -190,6 +207,9 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 		lines: Type.Optional(Type.Number({ description: "Number of lines to capture (default: 200)", minimum: 1, maximum: 5000 })),
 		socketPath: Type.Optional(Type.String({ description: "Optional tmux socket path (-S)" })),
 		stripAnsi: Type.Optional(Type.Boolean({ description: "Strip ANSI escape codes from output (default: true)" })),
+		joinWrappedLines: Type.Optional(Type.Boolean({ description: "Join terminal-soft-wrapped lines for cleaner output (default: true)" })),
+		trimTrailingEmptyLines: Type.Optional(Type.Boolean({ description: "Trim trailing blank lines (default: true)" })),
+		collapseEmptyLines: Type.Optional(Type.Boolean({ description: "Collapse runs of 3+ empty lines to 2 (default: true)" })),
 		captureTimeoutSec: Type.Optional(Type.Number({ description: "Capture timeout in seconds (default: 30)", minimum: 1, maximum: 300 })),
 	});
 
@@ -207,8 +227,13 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 			const windowName = (params.windowName || DEFAULT_WINDOW).trim();
 			const lines = Math.floor(params.lines ?? DEFAULT_CAPTURE_LINES);
 			const captureTimeoutSec = Math.floor(params.captureTimeoutSec ?? DEFAULT_CAPTURE_TIMEOUT_SEC);
+			const joinWrappedLines = params.joinWrappedLines !== false;
+			const trimTrailingEmptyLines = params.trimTrailingEmptyLines !== false;
+			const collapseEmptyLines = params.collapseEmptyLines !== false;
 			const target = `${params.sessionName}:${windowName}`;
-			const captured = await runTmux(["capture-pane", "-p", "-t", target, "-S", `-${lines}`], {
+			const captureArgs = ["capture-pane", "-p", "-t", target, "-S", `-${lines}`];
+			if (joinWrappedLines) captureArgs.splice(1, 0, "-J");
+			const captured = await runTmux(captureArgs, {
 				socketPath: params.socketPath,
 				timeoutSec: captureTimeoutSec,
 			});
@@ -223,8 +248,22 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 				return buildToolResult(makeToolError(`tmux capture failed: ${captured.stderr || "unknown error"}`, "TMUX_COMMAND_FAILED"));
 			}
 
-			const content = params.stripAnsi !== false ? stripAnsi(captured.stdout) : captured.stdout;
-			return buildToolResult({ ok: true, sessionName: params.sessionName, windowName, socketPath: params.socketPath, lines, content });
+			const rawContent = params.stripAnsi !== false ? stripAnsi(captured.stdout) : captured.stdout;
+			const content = normalizeCapturedText(rawContent, {
+				trimTrailingEmptyLines,
+				collapseEmptyLines,
+			});
+			return buildToolResult({
+				ok: true,
+				sessionName: params.sessionName,
+				windowName,
+				socketPath: params.socketPath,
+				lines,
+				joinWrappedLines,
+				trimTrailingEmptyLines,
+				collapseEmptyLines,
+				content,
+			});
 		},
 	});
 
