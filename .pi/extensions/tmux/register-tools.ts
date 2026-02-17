@@ -23,6 +23,27 @@ function validateDoneMarker(marker: string): boolean {
 	return /^[A-Za-z0-9_-]{1,64}$/.test(marker);
 }
 
+function stripCaptureNoise(input: string): string {
+	const promptLine = /^[^\n@]+@[^\n]+[%#$](?:\s.*)?$/;
+	const doneMarkerLine = /^__PI_DONE__[A-Za-z0-9]+:-?\d+$/;
+
+	const keptLines: string[] = [];
+	for (const line of input.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.length === 0) {
+			keptLines.push("");
+			continue;
+		}
+		if (doneMarkerLine.test(trimmed)) continue;
+		if (line.includes("__PI_EXIT_CODE")) continue;
+		if (line.includes("printf '__PI_DONE__") || line.includes('printf "__PI_DONE__')) continue;
+		if (promptLine.test(trimmed)) continue;
+		keptLines.push(line);
+	}
+
+	return keptLines.join("\n");
+}
+
 function normalizeCapturedText(
 	input: string,
 	options: { trimTrailingEmptyLines: boolean; collapseEmptyLines: boolean },
@@ -34,7 +55,7 @@ function normalizeCapturedText(
 	}
 
 	if (options.collapseEmptyLines) {
-		text = text.replace(/\n{3,}/g, "\n\n");
+		text = text.replace(/\n{2,}/g, "\n");
 	}
 
 	return text;
@@ -208,8 +229,9 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 		socketPath: Type.Optional(Type.String({ description: "Optional tmux socket path (-S)" })),
 		stripAnsi: Type.Optional(Type.Boolean({ description: "Strip ANSI escape codes from output (default: true)" })),
 		joinWrappedLines: Type.Optional(Type.Boolean({ description: "Join terminal-soft-wrapped lines for cleaner output (default: true)" })),
+		stripNoise: Type.Optional(Type.Boolean({ description: "Strip common shell/prompt noise lines (default: true)" })),
 		trimTrailingEmptyLines: Type.Optional(Type.Boolean({ description: "Trim trailing blank lines (default: true)" })),
-		collapseEmptyLines: Type.Optional(Type.Boolean({ description: "Collapse runs of 3+ empty lines to 2 (default: true)" })),
+		collapseEmptyLines: Type.Optional(Type.Boolean({ description: "Collapse runs of empty lines to one (default: true)" })),
 		captureTimeoutSec: Type.Optional(Type.Number({ description: "Capture timeout in seconds (default: 30)", minimum: 1, maximum: 300 })),
 	});
 
@@ -228,6 +250,7 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 			const lines = Math.floor(params.lines ?? DEFAULT_CAPTURE_LINES);
 			const captureTimeoutSec = Math.floor(params.captureTimeoutSec ?? DEFAULT_CAPTURE_TIMEOUT_SEC);
 			const joinWrappedLines = params.joinWrappedLines !== false;
+			const stripNoise = params.stripNoise !== false;
 			const trimTrailingEmptyLines = params.trimTrailingEmptyLines !== false;
 			const collapseEmptyLines = params.collapseEmptyLines !== false;
 			const target = `${params.sessionName}:${windowName}`;
@@ -249,7 +272,8 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 			}
 
 			const rawContent = params.stripAnsi !== false ? stripAnsi(captured.stdout) : captured.stdout;
-			const content = normalizeCapturedText(rawContent, {
+			const denoisedContent = stripNoise ? stripCaptureNoise(rawContent) : rawContent;
+			const content = normalizeCapturedText(denoisedContent, {
 				trimTrailingEmptyLines,
 				collapseEmptyLines,
 			});
@@ -260,6 +284,7 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 				socketPath: params.socketPath,
 				lines,
 				joinWrappedLines,
+				stripNoise,
 				trimTrailingEmptyLines,
 				collapseEmptyLines,
 				content,
