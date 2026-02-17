@@ -56,6 +56,15 @@ function normalizeInstallRoot(candidate) {
   return resolved;
 }
 
+function inferInstallRootFromPackageRoot() {
+  const normalizedPath = packageRoot.split(path.sep).join("/");
+  const match = normalizedPath.match(/^(.*)\/\.pi\/(git|npm)(?:\/|$)/);
+  if (!match?.[1]) {
+    return null;
+  }
+  return path.resolve(match[1]);
+}
+
 function resolveInstallRoot() {
   const initCwd = process.env.INIT_CWD;
   const localPrefix = process.env.npm_config_local_prefix;
@@ -66,18 +75,15 @@ function resolveInstallRoot() {
   }
 
   const candidates = [initCwd, localPrefix].filter(Boolean);
-  if (candidates.length === 0) {
-    return null;
-  }
 
   for (const candidate of candidates) {
     const normalized = normalizeInstallRoot(candidate);
-    if (normalized) {
+    if (normalized && normalized !== packageRoot) {
       return normalized;
     }
   }
 
-  return null;
+  return inferInstallRootFromPackageRoot();
 }
 
 function listRelativeFiles(dir, include) {
