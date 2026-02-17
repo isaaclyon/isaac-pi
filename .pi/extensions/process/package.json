@@ -1,0 +1,43 @@
+{
+  "name": "@aliou/pi-processes",
+  "version": "0.4.2",
+  "type": "module",
+  "private": false,
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "processes"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aliou/pi-extensions"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "video": "https://assets.aliou.me/pi-extensions/demos/pi-processes.mp4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "*.ts",
+    "commands",
+    "components",
+    "constants",
+    "hooks",
+    "tools",
+    "utils",
+    "README.md"
+  ],
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.41",
+    "@aliou/pi-utils-settings": "0.3.0",
+    "@aliou/pi-utils-ui": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.51.0"
+  }
+}

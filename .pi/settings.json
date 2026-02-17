@@ -12,8 +12,5 @@
   "compaction": {
     "enabled": true,
     "keepRecentTokens": 20000
-  },
-  "packages": [
-    "npm:@aliou/pi-processes"
-  ]
+  }
 }
