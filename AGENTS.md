@@ -42,3 +42,4 @@ Prompts:
 - `/dirty` — show a terse, explainable list of current dirty files.
 - `/generate-changelog` — generate, update, or reformat a CHANGELOG.md from git history.
 - `/prune` — prune merged branches locally and remotely.
+- `/subagent` — launch a headless pi subagent in tmux to work on a task in the background.
