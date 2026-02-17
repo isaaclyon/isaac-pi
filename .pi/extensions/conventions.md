@@ -47,6 +47,7 @@ Skills:
 - `github` — use for GitHub operations via `gh` (issues, PRs, checks, runs).
 - `uv` — use for Python package/project workflows instead of pip/venv/python direct commands.
 - `changelog-generator` — use for generating, updating, or reformatting a CHANGELOG.md from git history.
+- `tmux` — use for tmux session/window management with safe managed-prefix cleanup workflows.
 
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.
