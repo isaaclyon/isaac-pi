@@ -5,7 +5,7 @@ description: "Manage tmux sessions/windows safely with a managed prefix. Use for
 
 # tmux Skill (safe, managed-session workflow)
 
-Use this skill when the task is about terminal multiplexing: long-running jobs, parallel shells, attach/switch, or cleanup.
+Use this skill when the task is about terminal multiplexing: long-running jobs, parallel shells, dev servers, attach/switch, or cleanup.
 
 ## Safety defaults
 - Prefer managed session names with a prefix (default: `pi-`).
@@ -30,6 +30,68 @@ tmux send-keys -t "$SESSION":work 'npm test' C-m
 # 5) Attach
 tmux attach -t "$SESSION"
 ```
+
+## Tools overview
+
+| Tool | Purpose |
+|------|---------|
+| `tmux_ensure_session` | Create or reuse a managed session (pi-*) |
+| `tmux_run` | Run a one-off command, optionally wait for completion |
+| `tmux_capture` | Capture recent output from a session/window |
+| `tmux_list` | List managed sessions |
+| `tmux_cleanup` | Clean up stale or specific managed sessions |
+| `tmux_serve` | Start a long-running process with crash monitoring |
+| `tmux_serve_stop` | Stop monitoring (optionally kill session) |
+| `tmux_serve_list` | List active serve monitors and their status |
+
+## Dev server workflow (tmux_serve)
+
+Use `tmux_serve` for long-running background processes like dev servers, watchers, and database processes. It starts the command and monitors it — if the process crashes, you are automatically alerted with the last output.
+
+### Typical flow
+
+1. **Create a session** with `tmux_ensure_session`.
+2. **Start the server** with `tmux_serve`, specifying a `readyPattern` if the server emits a "ready" message.
+3. **Work normally** — the monitor runs in the background.
+4. **On crash** — you receive an automatic alert with context. Investigate with `tmux_capture` and restart with `tmux_serve`.
+5. **When done** — stop monitoring with `tmux_serve_stop` (optionally pass `killSession: true`).
+
+### Example: Node.js dev server
+
+```
+tmux_ensure_session  sessionName="pi-myapp"
+tmux_serve           sessionName="pi-myapp" windowName="server" command="npm run dev" readyPattern="listening on port"
+```
+
+The monitor will:
+- Show `⚡ pi-myapp:server: node (running)` in the status bar while alive.
+- Show `✅ pi-myapp:server: node (ready)` once the ready pattern matches.
+- Alert you with last output if the process exits unexpectedly.
+
+### Example: Multiple services
+
+```
+tmux_ensure_session  sessionName="pi-stack"
+tmux_serve           sessionName="pi-stack" windowName="api"    command="npm run dev:api"    readyPattern="API ready"
+tmux_serve           sessionName="pi-stack" windowName="worker" command="npm run dev:worker" readyPattern="Worker started"
+tmux_serve           sessionName="pi-stack" windowName="db"     command="docker compose up postgres redis"
+```
+
+### Stopping monitors
+
+```
+tmux_serve_list                                           # see all active monitors
+tmux_serve_stop  monitorId="serve-1-abc123"               # stop monitoring only
+tmux_serve_stop  monitorId="serve-1-abc123" killSession=true  # stop + kill session
+```
+
+### Key details
+
+- **Crash detection** uses `pane_current_command` — when the foreground process exits back to a shell (`bash`, `zsh`, etc.), the monitor detects it.
+- **Grace period**: after starting, the monitor waits ~2 poll cycles before flagging a shell as a crash (handles slow-starting processes).
+- **Session killed externally**: if the session is killed (e.g., via `tmux_cleanup`), the monitor stops silently without alerting.
+- **`readyPattern`** is a JavaScript regex tested against the last 50 lines of pane output. Use simple patterns like `listening on port`, `ready in`, `Server started`.
+- **Polling interval** defaults to 3 seconds. Increase for low-overhead monitoring of stable services.
 
 ## Core commands
 
@@ -105,3 +167,5 @@ Use the same `-S "$SOCKET"` on all related commands.
 - `tmux: command not found` → install tmux and retry.
 - `no sessions` → create one first with `tmux new-session ...`.
 - Attach fails from inside tmux → use `tmux switch-client -t <session>`.
+- Serve monitor says "process exited immediately" → the command may have a syntax error or port conflict. Use `tmux_capture` to check output.
+- Serve monitor not detecting crashes → the process may be spawning a child and exiting (e.g., daemonizing). Use `tmux_run` for daemon-style processes instead.

@@ -38,3 +38,19 @@ export interface ToolResult {
 	details: Record<string, unknown>;
 	isError?: boolean;
 }
+
+export type ServeStatus = "starting" | "running" | "ready" | "crashed" | "stopped";
+
+export interface ServeMonitorInfo {
+	monitorId: string;
+	sessionName: string;
+	windowName: string;
+	command: string;
+	socketPath?: string;
+	status: ServeStatus;
+	processName?: string;
+	startedAtEpoch: number;
+	readyAtEpoch?: number;
+	crashedAtEpoch?: number;
+	stoppedAtEpoch?: number;
+}

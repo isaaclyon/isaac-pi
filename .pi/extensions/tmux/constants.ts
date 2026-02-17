@@ -4,6 +4,14 @@ export const DEFAULT_CAPTURE_LINES = 200;
 export const DEFAULT_CAPTURE_TIMEOUT_SEC = 30;
 export const DEFAULT_RUN_TIMEOUT_SEC = 600;
 export const DEFAULT_STALE_TTL_SEC = 86_400;
+export const DEFAULT_SERVE_POLL_SEC = 3;
+export const SERVE_GRACE_POLLS = 2;
+
+/** Common shell process names — used to detect when a foreground process exits back to shell. */
+export const SHELL_NAMES = new Set([
+	"bash", "zsh", "sh", "fish", "dash", "ksh", "tcsh", "csh",
+	"-bash", "-zsh", "-sh", "-fish", "-dash", "-ksh",
+]);
 
 const NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
