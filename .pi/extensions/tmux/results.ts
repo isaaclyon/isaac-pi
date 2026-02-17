@@ -10,7 +10,7 @@ export function isToolError(value: unknown): value is ToolError {
 	return candidate["ok"] === false && typeof candidate["error"] === "string" && typeof candidate["code"] === "string";
 }
 
-export function buildToolResult(details: Record<string, unknown>): ToolResult {
+export function buildToolResult(details: Record<string, unknown>, displayText?: string): ToolResult {
 	if (details["ok"] === false) {
 		return {
 			content: [{ type: "text", text: String(details["error"] ?? "tmux command failed") }],
@@ -19,7 +19,7 @@ export function buildToolResult(details: Record<string, unknown>): ToolResult {
 		};
 	}
 	return {
-		content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+		content: [{ type: "text", text: displayText ?? JSON.stringify(details, null, 2) }],
 		details,
 	};
 }

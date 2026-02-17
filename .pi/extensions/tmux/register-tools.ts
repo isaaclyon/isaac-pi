@@ -29,6 +29,7 @@ function validateDoneMarker(marker: string): boolean {
 function stripCaptureNoise(input: string): string {
 	const promptLine = /^[^\n@]+@[^\n]+[%#$](?:\s.*)?$/;
 	const doneMarkerLine = /^__PI_DONE__[A-Za-z0-9]+:-?\d+$/;
+	const piTmpScriptLine = /pi-tmux-run-[A-Za-z0-9]+\/run\.sh/;
 
 	const keptLines: string[] = [];
 	for (const line of input.split("\n")) {
@@ -41,6 +42,7 @@ function stripCaptureNoise(input: string): string {
 		if (line.includes("__PI_EXIT_CODE")) continue;
 		if (line.includes("printf '__PI_DONE__") || line.includes('printf "__PI_DONE__')) continue;
 		if (promptLine.test(trimmed)) continue;
+		if (piTmpScriptLine.test(trimmed)) continue;
 		keptLines.push(line);
 	}
 
@@ -294,7 +296,7 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 				trimTrailingEmptyLines,
 				collapseEmptyLines,
 			});
-			return buildToolResult({
+			const details = {
 				ok: true,
 				sessionName: params.sessionName,
 				windowName,
@@ -305,7 +307,8 @@ export function registerTmuxTools(pi: ExtensionAPI): void {
 				trimTrailingEmptyLines,
 				collapseEmptyLines,
 				content,
-			});
+			};
+			return buildToolResult(details, content);
 		},
 	});
 
