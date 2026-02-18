@@ -13,5 +13,5 @@
     "enabled": true,
     "keepRecentTokens": 20000
   },
-  "packages": []
+  "packages": ["../node_modules/lsp-pi"]
 }

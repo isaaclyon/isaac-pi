@@ -2,17 +2,32 @@
   "name": "isaac-pi",
   "version": "1.0.3",
   "description": "Isaac's pi coding agent configuration — extensions, skills, and conventions.",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "scripts": {
     "postinstall": "node scripts/postinstall.cjs"
   },
   "dependencies": {
+    "lsp-pi": "^1.0.3",
     "pi-rewind-hook": "^1.7.3"
   },
-  "bundledDependencies": ["pi-rewind-hook"],
+  "bundledDependencies": [
+    "lsp-pi",
+    "pi-rewind-hook"
+  ],
   "pi": {
-    "extensions": [".pi/extensions", "node_modules/pi-rewind-hook/index.ts"],
-    "skills": [".pi/skills"],
-    "prompts": [".pi/prompts"]
+    "extensions": [
+      ".pi/extensions",
+      "node_modules/pi-rewind-hook/index.ts",
+      "node_modules/lsp-pi/lsp.ts",
+      "node_modules/lsp-pi/lsp-tool.ts"
+    ],
+    "skills": [
+      ".pi/skills"
+    ],
+    "prompts": [
+      ".pi/prompts"
+    ]
   }
 }

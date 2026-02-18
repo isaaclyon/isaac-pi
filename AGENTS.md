@@ -34,7 +34,7 @@ When someone runs `pi install npm:isaac-pi` in another repo, they get exactly wh
 ## Tool and skill routing (use X when Y)
 
 Extensions:
-- `scip_*` tools (`scip_find_definition`, `scip_find_references`, `scip_list_symbols`, `scip_search_symbols`, `scip_project_tree`, `scip_reindex`) — use for code navigation and structure in TypeScript/JavaScript and Python projects.
+- `lsp` tool — use for code navigation and live diagnostics in TypeScript/JavaScript and other supported projects. Actions: `definition`, `references`, `hover`, `symbols`, `diagnostics`, `workspace-diagnostics`, `signature`, `rename`, `codeAction`. Prefer over ad-hoc text search or manual file scanning.
 - `web_fetch` — use to fetch and read content from known URLs.
 - `anthropic_web_search` — use for broader web research when the exact URL is unknown.
 - `questionnaire` — use whenever you need to ask the user for input.
