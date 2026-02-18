@@ -12,5 +12,6 @@
   "compaction": {
     "enabled": true,
     "keepRecentTokens": 20000
-  }
+  },
+  "packages": []
 }

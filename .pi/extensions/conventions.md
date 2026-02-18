@@ -39,7 +39,6 @@ Extensions:
 - `review` — use for structured code review and risk checks.
 - `handoff` — use when preparing a clean transition summary for another agent/session.
 - `mcporter_*` tools (`mcporter_list`, `mcporter_call`, `mcporter_auth`) — use to interact with MCP servers and their tools.
-- `tmux_*` tools (`tmux_ensure_session`, `tmux_run`, `tmux_capture`, `tmux_list`, `tmux_cleanup`, `tmux_serve`, `tmux_serve_stop`, `tmux_serve_list`) — use for safe managed tmux automation workflows, including long-running process monitoring.
 - `signal_loop_success` — use to break out of a `/loop` when the breakout condition is satisfied.
 - `worktree_*` tools (`worktree_create`, `worktree_remove`, `worktree_list`, `worktree_sync`) — use for git worktree lifecycle management (create with deps/config, remove safely, list status, sync with default branch).
 
@@ -49,7 +48,6 @@ Skills:
 - `github` — use for GitHub operations via `gh` (issues, PRs, checks, runs).
 - `uv` — use for Python package/project workflows instead of pip/venv/python direct commands.
 - `changelog-generator` — use for generating, updating, or reformatting a CHANGELOG.md from git history.
-- `tmux` — use for tmux session/window management with safe managed-prefix cleanup workflows.
 
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.

@@ -3,6 +3,23 @@
 ## Purpose
 Project-specific instructions for the isaac-pi package repo.
 
+## ⚠️ THIS IS A PORTABLE PACKAGE — READ BEFORE DOING ANYTHING
+
+This repo exists to produce a **published npm package** (`isaac-pi`) that gets installed into other repos. It is NOT a personal config folder. It is NOT a place to install things locally or globally.
+
+**The only correct way to add something to this package:**
+1. Add it to `dependencies` (and `bundledDependencies` if it needs to ship with the package) in the **root `package.json`**
+2. Reference it in the `pi` manifest in the **root `package.json`** under `extensions`, `skills`, or `prompts`
+3. Run `npm install` to lock it
+
+**Never do any of the following:**
+- `pi install npm:something` — this installs globally to `~/.pi/agent/settings.json`, NOT into the package
+- `pi install -l npm:something` — this writes to `.pi/settings.json` which is NOT published as part of the package
+- Add anything only to `.pi/settings.json` or `.pi/npm/package.json` — these are local/dev only and are gitignored
+- Add extensions, skills, or tools anywhere that isn't wired through the root `package.json` pi manifest
+
+When someone runs `pi install npm:isaac-pi` in another repo, they get exactly what is declared in the root `package.json`. Nothing else.
+
 ## Portability (required)
 - Build and modify everything with portability as a default requirement.
 - Assume this package will be installed and used in many different repos and environments.
@@ -25,7 +42,6 @@ Extensions:
 - `handoff` — use when preparing a clean transition summary for another agent/session.
 - `mcporter_*` tools (`mcporter_list`, `mcporter_call`, `mcporter_auth`) — use to interact with MCP servers and their tools.
 - `signal_loop_success` — use to break out of a `/loop` when the breakout condition is satisfied.
-- `tmux_*` tools (`tmux_ensure_session`, `tmux_run`, `tmux_capture`, `tmux_list`, `tmux_cleanup`, `tmux_serve`, `tmux_serve_stop`, `tmux_serve_list`) — use for safe managed tmux automation workflows, including long-running process monitoring.
 - `worktree_*` tools (`worktree_create`, `worktree_remove`, `worktree_list`, `worktree_sync`) — use for git worktree lifecycle management (create with deps/config, remove safely, list status, sync with default branch).
 
 Skills:
@@ -34,7 +50,6 @@ Skills:
 - `github` — use for GitHub operations via `gh` (issues, PRs, checks, runs).
 - `uv` — use for Python package/project workflows instead of pip/venv/python direct commands.
 - `changelog-generator` — use for generating, updating, or reformatting a CHANGELOG.md from git history.
-- `tmux` — use for tmux session/window management with safe managed-prefix cleanup workflows.
 
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.

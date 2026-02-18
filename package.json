@@ -6,8 +6,12 @@
   "scripts": {
     "postinstall": "node scripts/postinstall.cjs"
   },
+  "dependencies": {
+    "pi-rewind-hook": "^1.7.3"
+  },
+  "bundledDependencies": ["pi-rewind-hook"],
   "pi": {
-    "extensions": [".pi/extensions"],
+    "extensions": [".pi/extensions", "node_modules/pi-rewind-hook/index.ts"],
     "skills": [".pi/skills"],
     "prompts": [".pi/prompts"]
   }
