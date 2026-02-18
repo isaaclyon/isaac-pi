@@ -68,12 +68,15 @@ export interface ResolvedConfig {
 	thinkingLevel: ThinkingLevel;
 	subprocessArgs: string[];
 	modelLabel: string | undefined;
+	/** Resolved timeout in seconds (item-level overrides top-level default). */
+	timeout: number | undefined;
 }
 
 export function resolveTaskConfig(options: {
 	item: TaskWorkItem;
 	defaultModel: string | undefined;
 	defaultThinking: TaskThinking;
+	defaultTimeout: number | undefined;
 	inheritedThinking: ThinkingLevel;
 	ctxModel: { provider: string; id: string } | undefined;
 	builtInTools: BuiltInToolName[];
@@ -100,6 +103,7 @@ export function resolveTaskConfig(options: {
 		thinkingLevel,
 		subprocessArgs,
 		modelLabel: modelRes.model?.label,
+		timeout: options.item.timeout ?? options.defaultTimeout,
 	};
 }
 
@@ -195,6 +199,7 @@ export function placeholderResult(
 	exitCode = -1,
 ): SingleResult {
 	return {
+		name: item.name,
 		prompt: item.prompt,
 		skill: item.skill,
 		index,
@@ -219,6 +224,8 @@ export interface RunTaskOptions {
 	subprocessArgs: string[];
 	modelLabel: string | undefined;
 	thinking: ThinkingLevel;
+	/** Timeout in seconds. Process is sent SIGTERM then SIGKILL after a grace period. */
+	timeout: number | undefined;
 	signal: AbortSignal | undefined;
 	onResultUpdate?: (result: SingleResult) => void;
 }
@@ -227,6 +234,7 @@ export async function runSingleTask(
 	options: RunTaskOptions,
 ): Promise<SingleResult> {
 	const result: SingleResult = {
+		name: options.item.name,
 		prompt: options.item.prompt,
 		skill: options.item.skill,
 		index: options.index,
@@ -252,6 +260,18 @@ export async function runSingleTask(
 		proc.stdin.end();
 
 		const abortState = attachAbortSignal(proc, options.signal);
+
+		let timedOut = false;
+		let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+		if (options.timeout !== undefined && options.timeout > 0) {
+			timeoutHandle = setTimeout(() => {
+				timedOut = true;
+				proc.kill("SIGTERM");
+				setTimeout(() => {
+					if (!proc.killed) proc.kill("SIGKILL");
+				}, 5000);
+			}, options.timeout * 1000);
+		}
 
 		let buffer = "";
 		const processLine = (line: string) => {
@@ -280,13 +300,20 @@ export async function runSingleTask(
 		});
 
 		proc.on("close", (code: number | null) => {
+			if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
 			if (buffer.trim()) processLine(buffer);
 			result.exitCode = code ?? 0;
-			if (abortState.isAborted()) result.stopReason = "aborted";
+			if (timedOut) {
+				result.stopReason = "timeout";
+				result.errorMessage = `Task timed out after ${options.timeout}s`;
+			} else if (abortState.isAborted()) {
+				result.stopReason = "aborted";
+			}
 			resolve(code ?? 0);
 		});
 
 		proc.on("error", () => {
+			if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
 			result.exitCode = 1;
 			resolve(1);
 		});

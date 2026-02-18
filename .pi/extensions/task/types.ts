@@ -30,16 +30,23 @@ export const MAX_TASKS = 8;
 export const MAX_CONCURRENCY = 4;
 
 export interface TaskWorkItem {
+	name?: string;
 	prompt: string;
 	skill?: string;
 	model?: string;
 	thinking?: TaskThinking;
+	/** Per-task timeout in seconds. Overrides the top-level default. */
+	timeout?: number;
+	/** Per-task working directory. Resolved relative to the parent ExecuteContext.cwd. */
+	cwd?: string;
 }
 
 export interface NormalizedParams {
 	mode: "single" | "parallel" | "chain";
 	model?: string;
 	thinking: TaskThinking;
+	/** Default timeout in seconds applied to every task that doesn't set its own. */
+	timeout?: number;
 	items: TaskWorkItem[];
 }
 
@@ -68,6 +75,7 @@ export interface UsageStats {
 }
 
 export interface SingleResult {
+	name?: string;
 	prompt: string;
 	skill?: string;
 	index?: number;

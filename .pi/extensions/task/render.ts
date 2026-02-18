@@ -23,7 +23,8 @@ function isTaskError(result: SingleResult): boolean {
 	return (
 		result.exitCode > 0 ||
 		result.stopReason === "error" ||
-		result.stopReason === "aborted"
+		result.stopReason === "aborted" ||
+		result.stopReason === "timeout"
 	);
 }
 
@@ -125,6 +126,67 @@ function extractPath(args: Record<string, unknown>): string {
 	return "...";
 }
 
+// ---------------------------------------------------------------------------
+// Tool activity aggregation
+// ---------------------------------------------------------------------------
+
+/** Preferred display order for common tool names; unlisted tools sort alphabetically after. */
+const TOOL_ORDER: readonly string[] = [
+	"bash",
+	"read",
+	"write",
+	"edit",
+	"lsp",
+	"web_fetch",
+	"task",
+];
+
+/**
+ * Count tool calls by name across all messages in the given results.
+ * Returns a `Map<string, number>` ordered by `TOOL_ORDER` then alphabetically.
+ */
+function countToolCalls(results: SingleResult[]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const r of results) {
+		for (const msg of r.messages) {
+			if (msg.role !== "assistant") continue;
+			for (const part of msg.content) {
+				if (part.type !== "toolCall") continue;
+				counts.set(part.name, (counts.get(part.name) ?? 0) + 1);
+			}
+		}
+	}
+
+	// Sort by preferred order, then alphabetically
+	const sorted = new Map<string, number>();
+	const orderIndex = (name: string) => {
+		const idx = TOOL_ORDER.indexOf(name);
+		return idx === -1 ? TOOL_ORDER.length : idx;
+	};
+	const keys = [...counts.keys()].sort((a, b) => {
+		const oa = orderIndex(a);
+		const ob = orderIndex(b);
+		if (oa !== ob) return oa - ob;
+		return a.localeCompare(b);
+	});
+	for (const k of keys) sorted.set(k, counts.get(k)!);
+	return sorted;
+}
+
+/**
+ * Format aggregated tool counts as a compact string like `bash(5) read(12) write(3)`.
+ * Returns an empty string when there are no tool calls.
+ */
+export function formatToolCounts(results: SingleResult[]): string {
+	const counts = countToolCalls(results);
+	if (counts.size === 0) return "";
+	const parts: string[] = [];
+	for (const [name, count] of counts) {
+		parts.push(`${name}(${count})`);
+	}
+	return parts.join(" ");
+}
+
 function getToolCallLines(messages: Message[], theme: Theme): string[] {
 	const lines: string[] = [];
 	for (const msg of messages) {
@@ -219,6 +281,30 @@ function renderTaskBlock(options: {
 	return lines;
 }
 
+// ---------------------------------------------------------------------------
+// renderCall helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the best short label for a task item in the call preview.
+ * Priority: name → skill → first line of prompt.
+ */
+function getTaskCallLabel(task: unknown, maxLen: number): string {
+	if (!task || typeof task !== "object") return "(unknown)";
+	const t = task as Record<string, unknown>;
+
+	for (const key of ["name", "skill", "prompt"] as const) {
+		if (typeof t[key] === "string") {
+			const raw = (t[key] as string).trim();
+			if (!raw) continue;
+			// For prompt, only use the first line
+			const text = key === "prompt" ? (raw.split("\n")[0] ?? raw) : raw;
+			return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+		}
+	}
+	return "(no prompt)";
+}
+
 export function renderCall(
 	args: Record<string, unknown>,
 	theme: Theme,
@@ -226,22 +312,35 @@ export function renderCall(
 	const mode = typeof args.type === "string" ? args.type : "single";
 	const tasks = Array.isArray(args.tasks) ? args.tasks : [];
 	const count = tasks.length;
-	let summary = `${count} task${count !== 1 ? "s" : ""}`;
-	if (mode === "single" && count === 1) {
-		const prompt = tasks[0];
-		if (prompt && typeof prompt === "object" && "prompt" in prompt) {
-			const raw = (prompt as { prompt?: unknown }).prompt;
-			if (typeof raw === "string" && raw.trim()) {
-				const line = raw.trim().split("\n")[0] ?? "";
-				summary = line.length > 70 ? `${line.slice(0, 70)}...` : line;
-			}
-		}
+
+	// Single (or degenerate): one-line summary with the prompt's first line
+	if (mode === "single" || count <= 1) {
+		const summary =
+			count === 1
+				? getTaskCallLabel(tasks[0], 70)
+				: `${count} task${count !== 1 ? "s" : ""}`;
+		return new Text(
+			`${theme.fg("toolTitle", "Task:")} ${theme.fg("accent", mode)} ${theme.fg("muted", summary)}`,
+			0,
+			0,
+		);
 	}
-	return new Text(
-		`${theme.fg("toolTitle", "Task:")} ${theme.fg("accent", mode)} ${theme.fg("muted", summary)}`,
-		0,
-		0,
-	);
+
+	// Parallel / chain: header + compact per-task list
+	const noun = mode === "chain" ? "steps" : "tasks";
+	const header = `${theme.fg("toolTitle", "Task:")} ${theme.fg("accent", mode)} ${theme.fg("muted", `${count} ${noun}`)}`;
+	const lines: string[] = [header];
+
+	for (let i = 0; i < count; i++) {
+		const label = getTaskCallLabel(tasks[i], 60);
+		const bullet =
+			mode === "chain"
+				? theme.fg("muted", `  ${i + 1}.`)
+				: theme.fg("muted", "  ·");
+		lines.push(`${bullet} ${label}`);
+	}
+
+	return new Text(lines.join("\n"), 0, 0);
 }
 
 export function renderResult(
@@ -256,11 +355,12 @@ export function renderResult(
 	}
 
 	if (details.mode === "single" && details.results.length === 1) {
+		const singleResult = details.results[0]!;
 		return new Text(
 			renderTaskBlock({
-				result: details.results[0]!,
+				result: singleResult,
 				theme,
-				label: "task",
+				label: singleResult.name ?? "task",
 				indent: 0,
 				expanded: options.expanded,
 			}).join("\n"),
@@ -272,18 +372,23 @@ export function renderResult(
 	const mode = details.mode as "parallel" | "chain";
 	const overall = getOverallStatus(details.results, mode);
 	const done = details.results.filter((r) => r.exitCode !== -1 && r.exitCode !== -2).length;
+	const toolActivity = formatToolCounts(details.results);
+	const statusSuffix = overall === "Running" ? ` (${done}/${details.results.length} done)` : "";
+	const activitySuffix = toolActivity ? ` · ${theme.fg("muted", toolActivity)}` : "";
 	const lines: string[] = [
 		`${theme.fg("toolTitle", `task (${mode})`)} ${statusIcon(overall, theme)}`,
-		`  Status: ${overall}${overall === "Running" ? ` (${done}/${details.results.length} done)` : ""}`,
+		`  Status: ${overall}${statusSuffix}${activitySuffix}`,
 	];
 
 	for (let i = 0; i < details.results.length; i++) {
+		const r = details.results[i]!;
+		const defaultLabel = mode === "chain" ? `Step ${i + 1}` : `Task ${i + 1}`;
 		lines.push("");
 		lines.push(
 			...renderTaskBlock({
-				result: details.results[i]!,
+				result: r,
 				theme,
-				label: mode === "chain" ? `Step ${i + 1}` : `Task ${i + 1}`,
+				label: r.name ?? defaultLabel,
 				indent: 2,
 				expanded: options.expanded,
 			}),

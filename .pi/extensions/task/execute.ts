@@ -2,6 +2,7 @@
  * Execution logic for single, chain, and parallel task modes.
  */
 
+import path from "node:path";
 import type { AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import { buildSubprocessPrompt, type SkillState } from "./skills.js";
 import {
@@ -11,7 +12,7 @@ import {
 	runSingleTask,
 	type ResolvedConfig,
 } from "./subprocess.js";
-import { getFinalOutput, getTaskErrorText, isTaskError2 } from "./render.js";
+import { formatToolCounts, getFinalOutput, getTaskErrorText, isTaskError2 } from "./render.js";
 import type {
 	BuiltInToolName,
 	NormalizedParams,
@@ -69,11 +70,16 @@ function errorResult(
 	};
 }
 
+function resolveItemCwd(baseCwd: string, item: TaskWorkItem): string {
+	return item.cwd ? path.resolve(baseCwd, item.cwd) : baseCwd;
+}
+
 function prepareExecutions(
 	items: TaskWorkItem[],
 	state: SkillState,
 	defaultModel: string | undefined,
 	defaultThinking: TaskThinking,
+	defaultTimeout: number | undefined,
 	ectx: ExecuteContext,
 ): { ok: true; executions: PreparedExecution[] } | { ok: false; error: string } {
 	const executions: PreparedExecution[] = [];
@@ -85,6 +91,7 @@ function prepareExecutions(
 			item,
 			defaultModel,
 			defaultThinking,
+			defaultTimeout,
 			inheritedThinking: ectx.inheritedThinking,
 			ctxModel: ectx.ctxModel,
 			builtInTools: ectx.builtInTools,
@@ -97,14 +104,28 @@ function prepareExecutions(
 				thinkingLevel: config.thinkingLevel,
 				subprocessArgs: config.subprocessArgs,
 				modelLabel: config.modelLabel,
+				timeout: config.timeout,
 			},
 		});
 	}
 	return { ok: true, executions };
 }
 
-function buildChainPrompt(prompt: string, previousOutput: string): string {
-	return prompt.replace(/\{previous\}/g, previousOutput);
+function buildChainPrompt(
+	prompt: string,
+	previousOutput: string,
+	completedOutputs: string[],
+): string {
+	let result = prompt.replace(/\{previous\}/g, previousOutput);
+	// Replace {step1}, {step2}, etc. with outputs from completed steps (1-indexed)
+	result = result.replace(/\{step(\d+)\}/g, (_match, num: string) => {
+		const index = parseInt(num, 10) - 1; // convert 1-indexed to 0-indexed
+		if (index >= 0 && index < completedOutputs.length) {
+			return completedOutputs[index]!;
+		}
+		return _match; // leave unreplaceable references as-is
+	});
+	return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +142,7 @@ export async function executeSingle(
 		state,
 		params.model,
 		params.thinking,
+		params.timeout,
 		ectx,
 	);
 	if (!prepared.ok) return errorResult(prepared.error);
@@ -142,13 +164,14 @@ export async function executeSingle(
 	emitUpdate(initial);
 
 	const result = await runSingleTask({
-		cwd: ectx.cwd,
+		cwd: resolveItemCwd(ectx.cwd, exec.task.item),
 		item: exec.task.item,
 		subprocessPrompt: exec.task.subprocessPrompt,
 		index: undefined,
 		subprocessArgs: exec.config.subprocessArgs,
 		modelLabel: exec.config.modelLabel,
 		thinking: exec.config.thinkingLevel,
+		timeout: exec.config.timeout,
 		signal: ectx.signal,
 		onResultUpdate: emitUpdate,
 	});
@@ -176,9 +199,10 @@ export async function executeChain(
 	ectx: ExecuteContext,
 ): Promise<AgentToolResult<TaskToolDetails>> {
 	const { items, model, thinking } = params;
+	const completedOutputs: string[] = [];
 	const results: SingleResult[] = items.map((item, i) =>
 		placeholderResult(
-			{ ...item, prompt: buildChainPrompt(item.prompt, "…") },
+			{ ...item, prompt: buildChainPrompt(item.prompt, "…", []) },
 			i + 1,
 			undefined,
 			undefined,
@@ -189,13 +213,14 @@ export async function executeChain(
 
 	for (let i = 0; i < items.length; i++) {
 		const item = items[i]!;
-		const prompt = buildChainPrompt(item.prompt, previousOutput);
+		const prompt = buildChainPrompt(item.prompt, previousOutput, completedOutputs);
 		const stepItem = { ...item, prompt };
 
 		const config = resolveTaskConfig({
 			item,
 			defaultModel: model,
 			defaultThinking: thinking,
+			defaultTimeout: params.timeout,
 			inheritedThinking: ectx.inheritedThinking,
 			ctxModel: ectx.ctxModel,
 			builtInTools: ectx.builtInTools,
@@ -232,13 +257,14 @@ export async function executeChain(
 			: undefined;
 
 		const result = await runSingleTask({
-			cwd: ectx.cwd,
+			cwd: resolveItemCwd(ectx.cwd, item),
 			item: stepItem,
 			subprocessPrompt: subPrompt.prompt,
 			index: i + 1,
 			subprocessArgs: config.subprocessArgs,
 			modelLabel: config.modelLabel,
 			thinking: config.thinkingLevel,
+			timeout: config.timeout,
 			signal: ectx.signal,
 			onResultUpdate: chainUpdate,
 		});
@@ -257,6 +283,7 @@ export async function executeChain(
 		}
 
 		previousOutput = getFinalOutput(result.messages);
+		completedOutputs.push(previousOutput);
 	}
 
 	const last = results[results.length - 1]!;
@@ -280,6 +307,7 @@ export async function executeParallel(
 		state,
 		params.model,
 		params.thinking,
+		params.timeout,
 		ectx,
 	);
 	if (!prepared.ok) return errorResult(prepared.error, "parallel");
@@ -296,8 +324,12 @@ export async function executeParallel(
 	const emitParallelUpdate = () => {
 		if (!ectx.onUpdate) return;
 		const done = allResults.filter((r) => r.exitCode !== -1).length;
+		const toolActivity = formatToolCounts(allResults);
+		const status = toolActivity
+			? `Parallel: ${done}/${allResults.length} done · ${toolActivity}`
+			: `Parallel: ${done}/${allResults.length} done`;
 		ectx.onUpdate({
-			content: [{ type: "text", text: `Parallel: ${done}/${allResults.length} done` }],
+			content: [{ type: "text", text: status }],
 			details: makeDetails("parallel", [...allResults]),
 		});
 	};
@@ -308,13 +340,14 @@ export async function executeParallel(
 		CONCURRENCY,
 		async (exec, i) => {
 			const result = await runSingleTask({
-				cwd: ectx.cwd,
+				cwd: resolveItemCwd(ectx.cwd, exec.task.item),
 				item: exec.task.item,
 				subprocessPrompt: exec.task.subprocessPrompt,
 				index: i + 1,
 				subprocessArgs: exec.config.subprocessArgs,
 				modelLabel: exec.config.modelLabel,
 				thinking: exec.config.thinkingLevel,
+				timeout: exec.config.timeout,
 				signal: ectx.signal,
 				onResultUpdate: (partial) => {
 					allResults[i] = partial;

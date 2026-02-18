@@ -39,9 +39,25 @@ const TaskItemSchema = Type.Object({
 	prompt: Type.String({
 		description: "Task prompt — must be detailed and self-contained",
 	}),
+	name: Type.Optional(
+		Type.String({ description: "Optional display name shown in the UI (e.g. 'Parse types', 'Write tests')" }),
+	),
 	skill: Type.Optional(Type.String({ description: "Optional skill name" })),
 	model: ModelSchema,
 	thinking: Type.Optional(ThinkingSchema),
+	timeout: Type.Optional(
+		Type.Number({
+			description:
+				"Per-task timeout in seconds. Overrides the top-level default. Process receives SIGTERM then SIGKILL after a 5s grace period.",
+			exclusiveMinimum: 0,
+		}),
+	),
+	cwd: Type.Optional(
+		Type.String({
+			description:
+				"Per-task working directory (relative path resolved against parent cwd). Useful for monorepos to point a task at a subdirectory like 'packages/api'.",
+		}),
+	),
 });
 
 const TaskParams = Type.Object({
@@ -54,6 +70,13 @@ const TaskParams = Type.Object({
 	}),
 	model: ModelSchema,
 	thinking: Type.Optional(ThinkingSchema),
+	timeout: Type.Optional(
+		Type.Number({
+			description:
+				"Default timeout in seconds applied to every task that doesn't set its own. Process receives SIGTERM then SIGKILL after a 5s grace period.",
+			exclusiveMinimum: 0,
+		}),
+	),
 });
 
 // ---------------------------------------------------------------------------
@@ -69,7 +92,8 @@ detailed, self-contained prompts that include all relevant context — file path
 decisions made, constraints, and what to do. Think of it as writing a brief for
 a colleague who hasn't been in the meeting.
 
-Supports optional skill wrapper and optional model override (provider/modelId).`;
+Supports optional skill wrapper, optional model override (provider/modelId),
+and optional per-task cwd override (relative path for monorepo subdirectories).`;
 
 const SYSTEM_PROMPT_ADDITION = `
 
@@ -83,11 +107,19 @@ You have a \`task\` tool that spawns isolated pi subprocesses. Key rules:
 
 2. **Use single for one job, parallel for independent jobs, chain for sequential
    steps** where each step's output feeds into the next via \`{previous}\`.
+   You can also reference any earlier step by number: \`{step1}\`, \`{step2}\`, etc.
+   This enables non-linear chains (e.g. a synthesis step that pulls from step 1
+   and step 3, skipping step 2).
 
 3. **Don't delegate trivially.** If a task takes one tool call, just do it yourself.
    Delegate when there's real work: multi-file refactors, parallel searches, etc.
 
-4. **When the user says something brief** like "refactor this" or "fix the tests",
+4. **Per-task \`cwd\` override.** Each task item accepts an optional \`cwd\` field
+   (a relative path resolved against the current working directory). This is
+   useful for monorepos where you want to point a task at a subdirectory like
+   \`"packages/api"\`.
+
+5. **When the user says something brief** like "refactor this" or "fix the tests",
    YOU expand that into a detailed prompt with all the context the subprocess needs.`;
 
 // ---------------------------------------------------------------------------

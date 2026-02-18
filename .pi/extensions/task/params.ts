@@ -86,6 +86,20 @@ function normalizeString(
 	return { ok: true, value: trimmed || undefined };
 }
 
+function normalizePositiveNumber(
+	value: unknown,
+	label: string,
+): Result<number | undefined> {
+	if (value === undefined) return { ok: true, value: undefined };
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+		return {
+			ok: false,
+			error: `Invalid parameters: ${label} must be a positive number.`,
+		};
+	}
+	return { ok: true, value };
+}
+
 function normalizeThinking(
 	value: unknown,
 	label: string,
@@ -118,6 +132,8 @@ function parseTaskItems(
 			return { ok: false, error: "Invalid task item: expected an object." };
 		}
 
+		const name =
+			typeof entry.name === "string" ? entry.name.trim() : undefined;
 		const prompt =
 			typeof entry.prompt === "string" ? entry.prompt.trim() : "";
 		const skill =
@@ -138,11 +154,23 @@ function parseTaskItems(
 		);
 		if (!thinkRes.ok) return thinkRes;
 
+		const timeoutRes = normalizePositiveNumber(
+			entry.timeout,
+			`tasks[${idx}].timeout`,
+		);
+		if (!timeoutRes.ok) return timeoutRes;
+
+		const cwdRes = normalizeString(entry.cwd, `tasks[${idx}].cwd`);
+		if (!cwdRes.ok) return cwdRes;
+
 		items.push({
+			name: name || undefined,
 			prompt,
 			skill: skill || undefined,
 			model: modelRes.value,
 			thinking: thinkRes.value,
+			timeout: timeoutRes.value,
+			cwd: cwdRes.value,
 		});
 	}
 	return { ok: true, items };
@@ -171,6 +199,10 @@ export function normalizeTaskParams(
 	if (!thinkRes.ok) return thinkRes;
 	const thinking = thinkRes.value ?? "inherit";
 
+	const timeoutRes = normalizePositiveNumber(params.timeout, '"timeout"');
+	if (!timeoutRes.ok) return timeoutRes;
+	const timeout = timeoutRes.value;
+
 	const rawTasks = Array.isArray(params.tasks) ? params.tasks : [];
 
 	if (mode === "single") {
@@ -188,6 +220,7 @@ export function normalizeTaskParams(
 				mode: "single",
 				model: modelRes.value,
 				thinking,
+				timeout,
 				items: parsed.items,
 			},
 		};
@@ -214,6 +247,7 @@ export function normalizeTaskParams(
 				mode,
 				model: modelRes.value,
 				thinking,
+				timeout,
 				items: parsed.items,
 			},
 		};
