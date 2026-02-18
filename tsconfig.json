@@ -1,1 +1,23 @@
-{}
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ES2022",
+		"moduleResolution": "bundler",
+		"types": ["node"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"baseUrl": ".",
+		"paths": {
+			"@aliou/pi-utils-ui": [".pi/npm/node_modules/@aliou/pi-utils-ui/index.ts"],
+			"@aliou/pi-processes": [".pi/npm/node_modules/@aliou/pi-processes/index.ts"],
+			"@mariozechner/pi-coding-agent": [".pi/npm/node_modules/@mariozechner/pi-coding-agent/dist/index.d.ts"],
+			"@mariozechner/pi-tui": [".pi/npm/node_modules/@mariozechner/pi-tui/dist/index.d.ts"],
+			"@mariozechner/pi-ai": [".pi/npm/node_modules/@mariozechner/pi-ai/dist/index.d.ts"],
+			"@mariozechner/pi-agent-core": [".pi/npm/node_modules/@mariozechner/pi-agent-core/dist/index.d.ts"],
+			"@sinclair/typebox": [".pi/npm/node_modules/@sinclair/typebox/build/esm/index.d.mts"]
+		}
+	},
+	"include": [".pi/extensions/**/*.ts"],
+	"exclude": [".pi/npm", ".pi/extensions/process/node_modules", ".pi/extensions/worktree/node_modules"]
+}
