@@ -46,6 +46,7 @@ export function registerWorktreeTools(pi: ExtensionAPI): void {
 			if (result.packageManager) lines.push(`Deps installed via: ${result.packageManager}`);
 			if (result.configFilesCopied.length > 0) lines.push(`Config files copied: ${result.configFilesCopied.join(", ")}`);
 			if (result.gitignoreModified) lines.push("Added .worktrees/ to .gitignore");
+			lines.push(`\nTo switch into this worktree, ask the user to run: /move-session ${result.path}`);
 
 			return buildToolResult(result, lines.join("\n"));
 		},

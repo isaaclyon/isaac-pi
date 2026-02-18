@@ -50,6 +50,9 @@ Skills:
 - `uv` — use for Python package/project workflows instead of pip/venv/python direct commands.
 - `changelog-generator` — use for generating, updating, or reformatting a CHANGELOG.md from git history.
 
+Commands:
+- `/move-session <path>` — move the current session to another directory and relaunch pi there. Useful after `worktree_create` to switch into a worktree. Suggest the user run this; it cannot be invoked programmatically.
+
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.
 - `/commit` — commit intended current changes.
