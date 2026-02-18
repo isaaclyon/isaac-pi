@@ -651,8 +651,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: 'scip_project_tree',
     label: 'SCIP: Project Tree',
-    description: `Summarize the code structure of the current project as a tree. Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first).`,
+    description: `Summarize the code structure of the current project as a tree. Use the 'path' parameter to scope results to a specific directory (e.g. 'packages/agents' or 'src/lib'). Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first).`,
     parameters: Type.Object({
+      path: Type.Optional(
+        Type.String({ description: 'Directory path prefix to scope the tree (e.g. "packages/agents", "src/lib"). Omit for entire project.' }),
+      ),
       depth: Type.Optional(
         Type.Number({ description: 'Maximum tree depth for text output', default: 3, minimum: 1, maximum: 10 }),
       ),
@@ -666,12 +669,14 @@ export default function (pi: ExtensionAPI) {
       );
       ensureCwd(toolCtx);
       const depth = params.depth ?? 3;
+      const pathPrefix = params.path;
 
       logger.log({
         source: 'tool',
         action: 'execute',
         tool: toolName,
         depth,
+        path: pathPrefix,
       });
 
       const emitProgress = (text: string) => {
@@ -684,8 +689,8 @@ export default function (pi: ExtensionAPI) {
       await ensureIndex(toolName, signalArg, emitProgress);
 
       const runQuery = async () => {
-        const tree = await query.buildProjectTree();
-        logger.log({ source: 'tool', action: 'query_complete', tool: toolName, modules: tree.length });
+        const tree = await query.buildProjectTree(pathPrefix);
+        logger.log({ source: 'tool', action: 'query_complete', tool: toolName, modules: tree.length, path: pathPrefix });
 
         const rendered = renderTree(tree, depth);
         const truncation = truncateHead(rendered);

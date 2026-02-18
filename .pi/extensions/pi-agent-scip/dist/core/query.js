@@ -164,16 +164,21 @@ export class ScipQuery {
         }
         return results;
     }
-    async buildProjectTree() {
+    async buildProjectTree(pathPrefix) {
         await this.loadIndex();
         if (!this.index)
             return [];
         const documents = this.index.documents ?? [];
         const modules = new Map();
+        const normalizedPrefix = pathPrefix?.replace(/\/+$/, '');
         for (const document of documents) {
             const relativePath = document?.relative_path ?? '';
             if (!this.isSupportedFile(relativePath))
                 continue;
+            // Filter by path prefix when provided
+            if (normalizedPrefix && !relativePath.startsWith(normalizedPrefix + '/') && relativePath !== normalizedPrefix) {
+                continue;
+            }
             const moduleName = this.pathToModuleName(relativePath);
             let moduleNode = modules.get(moduleName);
             if (!moduleNode) {

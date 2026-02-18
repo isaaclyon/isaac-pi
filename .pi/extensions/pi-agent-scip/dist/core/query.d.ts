@@ -45,7 +45,7 @@ export declare class ScipQuery {
     findReferences(symbol: string): Promise<Reference[]>;
     listSymbols(file: string): Promise<SymbolInfo[]>;
     searchSymbols(query: string): Promise<SearchResult[]>;
-    buildProjectTree(): Promise<CodeTreeNode[]>;
+    buildProjectTree(pathPrefix?: string): Promise<CodeTreeNode[]>;
     private isSupportedFile;
     private pathToModuleName;
     private extractClassFromSymbol;
