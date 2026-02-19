@@ -12,7 +12,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@zenobius/pi-dcp": "^0.1.0",
     "lsp-pi": "^1.0.3",
     "pi-rewind-hook": "^1.7.3"
   },
@@ -21,12 +20,7 @@
     "@vitest/coverage-v8": "^2.1.9",
     "vitest": "^2.1.9"
   },
-  "overrides": {
-    "@stacksjs/clapp": "npm:empty-npm-package@1.0.0",
-    "@stacksjs/clarity": "npm:empty-npm-package@1.0.0"
-  },
   "bundledDependencies": [
-    "@zenobius/pi-dcp",
     "lsp-pi",
     "pi-rewind-hook"
   ],
@@ -35,8 +29,7 @@
       ".pi/extensions",
       "node_modules/pi-rewind-hook/index.ts",
       "node_modules/lsp-pi/lsp.ts",
-      "node_modules/lsp-pi/lsp-tool.ts",
-      "node_modules/@zenobius/pi-dcp/index.ts"
+      "node_modules/lsp-pi/lsp-tool.ts"
     ],
     "skills": [
       ".pi/skills"
