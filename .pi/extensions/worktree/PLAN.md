@@ -24,6 +24,7 @@ A pi extension that manages the full lifecycle of git worktrees: creation with a
   - If branch doesn't exist → create it from `base` (or auto-detected default branch)
   - If a worktree already exists for this branch → return its path (with `force`) or error (without)
 - **Auto-gitignore:** adds `.worktrees/` to `.gitignore` on first use if not already present. Reports this in the tool result.
+- **Direnv bootstrap:** if a `.envrc` file is present in the worktree, runs `direnv allow` after creation.
 - **Dep install (blocking, foreground):**
   - Detection priority order (first match wins): `pnpm-lock.yaml` → `package-lock.json` → `yarn.lock` → `bun.lockb` → `uv.lock` → `requirements.txt`
   - Runs the corresponding install command in the worktree

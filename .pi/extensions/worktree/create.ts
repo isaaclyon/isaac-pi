@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import { access, constants, mkdir } from "node:fs/promises";
 import {
 	checkGitVersion,
 	getRepoRoot,
@@ -21,6 +21,32 @@ export interface CreateParams {
 	base?: string;
 	configFiles?: string[];
 	force?: boolean;
+}
+
+async function runDirenvAllow(worktreePath: string): Promise<{ ran: boolean; ok: boolean; error?: string }> {
+	const envrcPath = path.join(worktreePath, ".envrc");
+	try {
+		await access(envrcPath, constants.F_OK);
+	} catch {
+		return { ran: false, ok: true };
+	}
+
+	const { execFile } = await import("node:child_process");
+
+	return new Promise((resolve) => {
+		execFile("direnv", ["allow", worktreePath], { maxBuffer: 10 * 1024 * 1024 }, (error, _stdout, stderr) => {
+			if (error) {
+				resolve({
+					ran: true,
+					ok: false,
+					error: (stderr || error.message).trim() || "direnv allow failed",
+				});
+				return;
+			}
+
+			resolve({ ran: true, ok: true });
+		});
+	});
 }
 
 export async function worktreeCreate(params: CreateParams): Promise<CreateResult | ToolError> {
@@ -54,6 +80,8 @@ export async function worktreeCreate(params: CreateParams): Promise<CreateResult
 				packageManager: pm?.manager,
 				configFilesCopied: [],
 				gitignoreModified: false,
+				direnvAllowRan: false,
+				direnvAllowSuccess: true,
 			};
 		}
 		return makeToolError(
@@ -106,6 +134,9 @@ export async function worktreeCreate(params: CreateParams): Promise<CreateResult
 	// 7. Copy config files
 	const configFilesCopied = await copyAllConfigFiles(repoRoot, worktreePath, params.configFiles);
 
+	// 8. Allow direnv for copied gitignored env config (if present)
+	const direnvAllow = await runDirenvAllow(worktreePath);
+
 	return {
 		ok: true,
 		path: worktreePath,
@@ -114,5 +145,8 @@ export async function worktreeCreate(params: CreateParams): Promise<CreateResult
 		packageManager: pm?.manager,
 		configFilesCopied,
 		gitignoreModified,
+		direnvAllowRan: direnvAllow.ran,
+		direnvAllowSuccess: direnvAllow.ok,
+		...(direnvAllow.ok ? {} : { direnvAllowError: direnvAllow.error }),
 	};
 }

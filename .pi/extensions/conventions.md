@@ -38,7 +38,6 @@ Extensions:
 - `questionnaire` — use whenever you need to ask the user for input.
 - `review` — use for structured code review and risk checks.
 - `handoff` — use when preparing a clean transition summary for another agent/session.
-- `mcporter_*` tools (`mcporter_list`, `mcporter_call`, `mcporter_auth`) — use to interact with MCP servers and their tools.
 - `signal_loop_success` — use to break out of a `/loop` when the breakout condition is satisfied.
 - `worktree_*` tools (`worktree_create`, `worktree_remove`, `worktree_list`, `worktree_sync`) — use for git worktree lifecycle management (create with deps/config, remove safely, list status, sync with default branch).
 - `task` — use to delegate work to isolated pi subprocesses (single, chain, or parallel). Write detailed, self-contained prompts — subprocesses have no conversation context. Don't delegate trivially; use for real multi-step or parallel work.

@@ -24,7 +24,8 @@ function isTaskError(result: SingleResult): boolean {
 		result.exitCode > 0 ||
 		result.stopReason === "error" ||
 		result.stopReason === "aborted" ||
-		result.stopReason === "timeout"
+		result.stopReason === "timeout" ||
+		!!result.failure
 	);
 }
 
@@ -73,6 +74,69 @@ function fmtCost(cost: number): string {
 	return `$${cost.toFixed(2)}`;
 }
 
+function isVerboseFailureLoggingEnabled(): boolean {
+	const value = process.env.PI_AGENT_VERBOSE?.trim().toLowerCase();
+	return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function indentLines(value: string, prefix: string): string {
+	if (!value) return "";
+	return value
+		.split("\n")
+		.map((line) => `${prefix}${line}`)
+		.join("\n");
+}
+
+function summarizeCommand(args: readonly string[]): string {
+	if (!args.length) return "(none)";
+	return args.join(" ");
+}
+
+function formatFailureSection(result: SingleResult): string {
+	if (!result.failure) return "";
+	const parts: string[] = [
+		"",
+		"Failure details:",
+		`  Command: ${summarizeCommand([result.failure.command, ...result.failure.args])}`,
+		`  Started: ${result.failure.startedAt}`,
+		`  Ended: ${result.failure.endedAt}`,
+		`  Duration: ${result.failure.durationMs}ms`,
+		`  Source: ${result.failure.source}`,
+		`  Exit code: ${result.failure.exitCode}`,
+	];
+	if (result.failure.stopReason) parts.push(`  Stop reason: ${result.failure.stopReason}`);
+	if (result.failure.errorName) {
+		parts.push(`  Error: ${result.failure.errorName}: ${result.failure.errorMessage ?? ""}`);
+		if (result.failure.errorStack) parts.push(`  Stack: ${result.failure.errorStack}`);
+	}
+	if (result.failure.toolCalls && result.failure.toolCalls.length > 0) {
+		parts.push("  Tool calls:");
+		for (const call of result.failure.toolCalls.slice(-5)) {
+			const argSummary = JSON.stringify(call.arguments);
+			parts.push(`    - ${call.name} ${argSummary}`);
+		}
+	}
+	if (result.failure.stdout) {
+		parts.push(`  stdout:`);
+		parts.push(indentLines(result.failure.stdout.trim(), "    "));
+	}
+	if (result.failure.stderr) {
+		parts.push(`  stderr:`);
+		parts.push(indentLines(result.failure.stderr.trim(), "    "));
+	}
+	return parts.join("\n");
+}
+
+export function getTaskErrorText(result: SingleResult): string {
+	const summary =
+		result.errorMessage ||
+		result.stderr ||
+		getFinalOutput(result.messages) ||
+		"(no output)";
+	if (!isVerboseFailureLoggingEnabled() || !result.failure) return summary;
+	const details = formatFailureSection(result);
+	return details ? `${summary}\n${details}` : summary;
+}
 function aggregateUsage(results: SingleResult[]): UsageStats {
 	const total: UsageStats = {
 		input: 0,
@@ -104,15 +168,6 @@ export function getFinalOutput(messages: Message[]): string {
 		}
 	}
 	return "";
-}
-
-export function getTaskErrorText(result: SingleResult): string {
-	return (
-		result.errorMessage ||
-		result.stderr ||
-		getFinalOutput(result.messages) ||
-		"(no output)"
-	);
 }
 
 function shortenPath(p: string): string {

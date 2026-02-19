@@ -28,6 +28,8 @@ export type TaskThinking = (typeof THINKING_OPTIONS)[number];
 
 export const MAX_TASKS = 8;
 export const MAX_CONCURRENCY = 4;
+export const MAX_TIMEOUT_MS = 2_147_483_647;
+export const MAX_TIMEOUT_SECONDS = Math.floor(MAX_TIMEOUT_MS / 1000);
 
 export interface TaskWorkItem {
 	name?: string;
@@ -35,9 +37,9 @@ export interface TaskWorkItem {
 	skill?: string;
 	model?: string;
 	thinking?: TaskThinking;
-	/** Per-task timeout in seconds. Overrides the top-level default. */
+	/** Per-task timeout in seconds. Overrides the top-level default. Must be > 0 and <= MAX_TIMEOUT_SECONDS. */
 	timeout?: number;
-	/** Per-task working directory. Resolved relative to the parent ExecuteContext.cwd. */
+	/** Per-task working directory. Relative to parent ExecuteContext.cwd and must stay inside it. */
 	cwd?: string;
 }
 
@@ -74,6 +76,30 @@ export interface UsageStats {
 	turns: number;
 }
 
+export interface TaskToolInvocation {
+	name: string;
+	arguments?: unknown;
+	timestamp?: string;
+}
+
+export interface TaskFailureContext {
+	command: string;
+	args: string[];
+	cwd: string;
+	startedAt: string;
+	endedAt: string;
+	durationMs: number;
+	source: "exit" | "timeout" | "aborted" | "spawn_error" | "tool_error" | "parse_error" | "unknown";
+	exitCode?: number;
+	stopReason?: string;
+	errorName?: string;
+	errorMessage?: string;
+	errorStack?: string;
+	stdout?: string;
+	stderr?: string;
+	toolCalls?: TaskToolInvocation[];
+}
+
 export interface SingleResult {
 	name?: string;
 	prompt: string;
@@ -82,13 +108,18 @@ export interface SingleResult {
 	exitCode: number;
 	messages: Message[];
 	stderr: string;
+	rawStdout?: string;
 	usage: UsageStats;
 	model?: string;
 	thinking?: ThinkingLevel;
 	stopReason?: string;
 	errorMessage?: string;
+	startedAt?: string;
+	endedAt?: string;
+	durationMs?: number;
+	failure?: TaskFailureContext;
+	toolCalls?: TaskToolInvocation[];
 }
-
 export interface TaskToolDetails {
 	mode: "single" | "parallel" | "chain";
 	modelOverride?: string;

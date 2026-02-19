@@ -46,6 +46,7 @@ export interface ExecuteContext {
 interface PreparedExecution {
 	task: { item: TaskWorkItem; subprocessPrompt: string };
 	config: ResolvedConfig;
+	cwd: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,8 +71,29 @@ function errorResult(
 	};
 }
 
-function resolveItemCwd(baseCwd: string, item: TaskWorkItem): string {
-	return item.cwd ? path.resolve(baseCwd, item.cwd) : baseCwd;
+function resolveItemCwd(
+	baseCwd: string,
+	item: TaskWorkItem,
+	index?: number,
+): { ok: true; cwd: string } | { ok: false; error: string } {
+	if (!item.cwd) return { ok: true, cwd: baseCwd };
+	if (path.isAbsolute(item.cwd)) {
+		return {
+			ok: false,
+			error: `Invalid tasks[${index ?? "?"}].cwd: must be relative to the task tool working directory.`,
+		};
+	}
+
+	const resolved = path.resolve(baseCwd, item.cwd);
+	const relative = path.relative(baseCwd, resolved);
+	if (relative.startsWith("..") || path.isAbsolute(relative)) {
+		return {
+			ok: false,
+			error: `Invalid tasks[${index ?? "?"}].cwd: must stay within the task tool working directory.`,
+		};
+	}
+
+	return { ok: true, cwd: resolved };
 }
 
 function prepareExecutions(
@@ -83,7 +105,7 @@ function prepareExecutions(
 	ectx: ExecuteContext,
 ): { ok: true; executions: PreparedExecution[] } | { ok: false; error: string } {
 	const executions: PreparedExecution[] = [];
-	for (const item of items) {
+	for (const [idx, item] of items.entries()) {
 		const prompt = buildSubprocessPrompt(item, state, SKILL_LIST_LIMIT);
 		if (!prompt.ok) return prompt;
 
@@ -98,6 +120,9 @@ function prepareExecutions(
 		});
 		if (!config.ok) return config;
 
+		const cwd = resolveItemCwd(ectx.cwd, item, idx);
+		if (!cwd.ok) return cwd;
+
 		executions.push({
 			task: { item, subprocessPrompt: prompt.prompt },
 			config: {
@@ -106,6 +131,7 @@ function prepareExecutions(
 				modelLabel: config.modelLabel,
 				timeout: config.timeout,
 			},
+			cwd: cwd.cwd,
 		});
 	}
 	return { ok: true, executions };
@@ -164,7 +190,7 @@ export async function executeSingle(
 	emitUpdate(initial);
 
 	const result = await runSingleTask({
-		cwd: resolveItemCwd(ectx.cwd, exec.task.item),
+		cwd: exec.cwd,
 		item: exec.task.item,
 		subprocessPrompt: exec.task.subprocessPrompt,
 		index: undefined,
@@ -256,8 +282,16 @@ export async function executeChain(
 				}
 			: undefined;
 
+		const cwd = resolveItemCwd(ectx.cwd, item, i);
+		if (!cwd.ok) {
+			return {
+				content: [{ type: "text", text: cwd.error }],
+				details: makeDetails("chain", [...results]),
+			};
+		}
+
 		const result = await runSingleTask({
-			cwd: resolveItemCwd(ectx.cwd, item),
+			cwd: cwd.cwd,
 			item: stepItem,
 			subprocessPrompt: subPrompt.prompt,
 			index: i + 1,
@@ -340,7 +374,7 @@ export async function executeParallel(
 		CONCURRENCY,
 		async (exec, i) => {
 			const result = await runSingleTask({
-				cwd: resolveItemCwd(ectx.cwd, exec.task.item),
+				cwd: exec.cwd,
 				item: exec.task.item,
 				subprocessPrompt: exec.task.subprocessPrompt,
 				index: i + 1,
@@ -362,7 +396,7 @@ export async function executeParallel(
 
 	const successCount = results.filter((r) => !isTaskError2(r)).length;
 	const summaries = results.map((r) => {
-		const output = getFinalOutput(r.messages);
+		const output = isTaskError2(r) ? getTaskErrorText(r) : getFinalOutput(r.messages);
 		const preview = output.slice(0, 200) + (output.length > 200 ? "..." : "");
 		const label = r.skill ?? `task ${r.index ?? "?"}`;
 		const status = isTaskError2(r) ? "failed" : "completed";

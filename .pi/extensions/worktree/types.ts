@@ -47,6 +47,9 @@ export interface CreateResult {
 	packageManager: PackageManager | undefined;
 	configFilesCopied: string[];
 	gitignoreModified: boolean;
+	direnvAllowRan: boolean;
+	direnvAllowSuccess: boolean;
+	direnvAllowError?: string;
 }
 
 export interface RemoveResult {

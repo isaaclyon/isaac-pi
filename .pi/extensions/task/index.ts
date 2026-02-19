@@ -17,7 +17,11 @@ import { Type, type Static } from "@sinclair/typebox";
 
 import { normalizeTaskParams } from "./params.js";
 import { formatAvailableSkills, loadSkillDiscovery } from "./skills.js";
-import { getBuiltInToolsFromActiveTools, THINKING_OPTIONS } from "./types.js";
+import {
+	getBuiltInToolsFromActiveTools,
+	MAX_TIMEOUT_SECONDS,
+	THINKING_OPTIONS,
+} from "./types.js";
 import type { TaskToolDetails } from "./types.js";
 import { executeChain, executeParallel, executeSingle } from "./execute.js";
 import { renderCall, renderResult } from "./render.js";
@@ -48,14 +52,15 @@ const TaskItemSchema = Type.Object({
 	timeout: Type.Optional(
 		Type.Number({
 			description:
-				"Per-task timeout in seconds. Overrides the top-level default. Process receives SIGTERM then SIGKILL after a 5s grace period.",
+				"Per-task timeout in seconds. Overrides the top-level default. Must be > 0 and <= max timer-safe limit.",
 			exclusiveMinimum: 0,
+			maximum: MAX_TIMEOUT_SECONDS,
 		}),
 	),
 	cwd: Type.Optional(
 		Type.String({
 			description:
-				"Per-task working directory (relative path resolved against parent cwd). Useful for monorepos to point a task at a subdirectory like 'packages/api'.",
+				"Per-task working directory (relative path under parent cwd). Must stay inside parent cwd; absolute paths and '../' escapes are rejected.",
 		}),
 	),
 });
@@ -73,8 +78,9 @@ const TaskParams = Type.Object({
 	timeout: Type.Optional(
 		Type.Number({
 			description:
-				"Default timeout in seconds applied to every task that doesn't set its own. Process receives SIGTERM then SIGKILL after a 5s grace period.",
+				"Default timeout in seconds applied to every task that doesn't set its own. Must be > 0 and <= max timer-safe limit.",
 			exclusiveMinimum: 0,
+			maximum: MAX_TIMEOUT_SECONDS,
 		}),
 	),
 });
@@ -115,9 +121,9 @@ You have a \`task\` tool that spawns isolated pi subprocesses. Key rules:
    Delegate when there's real work: multi-file refactors, parallel searches, etc.
 
 4. **Per-task \`cwd\` override.** Each task item accepts an optional \`cwd\` field
-   (a relative path resolved against the current working directory). This is
-   useful for monorepos where you want to point a task at a subdirectory like
-   \`"packages/api"\`.
+   (a relative path resolved against the current working directory). It must
+   stay inside the current working directory (no absolute paths or \`..\` escapes).
+   Useful for monorepos to point at subdirectories like \`"packages/api"\`.
 
 5. **When the user says something brief** like "refactor this" or "fix the tests",
    YOU expand that into a detailed prompt with all the context the subprocess needs.`;

@@ -9,10 +9,12 @@
     "postinstall": "node scripts/postinstall.cjs"
   },
   "dependencies": {
+    "@zenobius/pi-dcp": "^0.1.0",
     "lsp-pi": "^1.0.3",
     "pi-rewind-hook": "^1.7.3"
   },
   "bundledDependencies": [
+    "@zenobius/pi-dcp",
     "lsp-pi",
     "pi-rewind-hook"
   ],
@@ -21,7 +23,8 @@
       ".pi/extensions",
       "node_modules/pi-rewind-hook/index.ts",
       "node_modules/lsp-pi/lsp.ts",
-      "node_modules/lsp-pi/lsp-tool.ts"
+      "node_modules/lsp-pi/lsp-tool.ts",
+      "node_modules/@zenobius/pi-dcp/index.ts"
     ],
     "skills": [
       ".pi/skills"

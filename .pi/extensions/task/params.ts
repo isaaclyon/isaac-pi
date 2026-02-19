@@ -2,8 +2,11 @@
  * Parameter validation and normalization for the task tool.
  */
 
+import path from "node:path";
+
 import {
 	MAX_TASKS,
+	MAX_TIMEOUT_SECONDS,
 	THINKING_OPTIONS,
 	type NormalizedParams,
 	type ProviderModel,
@@ -89,12 +92,19 @@ function normalizeString(
 function normalizePositiveNumber(
 	value: unknown,
 	label: string,
+	max?: number,
 ): Result<number | undefined> {
 	if (value === undefined) return { ok: true, value: undefined };
 	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
 		return {
 			ok: false,
 			error: `Invalid parameters: ${label} must be a positive number.`,
+		};
+	}
+	if (max !== undefined && value > max) {
+		return {
+			ok: false,
+			error: `Invalid parameters: ${label} must be <= ${max}.`,
 		};
 	}
 	return { ok: true, value };
@@ -157,11 +167,18 @@ function parseTaskItems(
 		const timeoutRes = normalizePositiveNumber(
 			entry.timeout,
 			`tasks[${idx}].timeout`,
+			MAX_TIMEOUT_SECONDS,
 		);
 		if (!timeoutRes.ok) return timeoutRes;
 
 		const cwdRes = normalizeString(entry.cwd, `tasks[${idx}].cwd`);
 		if (!cwdRes.ok) return cwdRes;
+		if (cwdRes.value && path.isAbsolute(cwdRes.value)) {
+			return {
+				ok: false,
+				error: `Invalid parameters: tasks[${idx}].cwd must be a relative path.`,
+			};
+		}
 
 		items.push({
 			name: name || undefined,
@@ -199,7 +216,11 @@ export function normalizeTaskParams(
 	if (!thinkRes.ok) return thinkRes;
 	const thinking = thinkRes.value ?? "inherit";
 
-	const timeoutRes = normalizePositiveNumber(params.timeout, '"timeout"');
+	const timeoutRes = normalizePositiveNumber(
+		params.timeout,
+		'"timeout"',
+		MAX_TIMEOUT_SECONDS,
+	);
 	if (!timeoutRes.ok) return timeoutRes;
 	const timeout = timeoutRes.value;
 
