@@ -21,3 +21,6 @@ node_modules/
 # Local scratch files
 tmp/
 .worktrees/
+
+# Test coverage output
+coverage/

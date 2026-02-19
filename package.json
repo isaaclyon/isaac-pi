@@ -6,12 +6,24 @@
     "pi-package"
   ],
   "scripts": {
-    "postinstall": "node scripts/postinstall.cjs"
+    "postinstall": "node scripts/postinstall.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@zenobius/pi-dcp": "^0.1.0",
     "lsp-pi": "^1.0.3",
     "pi-rewind-hook": "^1.7.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "vitest": "^2.1.9"
+  },
+  "overrides": {
+    "@stacksjs/clapp": "npm:empty-npm-package@1.0.0",
+    "@stacksjs/clarity": "npm:empty-npm-package@1.0.0"
   },
   "bundledDependencies": [
     "@zenobius/pi-dcp",
