@@ -29,6 +29,7 @@ type LoopStateData = {
 	prompt?: string;
 	summary?: string;
 	loopCount?: number;
+	wrapUpWarned?: boolean;
 };
 
 const LOOP_PRESETS = [
@@ -43,6 +44,12 @@ const HAIKU_MODEL_ID = "claude-haiku-4-5";
 
 /** Context usage threshold (%) at which we proactively compact. */
 const COMPACTION_THRESHOLD = 50;
+
+const WRAP_UP_MESSAGE =
+	"\n\n⚠️ CONTEXT LIMIT WARNING: You are past 50% context usage in an active loop. " +
+	"Wrap up your current line of work NOW. Finish any in-progress edit, then end your turn. " +
+	"The session will be compacted and you will continue from a summary. " +
+	"Do NOT start new tool calls or investigations — just complete what you're doing.";
 
 const SUMMARY_SYSTEM_PROMPT = `You summarize loop breakout conditions for a status widget.
 Return a concise phrase (max 6 words) that says when the loop should stop.
@@ -232,13 +239,13 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		if (ctx.hasPendingMessages()) return;
 
 		const loopCount = (loopState.loopCount ?? 0) + 1;
-		loopState = { ...loopState, loopCount };
+		loopState = { ...loopState, loopCount, wrapUpWarned: false };
 		persistState(loopState);
 		updateStatus(ctx, loopState);
 
 		pi.sendMessage({
 			customType: "loop",
-			content: loopState.prompt,
+			content: loopState.prompt!,
 			display: true
 		}, {
 			deliverAs: "followUp",
@@ -400,7 +407,26 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	// --- Modification 1: Proactive compaction at 50% context usage ---
+	// --- Modification 1a: Warn the agent mid-turn when context is getting full ---
+	pi.on("tool_result", async (event, ctx) => {
+		if (!loopState.active || loopState.wrapUpWarned) return;
+
+		const usage = ctx.getContextUsage();
+		if (usage?.percent == null || usage.percent < COMPACTION_THRESHOLD) return;
+
+		loopState = { ...loopState, wrapUpWarned: true };
+		// No need to persist — this flag resets each loop iteration
+
+		const existingContent = event.content ?? [];
+		return {
+			content: [
+				...existingContent,
+				{ type: "text" as const, text: WRAP_UP_MESSAGE },
+			],
+		};
+	});
+
+	// --- Modification 1b: Proactive compaction at 50% context usage ---
 	pi.on("agent_end", async (event, ctx) => {
 		if (!loopState.active) return;
 
