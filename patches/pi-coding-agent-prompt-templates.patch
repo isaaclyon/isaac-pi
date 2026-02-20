@@ -1,0 +1,52 @@
+--- a/dist/core/prompt-templates.js	2026-02-20 09:25:03
++++ b/dist/core/prompt-templates.js	2026-02-20 09:26:00
+@@ -236,16 +236,39 @@
+  * Returns the expanded content or the original text if not a template.
+  */
+ export function expandPromptTemplate(text, templates) {
+-    if (!text.startsWith("/"))
++    if (templates.length === 0)
+         return text;
+-    const spaceIndex = text.indexOf(" ");
+-    const templateName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+-    const argsString = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+-    const template = templates.find((t) => t.name === templateName);
+-    if (template) {
+-        const args = parseCommandArgs(argsString);
+-        return substituteArgs(template.content, args);
++    // Build a map of known template names for quick lookup
++    const templateMap = new Map(templates.map((t) => [t.name, t]));
++    // Check if the entire text is a template invocation (original behavior)
++    if (text.startsWith("/")) {
++        const spaceIndex = text.indexOf(" ");
++        const templateName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
++        const argsString = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
++        const template = templateMap.get(templateName);
++        if (template) {
++            const args = parseCommandArgs(argsString);
++            return substituteArgs(template.content, args);
++        }
+     }
+-    return text;
++    // Check for mid-text template references: whitespace followed by /templateName
++    // Only expand bare /name (no args) when mid-text to avoid ambiguity
++    let result = text;
++    const midPattern = /(?<=^|\s)\/([a-zA-Z0-9][a-zA-Z0-9.\-_]*)(?=\s|$)/g;
++    let match;
++    const replacements = [];
++    while ((match = midPattern.exec(result)) !== null) {
++        const name = match[1];
++        const template = templateMap.get(name);
++        if (template) {
++            replacements.push({ start: match.index, end: match.index + match[0].length, content: template.content });
++        }
++    }
++    // Apply replacements in reverse order to preserve indices
++    for (let i = replacements.length - 1; i >= 0; i--) {
++        const r = replacements[i];
++        result = result.slice(0, r.start) + r.content + result.slice(r.end);
++    }
++    return result;
+ }
+ //# sourceMappingURL=prompt-templates.js.map
+\ No newline at end of file

@@ -1,0 +1,83 @@
+--- a/dist/core/agent-session.js	2026-02-20 09:25:03
++++ b/dist/core/agent-session.js	2026-02-20 09:26:15
+@@ -641,29 +641,58 @@
+      * Emits errors via extension runner if file read fails.
+      */
+     _expandSkillCommand(text) {
+-        if (!text.startsWith("/skill:"))
+-            return text;
+-        const spaceIndex = text.indexOf(" ");
+-        const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+-        const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+-        const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
+-        if (!skill)
+-            return text; // Unknown skill, pass through
+-        try {
+-            const content = readFileSync(skill.filePath, "utf-8");
+-            const body = stripFrontmatter(content).trim();
+-            const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
+-            return args ? `${skillBlock}\n\n${args}` : skillBlock;
+-        }
+-        catch (err) {
+-            // Emit error like extension commands do
+-            this._extensionRunner?.emitError({
+-                extensionPath: skill.filePath,
+-                event: "skill_expansion",
+-                error: err instanceof Error ? err.message : String(err),
+-            });
+-            return text; // Return original on error
++        // Original behavior: entire text starts with /skill:
++        if (text.startsWith("/skill:")) {
++            const spaceIndex = text.indexOf(" ");
++            const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
++            const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
++            const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
++            if (!skill)
++                return text;
++            try {
++                const content = readFileSync(skill.filePath, "utf-8");
++                const body = stripFrontmatter(content).trim();
++                const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
++                return args ? `${skillBlock}\n\n${args}` : skillBlock;
++            }
++            catch (err) {
++                this._extensionRunner?.emitError({
++                    extensionPath: skill.filePath,
++                    event: "skill_expansion",
++                    error: err instanceof Error ? err.message : String(err),
++                });
++                return text;
++            }
++        }
++        // Mid-text: find /skill:name patterns preceded by whitespace
++        const midPattern = /(?<=\s)\/skill:([a-zA-Z0-9][a-zA-Z0-9.\-_]*)(?=\s|$)/g;
++        let result = text;
++        let match;
++        const replacements = [];
++        while ((match = midPattern.exec(text)) !== null) {
++            const skillName = match[1];
++            const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
++            if (!skill)
++                continue;
++            try {
++                const content = readFileSync(skill.filePath, "utf-8");
++                const body = stripFrontmatter(content).trim();
++                const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
++                replacements.push({ start: match.index, end: match.index + match[0].length, content: skillBlock });
++            }
++            catch (err) {
++                this._extensionRunner?.emitError({
++                    extensionPath: skill.filePath,
++                    event: "skill_expansion",
++                    error: err instanceof Error ? err.message : String(err),
++                });
++            }
++        }
++        for (let i = replacements.length - 1; i >= 0; i--) {
++            const r = replacements[i];
++            result = result.slice(0, r.start) + r.content + result.slice(r.end);
+         }
++        return result;
+     }
+     /**
+      * Queue a steering message to interrupt the agent mid-run.

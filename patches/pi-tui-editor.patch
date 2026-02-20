@@ -1,0 +1,62 @@
+--- a/dist/components/editor.js	2026-02-20 09:25:03
++++ b/dist/components/editor.js	2026-02-20 09:25:24
+@@ -436,8 +436,18 @@
+                     this.state.cursorLine = result.cursorLine;
+                     this.setCursorCol(result.cursorCol);
+                     if (this.autocompletePrefix.startsWith("/")) {
+-                        this.cancelAutocomplete();
+-                        // Fall through to submit
++                        // Only auto-submit if slash command is at start of line
++                        const currentLineText = this.state.lines[this.state.cursorLine] || "";
++                        const prefixPos = currentLineText.lastIndexOf(this.autocompletePrefix);
++                        const textBeforePrefix = currentLineText.slice(0, prefixPos);
++                        if (textBeforePrefix.trim() === "") {
++                            this.cancelAutocomplete();
++                            // Fall through to submit
++                        } else {
++                            this.cancelAutocomplete();
++                            if (this.onChange) this.onChange(this.getText());
++                            return;
++                        }
+                     }
+                     else {
+                         this.cancelAutocomplete();
+@@ -795,8 +805,8 @@
+         }
+         // Check if we should trigger or update autocomplete
+         if (!this.autocompleteState) {
+-            // Auto-trigger for "/" at the start of a line (slash commands)
+-            if (char === "/" && this.isAtStartOfMessage()) {
++            // Auto-trigger for "/" (slash commands) - at start or after whitespace
++            if (char === "/" && (this.isAtStartOfMessage() || this.isAfterWhitespaceSlash())) {
+                 this.tryTriggerAutocomplete();
+             }
+             // Auto-trigger for "@" file reference (fuzzy search)
+@@ -814,7 +824,7 @@
+                 const currentLine = this.state.lines[this.state.cursorLine] || "";
+                 const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+                 // Check if we're in a slash command (with or without space for arguments)
+-                if (this.isInSlashCommandContext(textBeforeCursor)) {
++                if (this.isInSlashCommandContext(textBeforeCursor) || this.isInMidMessageSlashContext(textBeforeCursor)) {
+                     this.tryTriggerAutocomplete();
+                 }
+                 // Check if we're in an @ file reference context
+@@ -1574,6 +1584,18 @@
+     isInSlashCommandContext(textBeforeCursor) {
+         return this.isSlashMenuAllowed() && textBeforeCursor.trimStart().startsWith("/");
+     }
++    // Check if cursor just typed a "/" preceded by whitespace (mid-message slash trigger)
++    isAfterWhitespaceSlash() {
++        const currentLine = this.state.lines[this.state.cursorLine] || "";
++        const beforeCursor = currentLine.slice(0, this.state.cursorCol);
++        if (beforeCursor.length < 2) return false;
++        const charBeforeSlash = beforeCursor[beforeCursor.length - 2];
++        return beforeCursor.endsWith("/") && (charBeforeSlash === " " || charBeforeSlash === "\t");
++    }
++    // Check if we're typing inside a mid-message slash command (e.g. "some text /com|")
++    isInMidMessageSlashContext(textBeforeCursor) {
++        return /(?:^|[\s])\/[a-zA-Z0-9.\-_:]*$/.test(textBeforeCursor) && !this.isInSlashCommandContext(textBeforeCursor);
++    }
+     // Autocomplete methods
+     tryTriggerAutocomplete(explicitTab = false) {
+         if (!this.autocompleteProvider)
