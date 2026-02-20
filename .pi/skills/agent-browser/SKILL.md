@@ -23,6 +23,56 @@ agent-browser close             # Close browser
 3. Interact using refs from the snapshot
 4. Re-snapshot after navigation or significant DOM changes
 
+## Web search playbook (CDP recommended)
+
+For general web search, connect to a real Chrome instance through CDP. This is usually more reliable than pure headless browsing on search engines.
+
+### 1) Start Chrome with CDP
+
+Headed (best reliability):
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/pi-cdp-search \
+  --no-first-run --no-default-browser-check \
+  about:blank
+```
+
+Headless CDP (yes, this works too):
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless=new \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/pi-cdp-search-headless \
+  --no-first-run --no-default-browser-check \
+  about:blank
+```
+
+### 2) Connect agent-browser
+
+```bash
+agent-browser --session search connect 9222
+```
+
+### 3) Run the search
+
+```bash
+agent-browser --session search open https://www.google.com
+agent-browser --session search snapshot -i
+agent-browser --session search fill @eX "your query"
+agent-browser --session search press Enter
+agent-browser --session search wait --load networkidle
+agent-browser --session search snapshot -i
+```
+
+### Practical tips
+
+- Prefer targeted search when possible (for example `site:github.com <query>`).
+- If one engine challenges you, try another engine or go directly to site search pages.
+- CAPTCHA/bot checks can still happen in both headed and headless modes.
+- In practice, headed CDP is usually the most reliable for search engines.
+- Quick template: `./templates/search-cdp.sh "your query" google headed`
+
 ## Commands
 
 ### Navigation
@@ -340,12 +390,14 @@ Executable workflow scripts for common patterns:
 | [templates/form-automation.sh](templates/form-automation.sh) | Form filling with validation |
 | [templates/authenticated-session.sh](templates/authenticated-session.sh) | Login once, reuse state |
 | [templates/capture-workflow.sh](templates/capture-workflow.sh) | Content extraction with screenshots |
+| [templates/search-cdp.sh](templates/search-cdp.sh) | Run web search via Chrome CDP (headed/headless) |
 
 Usage:
 ```bash
 ./templates/form-automation.sh https://example.com/form
 ./templates/authenticated-session.sh https://app.example.com/login
 ./templates/capture-workflow.sh https://example.com ./output
+./templates/search-cdp.sh "site:github.com pi-coding-agent extensions" google headed
 ```
 
 ## HTTPS Certificate Errors

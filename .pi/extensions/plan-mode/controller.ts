@@ -1,10 +1,17 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
+import { PlanModeEditor } from "./editor.js";
 import type { NewSessionPlanPayload, PlanModeStateData, PlanStep, StoredPlan } from "./types.js";
 
 const STATE_ENTRY = "plan-mode-state-v2";
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire", "present_plan"] as const;
+const PLAN_MODE_LIGHT_BLUE = "\x1b[38;2;147;197;253m";
+const ANSI_RESET = "\x1b[0m";
+
+function withPlanModeColor(text: string): string {
+	return `${PLAN_MODE_LIGHT_BLUE}${text}${ANSI_RESET}`;
+}
 
 function cloneSteps(steps: PlanStep[]): PlanStep[] {
 	return steps.map((step) => ({ ...step }));
@@ -28,6 +35,7 @@ interface RuntimeState {
 	latestPlan?: StoredPlan;
 	todoItems: PlanStep[];
 	pendingNewSessionPlan?: NewSessionPlanPayload;
+	planModeEditorInstalled: boolean;
 }
 
 export interface PlanController {
@@ -54,6 +62,7 @@ export function createPlanController(pi: ExtensionAPI): PlanController {
 		planModeEnabled: false,
 		executionMode: false,
 		todoItems: [],
+		planModeEditorInstalled: false,
 	};
 
 	function resolvePlanTools(): string[] {
@@ -81,6 +90,19 @@ export function createPlanController(pi: ExtensionAPI): PlanController {
 		}
 	}
 
+	function installPlanModeEditor(ctx: ExtensionContext): void {
+		if (!ctx.hasUI || state.planModeEditorInstalled) return;
+
+		ctx.ui.setEditorComponent((tui, theme, keybindings) => new PlanModeEditor(tui, theme, keybindings, withPlanModeColor));
+		state.planModeEditorInstalled = true;
+	}
+
+	function uninstallPlanModeEditor(ctx: ExtensionContext): void {
+		if (!ctx.hasUI || !state.planModeEditorInstalled) return;
+		ctx.ui.setEditorComponent(undefined);
+		state.planModeEditorInstalled = false;
+	}
+
 	function refreshStatusUi(ctx: ExtensionContext): void {
 		if (!ctx.hasUI) return;
 
@@ -92,7 +114,7 @@ export function createPlanController(pi: ExtensionAPI): PlanController {
 		}
 
 		if (state.planModeEnabled) {
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan mode (xhigh, read-only)"));
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", "⏸ plan mode (xhigh, read-only)"));
 			ctx.ui.setWidget("plan-mode-checklist", undefined);
 			return;
 		}
@@ -112,6 +134,7 @@ export function createPlanController(pi: ExtensionAPI): PlanController {
 
 		pi.setThinkingLevel("xhigh");
 		pi.setActiveTools(resolvePlanTools());
+		installPlanModeEditor(ctx);
 		refreshStatusUi(ctx);
 		persistState();
 		ctx.ui.notify("Plan mode enabled", "info");
@@ -121,6 +144,7 @@ export function createPlanController(pi: ExtensionAPI): PlanController {
 		if (!state.planModeEnabled) return;
 		state.planModeEnabled = false;
 		restoreNormalRuntime();
+		uninstallPlanModeEditor(ctx);
 		refreshStatusUi(ctx);
 		persistState();
 		ctx.ui.notify("Plan mode disabled", "info");
@@ -131,6 +155,7 @@ export function createPlanController(pi: ExtensionAPI): PlanController {
 		state.executionMode = steps.length > 0;
 		state.todoItems = cloneSteps(steps);
 		restoreNormalRuntime();
+		uninstallPlanModeEditor(ctx);
 		refreshStatusUi(ctx);
 		persistState();
 	}
@@ -182,8 +207,10 @@ export function createPlanController(pi: ExtensionAPI): PlanController {
 		if (state.planModeEnabled) {
 			pi.setThinkingLevel("xhigh");
 			pi.setActiveTools(resolvePlanTools());
+			installPlanModeEditor(ctx);
 		} else {
 			restoreNormalRuntime();
+			uninstallPlanModeEditor(ctx);
 		}
 	}
 

@@ -36,7 +36,6 @@ When someone runs `pi install npm:isaac-pi` in another repo, they get exactly wh
 Extensions:
 - `lsp` tool — use for code navigation and live diagnostics in TypeScript/JavaScript and other supported projects. Actions: `definition`, `references`, `hover`, `symbols`, `diagnostics`, `workspace-diagnostics`, `signature`, `rename`, `codeAction`. Prefer over ad-hoc text search or manual file scanning.
 - `web_fetch` — use to fetch and read content from known URLs.
-- `anthropic_web_search` — use for broader web research when the exact URL is unknown.
 - `questionnaire` — use whenever you need to ask the user for input.
 - `review` — use for structured code review and risk checks.
 - `handoff` — use when preparing a clean transition summary for another agent/session.

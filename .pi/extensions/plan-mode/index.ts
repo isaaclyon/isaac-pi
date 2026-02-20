@@ -158,12 +158,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerShortcut(Key.shift("tab"), {
-		description: "Cycle plan mode",
+		description: "Toggle plan mode",
 		handler: async (ctx) => {
-			if (controller.isPlanModeEnabled() && controller.getLatestPlan()) {
-				pi.sendUserMessage("/plan-view");
-				return;
-			}
 			if (controller.isPlanModeEnabled()) controller.disablePlanMode(ctx);
 			else controller.enablePlanMode(ctx);
 		},
