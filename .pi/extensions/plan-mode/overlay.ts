@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { type ExtensionContext, type Theme } from "@mariozechner/pi-coding-agent";
 import { Editor, type EditorTheme, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import type { PlanOverlayResult, PlanStep } from "./types.js";
@@ -9,7 +9,27 @@ interface ShowPlanOverlayParams {
 	steps: PlanStep[];
 }
 
-function renderPlanMarkdownLines(markdown: string, width: number): string[] {
+interface OverlayThemeStyles {
+	accent: (text: string) => string;
+	muted: (text: string) => string;
+	success: (text: string) => string;
+	warning: (text: string) => string;
+	dim: (text: string) => string;
+}
+
+const MAX_STEP_PREVIEW = 7;
+
+export function createThemeStyles(theme: Theme): OverlayThemeStyles {
+	return {
+		accent: (text: string) => theme.fg("accent", text),
+		muted: (text: string) => theme.fg("muted", text),
+		success: (text: string) => theme.fg("success", text),
+		warning: (text: string) => theme.fg("warning", text),
+		dim: (text: string) => theme.fg("dim", text),
+	};
+}
+
+export function renderPlanMarkdownLines(markdown: string, width: number): string[] {
 	const lines: string[] = [];
 	const safeWidth = Math.max(8, width);
 
@@ -26,27 +46,113 @@ function renderPlanMarkdownLines(markdown: string, width: number): string[] {
 	return lines;
 }
 
+export function buildProgressBar(progress: number, total: number, width: number): string {
+	if (width <= 0) return "";
+	if (total <= 0) {
+		return "[░░░░░░░░░░]".slice(0, Math.min(width, 10));
+	}
+
+	const barWidth = Math.max(8, width);
+	const safeTotal = Math.max(total, 1);
+	const filled = Math.round((barWidth * progress) / safeTotal);
+	const empty = Math.max(0, barWidth - filled);
+	return `[${"█".repeat(filled)}${"░".repeat(empty)}]`;
+}
+
+export function truncateStepLines(lines: string[], maxLines: number): string[] {
+	if (lines.length <= maxLines) return lines;
+	return [...lines.slice(0, maxLines), `… ${lines.length - maxLines} more`];
+}
+
+export function formatStepPreview(styles: OverlayThemeStyles, theme: Theme, steps: PlanStep[], width: number): string[] {
+	if (steps.length === 0) return [styles.muted("(No parsed numbered steps)")];
+
+	const lines: string[] = [];
+	const wrappedWidth = Math.max(12, width - 4);
+
+	for (const step of steps.slice(0, MAX_STEP_PREVIEW)) {
+		const prefix = step.completed ? styles.success("☑") : styles.muted("☐");
+		const label = `${step.step}. ${step.text}`;
+		const wrapped = wrapTextWithAnsi(label, wrappedWidth);
+		if (wrapped.length === 0) continue;
+
+		for (let index = 0; index < wrapped.length; index++) {
+			const wrappedLine = wrapped[index]!;
+			if (index === 0) {
+				const previewLine = step.completed
+					? styles.muted(theme.strikethrough(wrappedLine))
+					: wrappedLine;
+				lines.push(`${prefix} ${previewLine}`);
+			} else {
+				lines.push(`   ${wrappedLine}`);
+			}
+		}
+	}
+
+	return truncateStepLines(lines, MAX_STEP_PREVIEW * 2);
+}
+
+export function buildOverlayBody(styles: OverlayThemeStyles, theme: Theme, width: number, params: ShowPlanOverlayParams): string[] {
+	const lines: string[] = [];
+	const add = (line = "") => {
+		lines.push(truncateToWidth(line, width));
+	};
+
+	const completed = params.steps.filter((step) => step.completed).length;
+	const total = params.steps.length;
+	const progressPercent = total === 0 ? 0 : Math.round((completed / total) * 100);
+	const progressBar = buildProgressBar(completed, total, Math.min(width - 16, 24));
+
+	add(styles.accent(`Plan Review · ${params.title}`));
+	add(styles.muted(`${completed}/${total} completed · ${progressPercent}%`));
+	add(styles.muted(`Progress: ${progressBar}`));
+	add(styles.accent("Step Preview:"));
+	for (const line of formatStepPreview(styles, theme, params.steps, width)) {
+		add(line);
+	}
+	add("");
+
+	if (total === 0) {
+		add(styles.warning("No numbered steps detected. Auto-completion tracking will be unavailable until plan steps are numbered."));
+	} else if (completed === total) {
+		add(styles.success("All steps are already marked complete."));
+	}
+
+	add(styles.accent("Plan:"));
+	const planLines = renderPlanMarkdownLines(params.markdown, Math.max(10, width));
+	if (planLines.length === 0) {
+		add(styles.muted("(No plan content provided)"));
+	} else {
+		for (const line of planLines) {
+			add(line);
+		}
+	}
+
+	return lines;
+}
+
 export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOverlayParams): Promise<PlanOverlayResult> {
 	if (!ctx.hasUI) return { decision: "cancel" };
 
 	return ctx.ui.custom<PlanOverlayResult>(
 		(tui, theme, _keybindings, done) => {
+			const styles = createThemeStyles(theme);
 			let scrollOffset = 0;
 			let feedbackMode = false;
 			let statusMessage: string | undefined;
 			let cachedWidth: number | undefined;
 			let cachedLines: string[] | undefined;
-			let cachedPlanWidth: number | undefined;
-			let cachedPlanLines: string[] = [];
+			let cachedBodyWidth: number | undefined;
+			let cachedBodyLines: string[] = [];
 
 			const editorTheme: EditorTheme = {
-				borderColor: (text: string) => theme.fg("accent", text),
+				borderColor: styles.accent,
 				selectList: {
-					selectedPrefix: (text: string) => theme.fg("accent", text),
-					selectedText: (text: string) => theme.fg("accent", text),
-					description: (text: string) => theme.fg("muted", text),
-					scrollInfo: (text: string) => theme.fg("dim", text),
-					noMatch: (text: string) => theme.fg("warning", text),
+					selectedPrefix: (text: string) => styles.accent(text),
+					selectedText: (text: string) => styles.accent(text),
+					description: (text: string) => styles.muted(text),
+					scrollInfo: (text: string) => styles.dim(text),
+					noMatch: (text: string) => styles.warning(text),
 				},
 			};
 			const editor = new Editor(tui, editorTheme);
@@ -66,11 +172,11 @@ export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOve
 				tui.requestRender();
 			}
 
-			function getPlanLines(width: number): string[] {
-				if (cachedPlanWidth === width) return cachedPlanLines;
-				cachedPlanLines = renderPlanMarkdownLines(params.markdown, width);
-				cachedPlanWidth = width;
-				return cachedPlanLines;
+			function getBodyLines(width: number): string[] {
+				if (cachedBodyWidth === width) return cachedBodyLines;
+				cachedBodyLines = buildOverlayBody(styles, theme, width, params);
+				cachedBodyWidth = width;
+				return cachedBodyLines;
 			}
 
 			function getFrameHeight(): number {
@@ -158,52 +264,50 @@ export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOve
 
 			function render(width: number): string[] {
 				if (cachedLines && cachedWidth === width) return cachedLines;
-
 				const lines: string[] = [];
 				const add = (line = "") => lines.push(truncateToWidth(line, width));
 
 				const frameHeight = getFrameHeight();
-				const footerHeight = feedbackMode ? 8 : 4;
-				const viewportHeight = Math.max(6, frameHeight - (5 + footerHeight));
+				const footerHeight = feedbackMode ? 9 : 5;
+				const viewportHeight = Math.max(8, frameHeight - (footerHeight + 2));
 
-				const planLines = getPlanLines(Math.max(10, width));
-				const maxScroll = Math.max(0, planLines.length - viewportHeight);
+				const bodyLines = getBodyLines(Math.max(10, width));
+				const maxScroll = Math.max(0, bodyLines.length - viewportHeight);
 				clampScroll(maxScroll);
 
 				const start = scrollOffset;
-				const end = Math.min(planLines.length, start + viewportHeight);
-				const completed = params.steps.filter((step) => step.completed).length;
-				const stepSummary = `${completed}/${params.steps.length}`;
+				const end = Math.min(bodyLines.length, start + viewportHeight);
+				const border = styles.accent("─".repeat(Math.max(1, width)));
 
-				const border = theme.fg("accent", "─".repeat(Math.max(1, width)));
 				add(border);
-				add(theme.fg("accent", theme.bold(`Plan Review · ${params.title}`)));
-				add(theme.fg("muted", `Steps ${stepSummary} • Lines ${start + 1}-${Math.max(start + 1, end)}/${Math.max(1, planLines.length)}`));
-				add(border);
-				if (start > 0) add(theme.fg("dim", "↑ more above"));
+				if (start > 0) {
+					add(styles.dim("↑ more above"));
+				}
 
 				for (let index = start; index < end; index++) {
-					add(planLines[index] ?? "");
+					add(bodyLines[index] ?? "");
 				}
 
 				const visibleCount = end - start;
-				for (let i = visibleCount; i < viewportHeight; i++) {
+				for (let index = visibleCount; index < viewportHeight; index++) {
 					add("");
 				}
-				if (end < planLines.length) add(theme.fg("dim", "↓ more below"));
+				if (end < bodyLines.length) {
+					add(styles.dim("↓ more below"));
+				}
 				add(border);
 
 				if (feedbackMode) {
-					add(theme.fg("accent", "Feedback (Enter submit • Esc cancel):"));
+					add(styles.accent("Feedback (Enter submit • Esc cancel):"));
 					const editorLines = editor.render(Math.max(10, width - 2));
 					for (const line of editorLines.slice(-4)) {
 						add(` ${line}`);
 					}
-					if (statusMessage) add(theme.fg("warning", statusMessage));
+					if (statusMessage) add(styles.warning(statusMessage));
 				} else {
-					add(theme.fg("dim", "↑↓ scroll • PgUp/PgDn • Home/End"));
-					add(theme.fg("dim", "a approve+new session • p proceed here • f refine • Esc close"));
-					if (statusMessage) add(theme.fg("warning", statusMessage));
+					add(styles.dim("↑↓ scroll • PgUp/PgDn • Home/End"));
+					add(styles.dim("a approve+new session • p proceed here • f refine • Esc close"));
+					if (statusMessage) add(styles.warning(statusMessage));
 				}
 
 				add(border);
@@ -216,20 +320,20 @@ export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOve
 				render,
 				invalidate: () => {
 					cachedLines = undefined;
-					cachedPlanWidth = undefined;
+					cachedBodyWidth = undefined;
 					editor.invalidate();
 				},
 				handleInput,
 			};
-		},
-		{
-			overlay: true,
-			overlayOptions: {
-				anchor: "center",
-				width: "95%",
-				maxHeight: "95%",
-				margin: 1,
 			},
-		},
-	);
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "center",
+					width: "95%",
+					maxHeight: "95%",
+					margin: 1,
+				},
+			},
+		);
 }
