@@ -1,5 +1,5 @@
 import { type ExtensionContext, type Theme } from "@mariozechner/pi-coding-agent";
-import { Editor, type EditorTheme, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import type { PlanOverlayResult, PlanStep } from "./types.js";
 
@@ -18,6 +18,8 @@ interface OverlayThemeStyles {
 }
 
 const MAX_STEP_PREVIEW = 7;
+const FRAME_SIDE_PADDING = 5;
+const FRAME_VERTICAL_PADDING = 2;
 
 export function createThemeStyles(theme: Theme): OverlayThemeStyles {
 	return {
@@ -27,6 +29,29 @@ export function createThemeStyles(theme: Theme): OverlayThemeStyles {
 		warning: (text: string) => theme.fg("warning", text),
 		dim: (text: string) => theme.fg("dim", text),
 	};
+}
+
+function renderFrameBorder(
+	styles: OverlayThemeStyles,
+	width: number,
+	left: string,
+	fill: string,
+	right: string,
+): string {
+	if (width <= 0) return "";
+	if (width === 1) return styles.accent(left);
+	if (width === 2) return styles.accent(`${left}${right}`);
+	return styles.accent(`${left}${fill.repeat(Math.max(0, width - 2))}${right}`);
+}
+
+function renderFramedLine(styles: OverlayThemeStyles, width: number, line = ""): string {
+	if (width < 6) return truncateToWidth(line, width);
+
+	const innerWidth = width - (FRAME_SIDE_PADDING * 2 + 2);
+	const content = truncateToWidth(line, innerWidth);
+	const fill = Math.max(0, innerWidth - visibleWidth(content));
+	const side = styles.accent("│");
+	return `${side}${" ".repeat(FRAME_SIDE_PADDING)}${content}${" ".repeat(fill + FRAME_SIDE_PADDING)}${side}`;
 }
 
 export function renderPlanMarkdownLines(markdown: string, width: number): string[] {
@@ -265,21 +290,22 @@ export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOve
 			function render(width: number): string[] {
 				if (cachedLines && cachedWidth === width) return cachedLines;
 				const lines: string[] = [];
-				const add = (line = "") => lines.push(truncateToWidth(line, width));
+				const add = (line = "") => lines.push(renderFramedLine(styles, width, line));
 
 				const frameHeight = getFrameHeight();
-				const footerHeight = feedbackMode ? 9 : 5;
-				const viewportHeight = Math.max(8, frameHeight - (footerHeight + 2));
+				const footerHeight = feedbackMode ? 8 : 4;
+				const viewportHeight = Math.max(8, frameHeight - (footerHeight + 3 + FRAME_VERTICAL_PADDING * 4));
 
-				const bodyLines = getBodyLines(Math.max(10, width));
+				const contentWidth = Math.max(10, width - (FRAME_SIDE_PADDING * 2 + 2));
+				const bodyLines = getBodyLines(contentWidth);
 				const maxScroll = Math.max(0, bodyLines.length - viewportHeight);
 				clampScroll(maxScroll);
 
 				const start = scrollOffset;
 				const end = Math.min(bodyLines.length, start + viewportHeight);
-				const border = styles.accent("─".repeat(Math.max(1, width)));
 
-				add(border);
+				lines.push(renderFrameBorder(styles, width, "┌", "─", "┐"));
+				for (let index = 0; index < FRAME_VERTICAL_PADDING; index++) add("");
 				if (start > 0) {
 					add(styles.dim("↑ more above"));
 				}
@@ -295,13 +321,16 @@ export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOve
 				if (end < bodyLines.length) {
 					add(styles.dim("↓ more below"));
 				}
-				add(border);
+				for (let index = 0; index < FRAME_VERTICAL_PADDING; index++) add("");
+
+				lines.push(renderFrameBorder(styles, width, "├", "─", "┤"));
+				for (let index = 0; index < FRAME_VERTICAL_PADDING; index++) add("");
 
 				if (feedbackMode) {
 					add(styles.accent("Feedback (Enter submit • Esc cancel):"));
-					const editorLines = editor.render(Math.max(10, width - 2));
+					const editorLines = editor.render(Math.max(8, contentWidth));
 					for (const line of editorLines.slice(-4)) {
-						add(` ${line}`);
+						add(line);
 					}
 					if (statusMessage) add(styles.warning(statusMessage));
 				} else {
@@ -309,8 +338,9 @@ export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOve
 					add(styles.dim("a approve+new session • p proceed here • f refine • Esc close"));
 					if (statusMessage) add(styles.warning(statusMessage));
 				}
+				for (let index = 0; index < FRAME_VERTICAL_PADDING; index++) add("");
 
-				add(border);
+				lines.push(renderFrameBorder(styles, width, "└", "─", "┘"));
 				cachedWidth = width;
 				cachedLines = lines;
 				return lines;
@@ -325,15 +355,15 @@ export async function showPlanOverlay(ctx: ExtensionContext, params: ShowPlanOve
 				},
 				handleInput,
 			};
+		},
+		{
+			overlay: true,
+			overlayOptions: {
+				anchor: "center",
+				width: "95%",
+				maxHeight: "95%",
+				margin: 1,
 			},
-			{
-				overlay: true,
-				overlayOptions: {
-					anchor: "center",
-					width: "95%",
-					maxHeight: "95%",
-					margin: 1,
-				},
-			},
-		);
+		},
+	);
 }
