@@ -27,7 +27,7 @@
     "commands",
     "components",
     "constants",
-    "hooks",
+    "user-hooks",
     "tools",
     "utils",
     "README.md"
