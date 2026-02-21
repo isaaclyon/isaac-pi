@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "lsp-pi": "^1.0.3",
+    "pi-mcp-adapter": "^2.1.2",
     "pi-rewind-hook": "^1.7.3"
   },
   "devDependencies": {
@@ -22,6 +23,7 @@
   },
   "bundledDependencies": [
     "lsp-pi",
+    "pi-mcp-adapter",
     "pi-rewind-hook"
   ],
   "pi": {
@@ -29,7 +31,8 @@
       ".pi/extensions",
       "node_modules/pi-rewind-hook/index.ts",
       "node_modules/lsp-pi/lsp.ts",
-      "node_modules/lsp-pi/lsp-tool.ts"
+      "node_modules/lsp-pi/lsp-tool.ts",
+      "node_modules/pi-mcp-adapter/index.ts"
     ],
     "skills": [
       ".pi/skills"

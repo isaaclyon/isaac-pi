@@ -48,11 +48,9 @@ Skills:
 - `frontend-design` — use for frontend UI design and implementation work.
 - `github` — use for GitHub operations via `gh` (issues, PRs, checks, runs).
 - `uv` — use for Python package/project workflows instead of pip/venv/python direct commands.
-- `changelog-generator` — use for generating, updating, or reformatting a CHANGELOG.md from git history.
 
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.
 - `/commit` — commit intended current changes.
 - `/dirty` — show a terse, explainable list of current dirty files.
-- `/generate-changelog` — generate, update, or reformat a CHANGELOG.md from git history.
 - `/prune` — prune merged branches locally and remotely.
