@@ -22,6 +22,7 @@ export default defineConfig({
 			enabled: false,
 			reporter: ["text", "html", "json-summary", "lcov"],
 			include: [
+				".pi/extensions/loop.ts",
 				".pi/extensions/task/{types.ts,params.ts,skills.ts,render.ts,subprocess.ts,execute.ts,index.ts}",
 				".pi/extensions/worktree/*.ts",
 				".pi/extensions/process/{config.ts,manager.ts,constants/*.ts,tools/**/*.ts,utils/*.ts}",

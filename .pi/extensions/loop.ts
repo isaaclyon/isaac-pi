@@ -173,7 +173,7 @@ async function summarizeBreakoutCondition(
 	return summary.length > 60 ? `${summary.slice(0, 57)}...` : summary;
 }
 
-function updateStatus(ctx: ExtensionContext, state: LoopStateData): void {
+function updateStatus(ctx: ExtensionContext, state: LoopStateData, compacting = false): void {
 	if (!ctx.hasUI) return;
 	if (!state.active || !state.mode) {
 		ctx.ui.setWidget("loop", undefined);
@@ -182,9 +182,10 @@ function updateStatus(ctx: ExtensionContext, state: LoopStateData): void {
 	const loopCount = state.loopCount ?? 0;
 	const turnText = `(turn ${loopCount})`;
 	const summary = state.summary?.trim();
+	const statusSuffix = compacting ? " [compacting...]" : "";
 	const text = summary
-		? `Loop active: ${summary} ${turnText}`
-		: `Loop active ${turnText}`;
+		? `Loop active: ${summary} ${turnText}${statusSuffix}`
+		: `Loop active ${turnText}${statusSuffix}`;
 	ctx.ui.setWidget("loop", [ctx.ui.theme.fg("accent", text)]);
 }
 
@@ -201,27 +202,63 @@ async function loadState(ctx: ExtensionContext): Promise<LoopStateData> {
 
 export default function loopExtension(pi: ExtensionAPI): void {
 	let loopState: LoopStateData = { active: false };
+	let compactionInFlight = false;
 
 	function persistState(state: LoopStateData): void {
 		pi.appendEntry(LOOP_STATE_ENTRY, state);
 	}
 
+	function setCompactionInFlight(ctx: ExtensionContext, inFlight: boolean): void {
+		if (compactionInFlight === inFlight) return;
+		compactionInFlight = inFlight;
+		updateStatus(ctx, loopState, compactionInFlight);
+	}
+
 	function setLoopState(state: LoopStateData, ctx: ExtensionContext): void {
 		loopState = state;
 		persistState(state);
-		updateStatus(ctx, state);
+		updateStatus(ctx, state, compactionInFlight);
 	}
 
 	function clearLoopState(ctx: ExtensionContext): void {
 		const cleared: LoopStateData = { active: false };
 		loopState = cleared;
+		compactionInFlight = false;
 		persistState(cleared);
-		updateStatus(ctx, cleared);
+		updateStatus(ctx, cleared, compactionInFlight);
 	}
 
 	function breakLoop(ctx: ExtensionContext): void {
 		clearLoopState(ctx);
 		ctx.ui.notify("Loop ended", "info");
+	}
+
+	function notifyCompactionBreadcrumb(
+		ctx: ExtensionContext,
+		phase: "triggered" | "completed" | "failed",
+		percent?: number,
+	): void {
+		const roundedPercent = percent != null ? percent.toFixed(1) : "?";
+		pi.appendEntry("loop-compaction", {
+			phase,
+			percent,
+			threshold: COMPACTION_THRESHOLD,
+			loopCount: loopState.loopCount ?? 0,
+			at: Date.now(),
+		});
+
+		if (!ctx.hasUI) return;
+		switch (phase) {
+			case "triggered":
+				ctx.ui.notify(`Loop compaction triggered at ${roundedPercent}% context`, "info");
+				return;
+			case "completed":
+				ctx.ui.notify("Loop compaction complete. Continuing loop.", "info");
+				return;
+			case "failed":
+				ctx.ui.notify("Loop compaction failed. Continuing loop.", "warning");
+				return;
+		}
 	}
 
 	function wasLastAssistantAborted(messages: Array<{ role?: string; stopReason?: string }>): boolean {
@@ -238,10 +275,11 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		if (!loopState.active || !loopState.mode || !loopState.prompt) return;
 		if (ctx.hasPendingMessages()) return;
 
+		compactionInFlight = false;
 		const loopCount = (loopState.loopCount ?? 0) + 1;
 		loopState = { ...loopState, loopCount, wrapUpWarned: false };
 		persistState(loopState);
-		updateStatus(ctx, loopState);
+		updateStatus(ctx, loopState, compactionInFlight);
 
 		pi.sendMessage({
 			customType: "loop",
@@ -402,7 +440,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				if (!loopState.active || loopState.mode !== mode || loopState.condition !== condition) return;
 				loopState = { ...loopState, summary };
 				persistState(loopState);
-				updateStatus(ctx, loopState);
+				updateStatus(ctx, loopState, compactionInFlight);
 			})();
 		},
 	});
@@ -443,9 +481,20 @@ export default function loopExtension(pi: ExtensionAPI): void {
 
 		const usage = ctx.getContextUsage();
 		if (usage?.percent != null && usage.percent >= COMPACTION_THRESHOLD) {
+			const usagePercent = Number(usage.percent);
+			setCompactionInFlight(ctx, true);
+			notifyCompactionBreadcrumb(ctx, "triggered", usagePercent);
 			ctx.compact({
-				onComplete: () => triggerLoopPrompt(ctx),
-				onError: () => triggerLoopPrompt(ctx),
+				onComplete: () => {
+					setCompactionInFlight(ctx, false);
+					notifyCompactionBreadcrumb(ctx, "completed", usagePercent);
+					triggerLoopPrompt(ctx);
+				},
+				onError: () => {
+					setCompactionInFlight(ctx, false);
+					notifyCompactionBreadcrumb(ctx, "failed", usagePercent);
+					triggerLoopPrompt(ctx);
+				},
 			});
 			return;
 		}
@@ -477,7 +526,8 @@ export default function loopExtension(pi: ExtensionAPI): void {
 
 	async function restoreLoopState(ctx: ExtensionContext): Promise<void> {
 		loopState = await loadState(ctx);
-		updateStatus(ctx, loopState);
+		compactionInFlight = false;
+		updateStatus(ctx, loopState, compactionInFlight);
 
 		if (loopState.active && loopState.mode && !loopState.summary) {
 			const mode = loopState.mode;
@@ -487,7 +537,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				if (!loopState.active || loopState.mode !== mode || loopState.condition !== condition) return;
 				loopState = { ...loopState, summary };
 				persistState(loopState);
-				updateStatus(ctx, loopState);
+				updateStatus(ctx, loopState, compactionInFlight);
 			})();
 		}
 	}
