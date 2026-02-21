@@ -10,7 +10,7 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: "node",
-		include: [".pi/extensions/**/*.test.ts", ".pi/extensions/**/*.spec.ts"],
+		include: [".pi/extensions/**/*.test.ts", ".pi/extensions/**/*.spec.ts", ".pi/tests/**/*.test.ts", ".pi/tests/**/*.spec.ts"],
 		exclude: [
 			".pi/npm/**",
 			"node_modules/**",

@@ -46,7 +46,7 @@ vi.mock("@mariozechner/pi-tui", () => ({
 
 import { complete } from "@mariozechner/pi-ai";
 import { compact } from "@mariozechner/pi-coding-agent";
-import loopExtension from "./loop.js";
+import loopExtension from "../extensions/loop.js";
 
 type RegisteredCommand = {
 	handler: (args: string, ctx: TestContext) => Promise<void>;
