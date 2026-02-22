@@ -73,7 +73,10 @@ function alignLeftRight(left: string, right: string, width: number): string {
 		rightWidth = visibleWidth(safeRight);
 	}
 
-	const paddingSize = Math.max(1, width - leftWidth - rightWidth);
+	const paddingSize = width - leftWidth - rightWidth;
+	if (paddingSize <= 0) {
+		return `${safeLeft}${safeRight}`;
+	}
 	return `${safeLeft}${" ".repeat(paddingSize)}${safeRight}`;
 }
 
@@ -218,11 +221,6 @@ export default function (pi: ExtensionAPI) {
 					const treeLabel = worktreeName ? `🌳 ${worktreeName}` : "🌳 none";
 					const gitState = buildGitStateText(theme, gitSummary);
 
-					const topLine = `${theme.fg("accent", shortPath)}  ${theme.fg("accent", branchLabel)}  ${theme.fg(
-						"accent",
-						treeLabel,
-					)}  ${gitState}`;
-
 					const usage = ctx.getContextUsage();
 					const contextPercentValue = usage?.percent ?? null;
 					const contextPercent = contextPercentValue === null ? "?" : contextPercentValue.toFixed(1);
@@ -245,7 +243,9 @@ export default function (pi: ExtensionAPI) {
 						"dim",
 						buildRightSide(ctx, pi, footerData.getAvailableProviderCount() > 1),
 					);
-					const bottomLine = alignLeftRight(contextStyled, rightSide, width);
+					const topLine = alignLeftRight(theme.fg("accent", shortPath), contextStyled, width);
+					const bottomLeft = `${theme.fg("accent", branchLabel)}  ${theme.fg("accent", treeLabel)}  ${gitState}`;
+					const bottomLine = alignLeftRight(bottomLeft, rightSide, width);
 
 					return [truncateToWidth(topLine, width), truncateToWidth(bottomLine, width)];
 				},
