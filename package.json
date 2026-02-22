@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "lsp-pi": "^1.0.3",
+    "pi-caffeinate": "^2.0.0",
     "pi-mcp-adapter": "^2.1.2",
+    "pi-memory-md": "^0.1.1",
     "pi-rewind-hook": "^1.7.3"
   },
   "devDependencies": {
@@ -24,7 +26,9 @@
   "bundledDependencies": [
     "lsp-pi",
     "pi-mcp-adapter",
-    "pi-rewind-hook"
+    "pi-rewind-hook",
+    "pi-caffeinate",
+    "pi-memory-md"
   ],
   "pi": {
     "extensions": [
@@ -32,10 +36,16 @@
       "node_modules/pi-rewind-hook/index.ts",
       "node_modules/lsp-pi/lsp.ts",
       "node_modules/lsp-pi/lsp-tool.ts",
-      "node_modules/pi-mcp-adapter/index.ts"
+      "node_modules/pi-mcp-adapter/index.ts",
+      "node_modules/pi-caffeinate/index.ts",
+      "node_modules/pi-memory-md/memory-md.ts"
     ],
     "skills": [
-      ".pi/skills"
+      ".pi/skills",
+      "node_modules/pi-memory-md/skills/memory-init/SKILL.md",
+      "node_modules/pi-memory-md/skills/memory-management/SKILL.md",
+      "node_modules/pi-memory-md/skills/memory-sync/SKILL.md",
+      "node_modules/pi-memory-md/skills/memory-search/SKILL.md"
     ],
     "prompts": [
       ".pi/prompts"

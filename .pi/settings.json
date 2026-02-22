@@ -6,12 +6,22 @@
     "anthropic/claude-sonnet-4-5",
     "anthropic/claude-haiku-4-5"
   ],
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-opus-4-6",
-  "defaultThinkingLevel": "medium",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "openai-codex/gpt-5.3-codex",
+  "defaultThinkingLevel": "high",
   "compaction": {
     "enabled": true,
     "keepRecentTokens": 20000
   },
-  "packages": ["../node_modules/lsp-pi"]
+  "packages": [
+    "../node_modules/lsp-pi"
+  ],
+  "pi-memory-md": {
+    "enabled": true,
+    "repoUrl": "/Users/isaaclyon/.pi/memory-md/pi-config-repo-memory-remote.git",
+    "localPath": "~/.pi/memory-md/pi-config-repo-memory",
+    "autoSync": {
+      "onSessionStart": true
+    }
+  }
 }
