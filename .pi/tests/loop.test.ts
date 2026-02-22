@@ -7,7 +7,6 @@ vi.mock("@mariozechner/pi-ai", () => ({
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
-	compact: vi.fn(),
 	DynamicBorder: class DynamicBorder {
 		constructor(_render: (text: string) => string) {
 			// noop for tests
@@ -45,7 +44,6 @@ vi.mock("@mariozechner/pi-tui", () => ({
 }));
 
 import { complete } from "@mariozechner/pi-ai";
-import { compact } from "@mariozechner/pi-coding-agent";
 import loopExtension from "../extensions/loop.js";
 
 type RegisteredCommand = {
@@ -153,11 +151,6 @@ describe("loop extension", () => {
 			content: [{ type: "text", text: "loops until tests pass" }],
 			timestamp: Date.now(),
 		});
-		vi.mocked(compact).mockReset().mockResolvedValue({
-			summary: "summary",
-			firstKeptEntryId: "entry-1",
-			tokensBefore: 1200,
-		});
 
 		loopExtension(pi);
 	});
@@ -217,7 +210,12 @@ describe("loop extension", () => {
 			expect.objectContaining({ phase: "triggered", percent: 50, threshold: 50 }),
 		);
 
-		const callbacks = ctx.compact.mock.calls[0]?.[0] as { onComplete: () => void; onError: () => void };
+		const callbacks = ctx.compact.mock.calls[0]?.[0] as {
+			customInstructions?: string;
+			onComplete: () => void;
+			onError: () => void;
+		};
+		expect(callbacks.customInstructions).toContain("automated loop working toward: tests pass");
 		expect(typeof callbacks.onComplete).toBe("function");
 		expect(typeof callbacks.onError).toBe("function");
 
@@ -362,39 +360,16 @@ describe("loop extension", () => {
 		expect(sendMessage).toHaveBeenCalledTimes(2);
 	});
 
-	it("uses loop-aware custom instructions during session_before_compact", async () => {
-		const ctx = createContext();
+	it("passes loop-aware custom instructions to ctx.compact for custom mode", async () => {
+		const ctx = createContext({ percent: 55 });
 		await commands.loop!.handler("custom API health checks pass", ctx);
 
-		const beforeCompact = handlers.session_before_compact?.[0];
-		if (!beforeCompact) throw new Error("session_before_compact handler missing");
+		const agentEnd = handlers.agent_end?.[0];
+		if (!agentEnd) throw new Error("agent_end handler missing");
+		await agentEnd({ messages: [{ role: "assistant", stopReason: "done" }] }, ctx);
 
-		const result = await beforeCompact(
-			{ preparation: { messagesToSummarize: [] }, customInstructions: "keep decisions", signal: undefined },
-			ctx,
-		) as { compaction?: unknown };
-
-		expect(compact).toHaveBeenCalledOnce();
-		const instructionArg = vi.mocked(compact).mock.calls[0]?.[3];
-		expect(instructionArg).toContain("keep decisions");
-		expect(instructionArg).toContain("automated loop working toward: API health checks pass");
-		expect(result.compaction).toBeTruthy();
-	});
-
-	it("handles compaction errors in session_before_compact", async () => {
-		const ctx = createContext();
-		await commands.loop!.handler("tests", ctx);
-		vi.mocked(compact).mockRejectedValueOnce(new Error("boom"));
-
-		const beforeCompact = handlers.session_before_compact?.[0];
-		if (!beforeCompact) throw new Error("session_before_compact handler missing");
-
-		const result = await beforeCompact(
-			{ preparation: { messagesToSummarize: [] }, customInstructions: "", signal: undefined },
-			ctx,
-		);
-		expect(result).toBeUndefined();
-		expect(ctx.ui.notify).toHaveBeenCalledWith("Loop compaction failed: boom", "warning");
+		const compactOptions = ctx.compact.mock.calls[0]?.[0] as { customInstructions?: string };
+		expect(compactOptions.customInstructions).toContain("automated loop working toward: API health checks pass");
 	});
 
 	it("restores loop state from session entries on session_start", async () => {

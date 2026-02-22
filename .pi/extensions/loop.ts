@@ -6,7 +6,7 @@
  *
  * Modifications:
  * 1. Proactive compaction at 50% context usage in agent_end
- * 2. Richer handoff-style custom instructions in session_before_compact
+ * 2. Richer handoff-style custom instructions passed to ctx.compact(...)
  *
  * Provides a /loop command that starts a follow-up loop with a breakout condition.
  * The loop keeps sending a prompt on turn end until the agent calls the
@@ -16,7 +16,6 @@
 import { Type } from "@sinclair/typebox";
 import { complete, type Api, type Model, type UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionSwitchEvent } from "@mariozechner/pi-coding-agent";
-import { compact } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 
@@ -485,6 +484,9 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			setCompactionInFlight(ctx, true);
 			notifyCompactionBreadcrumb(ctx, "triggered", usagePercent);
 			ctx.compact({
+				customInstructions: loopState.mode
+					? getHandoffCompactionInstructions(loopState.mode, loopState.condition)
+					: undefined,
 				onComplete: () => {
 					setCompactionInFlight(ctx, false);
 					notifyCompactionBreadcrumb(ctx, "completed", usagePercent);
@@ -500,28 +502,6 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		}
 
 		triggerLoopPrompt(ctx);
-	});
-
-	// --- Modification 2: Handoff-style compaction instructions ---
-	pi.on("session_before_compact", async (event, ctx) => {
-		if (!loopState.active || !loopState.mode || !ctx.model) return;
-		const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-		if (!apiKey) return;
-
-		const instructionParts = [event.customInstructions, getHandoffCompactionInstructions(loopState.mode, loopState.condition)]
-			.filter(Boolean)
-			.join("\n\n");
-
-		try {
-			const compaction = await compact(event.preparation, ctx.model, apiKey, instructionParts, event.signal);
-			return { compaction };
-		} catch (error) {
-			if (ctx.hasUI) {
-				const message = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`Loop compaction failed: ${message}`, "warning");
-			}
-			return;
-		}
 	});
 
 	async function restoreLoopState(ctx: ExtensionContext): Promise<void> {
