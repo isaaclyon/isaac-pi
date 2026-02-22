@@ -44,10 +44,11 @@ Extensions:
 - `task` — use to delegate work to isolated pi subprocesses (single, chain, or parallel). Write detailed, self-contained prompts — subprocesses have no conversation context. Don't delegate trivially; use for real multi-step or parallel work.
 
 Skills:
-- `agent-browser` — use for interactive browser tasks (navigation, clicking, forms, screenshots, extraction).
+- `agent-browser` — use for browser interactions (navigate, fill forms, click, screenshot, scrape).
 - `frontend-design` — use for frontend UI design and implementation work.
 - `github` — use for GitHub operations via `gh` (issues, PRs, checks, runs).
-- `uv` — use for Python package/project workflows instead of pip/venv/python direct commands.
+- `uv` — use for Python package/project management instead of pip/venv/python direct commands.
+- `skill-creation` — use when asked to build, scaffold, or design a new pi skill from scratch.
 
 Prompts:
 - `/clean` — commit all intended current repo changes and optionally push or open a PR.

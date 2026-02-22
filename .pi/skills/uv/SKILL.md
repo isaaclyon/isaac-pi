@@ -1,6 +1,6 @@
 ---
 name: uv
-description: "Use `uv` instead of pip/python/venv. Run scripts with `uv run script.py`, add deps with `uv add`, use inline script metadata for standalone scripts."
+description: "Python package and project management with uv. Use instead of pip, venv, or raw python commands for running scripts, managing dependencies, and building Python projects."
 ---
 
 ## Quick Reference
