@@ -49,9 +49,10 @@ Skills:
 - `github` — use for GitHub operations via `gh` (issues, PRs, checks, runs).
 - `uv` — use for Python package/project management instead of pip/venv/python direct commands.
 - `skill-creation` — use when asked to build, scaffold, or design a new pi skill from scratch.
+- `test-driven-design` — use for strict red→green→refactor orchestration, test-first implementation, and anti-pattern avoidance.
 
 Prompts:
-- `/clean` — commit all intended current repo changes and optionally push or open a PR.
-- `/commit` — commit intended current changes.
-- `/dirty` — show a terse, explainable list of current dirty files.
-- `/prune` — prune merged branches locally and remotely.
+- `/git.clean` — commit all intended current repo changes and optionally push or open a PR.
+- `/git.commit` — commit intended current changes.
+- `/git.status` — show a terse, explainable list of current dirty files.
+- `/git.prune` — prune merged branches locally and remotely.
