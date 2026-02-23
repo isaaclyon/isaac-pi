@@ -34,9 +34,14 @@ Create `.pi/nested-context.json` in the target repo (the repo where Pi is runnin
 - `"claude-only"`
 - `"both"`
 
+## Injection behavior
+
+- Loaded nested files are added to the **system prompt** on `before_agent_start`.
+- If new files are discovered **mid-agent-run** (during tool calls), the extension also injects a clearly wrapped instruction update in the `context` hook so the active run can immediately see them.
+
 ## Notes
 
-- `strictFirstHit: true` blocks the first triggering tool call after new rules are discovered, so the model retries with updated context.
+- `strictFirstHit: true` blocks the first triggering tool call after new rules are discovered, so the model retries with updated rules in context.
 - Rules are injected with nearest-directory precedence (deeper path wins).
 - Paths outside `cwd` are ignored.
 - This extension does not parse arbitrary shell commands for file paths.

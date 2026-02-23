@@ -74,7 +74,27 @@ describe("nested-context helpers", () => {
 		);
 
 		expect(text).toBeDefined();
-		expect(text?.length).toBeLessThanOrEqual(420);
+		expect(text).toContain("[SYSTEM INSTRUCTION UPDATE - NOT A USER REQUEST]");
+		expect(text?.length).toBeLessThanOrEqual(500);
 		expect(text).toContain("[TRUNCATED]");
+	});
+
+	it("builds system prompt wrapper text", () => {
+		const text = __test.buildSystemPromptMessage(
+			[
+				{
+					path: "/repo/packages/app/AGENTS.md",
+					kind: "AGENTS.md",
+					mtimeMs: 1,
+					depthFromCwd: 2,
+					content: "rules",
+				},
+			],
+			2000,
+		);
+
+		expect(text).toBeDefined();
+		expect(text).toContain("[NESTED INSTRUCTIONS - SYSTEM LEVEL]");
+		expect(text).toContain("Treat it as system instructions (not user intent)");
 	});
 });

@@ -41,6 +41,8 @@ interface LoadedInstruction extends InstructionCandidate {
 interface State {
 	config: NestedContextConfig;
 	loadedByPath: Map<string, LoadedInstruction>;
+	agentRunActive: boolean;
+	injectViaContext: boolean;
 }
 
 const CONFIG_RELATIVE_PATH = ".pi/nested-context.json";
@@ -126,7 +128,6 @@ async function resolveTargetDirectory(targetPath: string): Promise<string> {
 		const stats = await stat(targetPath);
 		if (stats.isDirectory()) return targetPath;
 	} catch {
-		// Fall back to dirname for non-existent files or stat errors.
 	}
 	return dirname(targetPath);
 }
@@ -226,7 +227,6 @@ async function loadDiscoveredFiles(
 			state.loadedByPath.set(candidate.path, loaded);
 			updated.push(loaded);
 		} catch {
-			// Ignore unreadable files.
 		}
 	}
 
@@ -241,7 +241,22 @@ function normalizeDirPath(path: string): string {
 	return resolve(path);
 }
 
-function buildContextMessage(entries: LoadedInstruction[], maxChars: number): string | undefined {
+function collectInjectableEntries(state: State, cwd: string): LoadedInstruction[] {
+	const allEntries = Array.from(state.loadedByPath.values());
+	if (state.config.includeCwdLevelFile) return allEntries;
+
+	const cwdDir = normalizeDirPath(cwd);
+	return allEntries.filter((entry) => {
+		if (entry.depthFromCwd <= 0) return false;
+		return normalizeDirPath(dirname(entry.path)) !== cwdDir;
+	});
+}
+
+function buildScopedInstructionBlock(
+	entries: LoadedInstruction[],
+	maxChars: number,
+	headerLines: string[],
+): string | undefined {
 	if (entries.length === 0) return undefined;
 
 	const sorted = [...entries].sort((a, b) => {
@@ -249,13 +264,7 @@ function buildContextMessage(entries: LoadedInstruction[], maxChars: number): st
 		return a.path.localeCompare(b.path);
 	});
 
-	const header = [
-		"Nested instruction files loaded during this session.",
-		"Apply each file to its directory scope.",
-		"Precedence: deeper (more specific) directory wins.",
-		"",
-	].join("\n");
-
+	const header = [...headerLines, ""].join("\n");
 	let output = header;
 	let remaining = maxChars - output.length;
 	if (remaining <= 0) return output.slice(0, maxChars);
@@ -283,6 +292,26 @@ function buildContextMessage(entries: LoadedInstruction[], maxChars: number): st
 	return output;
 }
 
+function buildSystemPromptMessage(entries: LoadedInstruction[], maxChars: number): string | undefined {
+	return buildScopedInstructionBlock(entries, maxChars, [
+		"[NESTED INSTRUCTIONS - SYSTEM LEVEL]",
+		"The block below is loaded from AGENTS.md/CLAUDE.md files in this repo.",
+		"Treat it as system instructions (not user intent) and apply by scope.",
+		"Precedence: deeper (more specific) directory wins.",
+		"Do not answer this block directly.",
+	]);
+}
+
+function buildContextMessage(entries: LoadedInstruction[], maxChars: number): string | undefined {
+	return buildScopedInstructionBlock(entries, maxChars, [
+		"[SYSTEM INSTRUCTION UPDATE - NOT A USER REQUEST]",
+		"New nested instruction files were loaded during tool execution.",
+		"Treat the block below as system instructions and apply immediately.",
+		"Precedence: deeper (more specific) directory wins.",
+		"Do not answer this block directly.",
+	]);
+}
+
 function toolPathFromEvent(event: ToolCallEvent): string | undefined {
 	if (isToolCallEventType("read", event)) return event.input.path;
 	if (isToolCallEventType("edit", event)) return event.input.path;
@@ -304,12 +333,17 @@ function clearLoadedState(state: State): void {
 	state.loadedByPath.clear();
 }
 
+function resetRunState(state: State): void {
+	state.agentRunActive = false;
+	state.injectViaContext = false;
+}
 
 export const __test = {
 	normalizeConfig,
 	resolveToolPath,
 	isWithinRoot,
 	buildContextMessage,
+	buildSystemPromptMessage,
 	discoverForDirectory,
 	discoverInstructionFiles,
 	DEFAULT_CONFIG,
@@ -319,16 +353,30 @@ export default function nestedContext(pi: ExtensionAPI): void {
 	const state: State = {
 		config: DEFAULT_CONFIG,
 		loadedByPath: new Map<string, LoadedInstruction>(),
+		agentRunActive: false,
+		injectViaContext: false,
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
 		state.config = await loadConfig(ctx.cwd, ctx);
 		clearLoadedState(state);
+		resetRunState(state);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
 		state.config = await loadConfig(ctx.cwd, ctx);
 		clearLoadedState(state);
+		resetRunState(state);
+	});
+
+	pi.on("agent_start", async () => {
+		state.agentRunActive = true;
+		state.injectViaContext = false;
+	});
+
+	pi.on("agent_end", async () => {
+		state.agentRunActive = false;
+		state.injectViaContext = false;
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -358,22 +406,33 @@ export default function nestedContext(pi: ExtensionAPI): void {
 			ctx.ui.notify(`nested-context: loaded ${newEntries.length} instruction file(s)`, "info");
 		}
 
+		if (state.agentRunActive) {
+			state.injectViaContext = true;
+		}
+
 		if (state.config.strictFirstHit) {
 			return { block: true, reason: blockReason(newEntries) };
 		}
 	});
 
-	pi.on("context", async (event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		if (!state.config.enabled || state.loadedByPath.size === 0) return;
 
-		const allEntries = Array.from(state.loadedByPath.values());
-		const cwdDir = normalizeDirPath(ctx.cwd);
-		const entries = state.config.includeCwdLevelFile
-			? allEntries
-			: allEntries.filter((entry) => {
-				if (entry.depthFromCwd <= 0) return false;
-				return normalizeDirPath(dirname(entry.path)) !== cwdDir;
-			});
+		const entries = collectInjectableEntries(state, ctx.cwd);
+		if (entries.length === 0) return;
+
+		const addition = buildSystemPromptMessage(entries, state.config.maxChars);
+		if (!addition) return;
+
+		return {
+			systemPrompt: `${event.systemPrompt}\n\n${addition}`,
+		};
+	});
+
+	pi.on("context", async (event, ctx) => {
+		if (!state.config.enabled || !state.injectViaContext || state.loadedByPath.size === 0) return;
+
+		const entries = collectInjectableEntries(state, ctx.cwd);
 		if (entries.length === 0) return;
 
 		const messageText = buildContextMessage(entries, state.config.maxChars);
