@@ -36,6 +36,7 @@ const STATUS_TEXT: Record<StatusState, string> = {
 };
 
 const INACTIVE_TIMEOUT_MS = 180_000;
+const FALLBACK_REFRESH_MS = 5 * 60_000;
 const GIT_COMMIT_RE = /\bgit\b[^\n]*\bcommit\b/;
 const MAX_TOPIC_WORDS = 5;
 const MAX_TOPIC_LENGTH = 36;
@@ -65,6 +66,7 @@ export default function (pi: ExtensionAPI) {
 		sawCommit: false,
 	};
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	let fallbackRefreshId: ReturnType<typeof setTimeout> | undefined;
 	const nativeClearTimeout = globalThis.clearTimeout;
 	let workLabel = "pi";
 	let runId = 0;
@@ -73,6 +75,8 @@ export default function (pi: ExtensionAPI) {
 	let lastRerollDiffLines: number | null = null;
 	let rerollHintShown = false;
 	let labelMode: "fallback" | "reroll" = "fallback";
+	let lastRenderedLabel: string | undefined;
+
 
 	const cwdBase = (ctx: ExtensionContext): string => basename(ctx.cwd || "pi");
 
@@ -290,10 +294,37 @@ export default function (pi: ExtensionAPI) {
 		return undefined;
 	};
 
+	const clearFallbackRefresh = (): void => {
+		if (fallbackRefreshId === undefined) return;
+		nativeClearTimeout(fallbackRefreshId);
+		fallbackRefreshId = undefined;
+	};
+
+	const resetFallbackRefreshTimer = (ctx: ExtensionContext): void => {
+		clearFallbackRefresh();
+		if (!ctx.hasUI) return;
+		fallbackRefreshId = setTimeout(() => {
+			const previousLabel = displayLabel(ctx);
+			refreshWorkLabel(ctx);
+			const nextLabel = displayLabel(ctx);
+			if (nextLabel === previousLabel) {
+				resetFallbackRefreshTimer(ctx);
+				return;
+			}
+			setTitle(ctx, status.state);
+		}, FALLBACK_REFRESH_MS);
+	};
+
 	const setTitle = (ctx: ExtensionContext, next: StatusState): void => {
 		status.state = next;
+		const nextLabel = displayLabel(ctx);
+		const labelChanged = nextLabel !== lastRenderedLabel;
+		lastRenderedLabel = nextLabel;
 		if (!ctx.hasUI) return;
-		ctx.ui.setTitle(`${displayLabel(ctx)}${STATUS_TEXT[next]}`);
+		ctx.ui.setTitle(`${nextLabel}${STATUS_TEXT[next]}`);
+		if (labelChanged) {
+			resetFallbackRefreshTimer(ctx);
+		}
 	};
 
 	const rerollWorkLabel = async (
@@ -439,6 +470,8 @@ export default function (pi: ExtensionAPI) {
 		lastRerollDiffLines = null;
 		refreshWorkLabel(ctx, undefined, { force: true });
 		resetState(ctx, "new");
+		clearFallbackRefresh();
+		resetFallbackRefreshTimer(ctx);
 	});
 
 	pi.on("session_switch", async (event: SessionSwitchEvent, ctx: ExtensionContext) => {
@@ -447,6 +480,8 @@ export default function (pi: ExtensionAPI) {
 		lastRerollDiffLines = null;
 		refreshWorkLabel(ctx, undefined, { force: true });
 		resetState(ctx, event.reason === "new" ? "new" : "doneCommitted");
+		clearFallbackRefresh();
+		resetFallbackRefreshTimer(ctx);
 	});
 
 	pi.on("before_agent_start", async (event: BeforeAgentStartEvent, ctx: ExtensionContext) => {
@@ -520,6 +555,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async (_event: SessionShutdownEvent, ctx: ExtensionContext) => {
 		clearTabTimeout();
+		clearFallbackRefresh();
 		if (!ctx.hasUI) return;
 		ctx.ui.setTitle(displayLabel(ctx));
 	});
