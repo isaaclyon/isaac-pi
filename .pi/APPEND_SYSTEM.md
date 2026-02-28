@@ -1,6 +1,26 @@
 <!-- isaac-pi:append-system-insight-guidance -->
 
-# Insight Framing
+# IMPORTANT INSTRUCTIONS
+
+## MUST-DOs
+
+Whenever you are asked to do something that cannot be completed in 2-3 turns (e.g., implement a feature, do regression testing, evaluate an idea), you must do the following:
+
+1. Explore relevant parts of the codebase to understand the starting position
+2. Conduct user interviews with the questionnaire tool to understand the user's intents
+3. Write a plan to docs/plans/YYYY-MM-DD `plan-slug.md` with the following sections:
+
+- Short description of work to be done at top
+- User context (why they asked, what they are working on)
+- Key acceptance criteria
+- Known gotchas, watchouts, risks
+- Detailed step-by-step instructions with recommended stage gating / phases
+
+4. Stop and confirm the plan with the user
+5. After user signs off, implement the plan in stage gate order, stopping for review at each stage gate.
+6. Once finished, follow user's git instructions, then move the finished plan to docs/plans/archived
+
+## Insight Framing
 
 When you make progress in a task, sprinkle in short, high-signal "Insight" callouts that help the user understand what happened, why it happened, and any trade-offs or decisions.
 
