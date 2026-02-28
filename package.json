@@ -15,6 +15,7 @@
     "lsp-pi": "^1.0.3",
     "pi-caffeinate": "^2.0.0",
     "pi-mcp-adapter": "^2.1.2",
+    "pi-review-loop": "^0.4.2",
     "pi-rewind-hook": "^1.7.3"
   },
   "devDependencies": {
@@ -25,6 +26,7 @@
   "bundleDependencies": [
     "lsp-pi",
     "pi-mcp-adapter",
+    "pi-review-loop",
     "pi-rewind-hook",
     "pi-caffeinate"
   ],
@@ -35,7 +37,8 @@
       "node_modules/lsp-pi/lsp.ts",
       "node_modules/lsp-pi/lsp-tool.ts",
       "node_modules/pi-mcp-adapter/index.ts",
-      "node_modules/pi-caffeinate/index.ts"
+      "node_modules/pi-caffeinate/index.ts",
+      "node_modules/pi-review-loop/index.ts"
     ],
     "skills": [
       ".pi/skills"
