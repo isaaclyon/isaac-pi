@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Runtime / logs
+logs/
+*.log
+
+# Local auth/cache/state
+agent/auth.json
+agent/mcp-cache.json
+agent/sessions/
+
+# Local extension databases
+agent/extensions/**/tmp/
+agent/extensions/**/*.sqlite
+agent/extensions/**/*.sqlite-*
+
+# Env files
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+.vscode/
+.idea/

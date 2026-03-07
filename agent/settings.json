@@ -1,0 +1,25 @@
+{
+  "lastChangelogVersion": "0.57.0",
+  "enabledModels": [
+    "openai-codex/gpt-5.4",
+    "openai-codex/gpt-5.3-codex-spark",
+    "openai-codex/gpt-5.3-codex",
+    "anthropic/claude-opus-4-6",
+    "anthropic/claude-haiku-4-5",
+    "anthropic/claude-sonnet-4-6"
+  ],
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-6",
+  "defaultThinkingLevel": "high",
+  "steeringMode": "all",
+  "transport": "websocket",
+  "collapseChangelog": true,
+  "quietStartup": true,
+  "packages": [
+    "npm:pi-interactive-shell",
+    "npm:lsp-pi",
+    "npm:pi-caffeinate",
+    "npm:@aaronmaturen/pi-context7",
+    "npm:pi-mcp-adapter"
+  ]
+}
