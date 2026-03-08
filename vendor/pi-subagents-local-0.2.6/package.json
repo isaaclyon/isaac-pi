@@ -1,0 +1,46 @@
+{
+  "name": "@tintinweb/pi-subagents",
+  "version": "0.2.6",
+  "description": "A pi extension extension that brings smart Claude Code-style autonomous sub-agents to pi.",
+  "author": "tintinweb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tintinweb/pi-subagents.git"
+  },
+  "homepage": "https://github.com/tintinweb/pi-subagents#readme",
+  "bugs": {
+    "url": "https://github.com/tintinweb/pi-subagents/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "subagent",
+    "agent",
+    "autonomous"
+  ],
+  "dependencies": {
+    "@mariozechner/pi-ai": "latest",
+    "@mariozechner/pi-coding-agent": "latest",
+    "@mariozechner/pi-tui": "latest",
+    "@sinclair/typebox": "latest"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "video": "https://github.com/tintinweb/pi-subagents/raw/master/media/demo.mp4",
+    "image": "https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png"
+  }
+}

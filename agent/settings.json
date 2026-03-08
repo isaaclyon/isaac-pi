@@ -10,17 +10,26 @@
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.3-codex",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "minimal",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
   "quietStartup": true,
+  "piSubagentsHiddenBuiltinAgents": [
+    "general-purpose",
+    "Explore",
+    "Plan",
+    "statusline-setup",
+    "claude-code-guide"
+  ],
   "packages": [
     "npm:pi-interactive-shell",
     "npm:lsp-pi",
     "npm:pi-caffeinate",
     "npm:@aaronmaturen/pi-context7",
     "npm:pi-mcp-adapter",
-    "npm:pi-scheduler"
+    "npm:pi-scheduler",
+    "npm:pi-context",
+    "../vendor/pi-subagents-local-0.2.6"
   ]
 }
