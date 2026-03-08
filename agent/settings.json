@@ -8,27 +8,20 @@
     "anthropic/claude-haiku-4-5",
     "anthropic/claude-sonnet-4-6"
   ],
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.3-codex",
-  "defaultThinkingLevel": "minimal",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-6",
+  "defaultThinkingLevel": "high",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
   "quietStartup": true,
-  "piSubagentsHiddenBuiltinAgents": [
-    "general-purpose",
-    "Explore",
-    "Plan",
-    "statusline-setup",
-    "claude-code-guide"
-  ],
   "packages": [
     "npm:pi-interactive-shell",
     "npm:lsp-pi",
     "npm:pi-caffeinate",
     "npm:@aaronmaturen/pi-context7",
     "npm:pi-mcp-adapter",
-    "npm:pi-scheduler",
-    "../vendor/pi-subagents-local-0.2.6"
-  ]
+    "npm:pi-scheduler"
+  ],
+  "hideThinkingBlock": false
 }
