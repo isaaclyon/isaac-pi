@@ -29,7 +29,6 @@
     "npm:@aaronmaturen/pi-context7",
     "npm:pi-mcp-adapter",
     "npm:pi-scheduler",
-    "npm:pi-context",
     "../vendor/pi-subagents-local-0.2.6"
   ]
 }
