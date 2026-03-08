@@ -1,14 +1,20 @@
 import type { AgentMessage, ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getLcmDb } from "./db.js";
-import { resolveLcmConfig } from "./config.js";
-import { LcmStore } from "./store.js";
-import { toStoredFromEntry, toStoredMessage, type SessionMessageEntryLike } from "./types.js";
+import { streamSimple } from "@mariozechner/pi-ai";
+import { assembleContext } from "./assembly.ts";
+import { runLcmCompaction } from "./compaction.ts";
+import { resolveLcmConfig, type LcmConfig } from "./config.ts";
+import { closeAllLcmDbs, getLcmDb } from "./db.ts";
+import { createLlmSummarizer } from "./summarizer.ts";
+import { LcmStore } from "./store.ts";
+import { toStoredFromEntry, toStoredMessage, type SessionMessageEntryLike } from "./types.ts";
 
 type RuntimeState = {
 	enabled: boolean;
+	config: LcmConfig;
 	store?: LcmStore;
 	conversationId?: number;
 	conversationKey?: string;
+	compactionInFlight: boolean;
 };
 
 function buildConversationIdentity(ctx: {
@@ -58,13 +64,16 @@ function extractBranchMessages(ctx: {
 	return out;
 }
 
-function bootstrapFromBranch(state: RuntimeState, ctx: {
-	sessionManager: {
-		getBranch(): Array<{ type: string; id: string; message?: AgentMessage }>;
-	};
-	hasUI: boolean;
-	ui: { notify(message: string, type?: "info" | "warning" | "error"): void };
-}): void {
+function bootstrapFromBranch(
+	state: RuntimeState,
+	ctx: {
+		sessionManager: {
+			getBranch(): Array<{ type: string; id: string; message?: AgentMessage }>;
+		};
+		hasUI: boolean;
+		ui: { notify(message: string, type?: "info" | "warning" | "error"): void };
+	},
+): void {
 	if (!state.enabled || !state.store || typeof state.conversationId !== "number") {
 		return;
 	}
@@ -77,12 +86,15 @@ function bootstrapFromBranch(state: RuntimeState, ctx: {
 	}
 }
 
-function setupConversation(state: RuntimeState, ctx: {
-	cwd: string;
-	sessionManager: { getSessionFile(): string | undefined };
-	hasUI: boolean;
-	ui: { notify(message: string, type?: "info" | "warning" | "error"): void };
-}): void {
+function setupConversation(
+	state: RuntimeState,
+	ctx: {
+		cwd: string;
+		sessionManager: { getSessionFile(): string | undefined };
+		hasUI: boolean;
+		ui: { notify(message: string, type?: "info" | "warning" | "error"): void };
+	},
+): void {
 	if (!state.enabled || !state.store) {
 		return;
 	}
@@ -100,16 +112,20 @@ function setupConversation(state: RuntimeState, ctx: {
 export default function lcmExtension(pi: ExtensionAPI): void {
 	const state: RuntimeState = {
 		enabled: false,
+		config: resolveLcmConfig(process.cwd()),
+		compactionInFlight: false,
 	};
 
 	pi.on("session_start", (event, ctx) => {
 		void event;
 		const config = resolveLcmConfig(ctx.cwd);
+		state.config = config;
 		state.enabled = config.enabled;
 		if (!config.enabled) {
 			state.store = undefined;
 			state.conversationId = undefined;
 			state.conversationKey = undefined;
+			state.compactionInFlight = false;
 			return;
 		}
 
@@ -143,5 +159,77 @@ export default function lcmExtension(pi: ExtensionAPI): void {
 		if (ctx.hasUI) {
 			ctx.ui.setStatus("lcm", `LCM stored: ${stored.role}`);
 		}
+	});
+
+	pi.on("context", (_event, _ctx) => {
+		if (!state.enabled || !state.store || typeof state.conversationId !== "number") {
+			// LCM disabled or not yet initialised — leave native context intact
+			return {};
+		}
+		try {
+			const messages = assembleContext(state.store, state.conversationId);
+			if (messages.length === 0) {
+				// No LCM context built yet (no context_items) — defer to native
+				return {};
+			}
+			return { messages };
+		} catch {
+			// Fail-open: any assembly error leaves native context intact
+			return {};
+		}
+	});
+
+	pi.on("turn_end", (event, ctx) => {
+		void event;
+		if (!state.enabled || !state.store || typeof state.conversationId !== "number") {
+			return;
+		}
+		if (state.compactionInFlight) {
+			return;
+		}
+
+		const usage = ctx.getContextUsage();
+		if (!usage || usage.percent === null || usage.contextWindow <= 0) {
+			return;
+		}
+		if (usage.percent < state.config.contextThreshold) {
+			return;
+		}
+
+		const targetTokens = Math.max(1, Math.floor(usage.contextWindow * state.config.contextThreshold));
+		const model = ctx.model;
+		state.compactionInFlight = true;
+		// Fire-and-forget: do not await on the turn_end critical path.
+		// compactionInFlight is cleared in the finally block of the async chain.
+		runLcmCompaction(state.store, {
+			conversationId: state.conversationId,
+			targetTokens,
+			freshTailCount: state.config.freshTailCount,
+			leafChunkTokens: state.config.leafChunkTokens,
+			incrementalMaxDepth: state.config.incrementalMaxDepth,
+			summarizer: model ? createLlmSummarizer(streamSimple, model) : undefined,
+		})
+			.then((result) => {
+				if (ctx.hasUI && result.compacted) {
+					ctx.ui.notify(
+						`[lcm] compacted ${result.initialTokens} -> ${result.finalTokens} (leaf=${result.createdLeafCount}, condensed=${result.createdCondensedCount}, strategy=${result.strategyUsed ?? "n/a"})`,
+						"info",
+					);
+				}
+			})
+			.catch((error) => {
+				if (ctx.hasUI) {
+					const message = error instanceof Error ? error.message : String(error);
+					ctx.ui.notify(`[lcm] compaction error (non-fatal): ${message}`, "warning");
+				}
+			})
+			.finally(() => {
+				state.compactionInFlight = false;
+			});
+	});
+
+	pi.on("session_shutdown", (_event, _ctx) => {
+		// Close all SQLite connections on process exit so WAL is checkpointed cleanly.
+		closeAllLcmDbs();
 	});
 }

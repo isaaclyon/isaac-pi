@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type {
 	RalphCheckpointInput,
 	RalphEventInput,
+	RalphEventRecord,
 	RalphLoopRecord,
 	RalphRunConfig,
 	RalphRunRecord,
@@ -164,6 +165,82 @@ export class RalphStore {
 			endedAt: row.ended_at,
 			summary: row.summary,
 			checkpointJson: row.checkpoint_json,
+		};
+	}
+
+	getLatestLoop(runId: string): RalphLoopRecord | undefined {
+		const row = this.db
+			.prepare(
+				`SELECT loop_id, run_id, loop_number, state, trigger_reason, started_at, ended_at, summary, checkpoint_json
+				 FROM loops
+				 WHERE run_id = ?
+				 ORDER BY loop_number DESC
+				 LIMIT 1`,
+			)
+			.get(runId) as
+			| {
+					loop_id: number;
+					run_id: string;
+					loop_number: number;
+					state: "running" | "completed" | "failed" | "stopped";
+					trigger_reason: string | null;
+					started_at: number;
+					ended_at: number | null;
+					summary: string | null;
+					checkpoint_json: string | null;
+			  }
+			| undefined;
+		if (!row) return undefined;
+		return {
+			loopId: row.loop_id,
+			runId: row.run_id,
+			loopNumber: row.loop_number,
+			state: row.state,
+			triggerReason: row.trigger_reason,
+			startedAt: row.started_at,
+			endedAt: row.ended_at,
+			summary: row.summary,
+			checkpointJson: row.checkpoint_json,
+		};
+	}
+
+	getLatestEvent(runId: string, eventType?: string): RalphEventRecord | undefined {
+		const row = eventType
+			? this.db
+				.prepare(
+					`SELECT event_id, run_id, loop_id, event_type, payload_json, created_at
+					 FROM events
+					 WHERE run_id = ? AND event_type = ?
+					 ORDER BY created_at DESC
+					 LIMIT 1`,
+				)
+				.get(runId, eventType)
+			: this.db
+				.prepare(
+					`SELECT event_id, run_id, loop_id, event_type, payload_json, created_at
+					 FROM events
+					 WHERE run_id = ?
+					 ORDER BY created_at DESC
+					 LIMIT 1`,
+				)
+				.get(runId);
+
+		if (!row) return undefined;
+		const typed = row as {
+			event_id: number;
+			run_id: string;
+			loop_id: number | null;
+			event_type: string;
+			payload_json: string;
+			created_at: number;
+		};
+		return {
+			eventId: typed.event_id,
+			runId: typed.run_id,
+			loopId: typed.loop_id,
+			eventType: typed.event_type,
+			payloadJson: typed.payload_json,
+			createdAt: typed.created_at,
 		};
 	}
 

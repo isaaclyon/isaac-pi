@@ -7,7 +7,7 @@ import type {
 	MessageRecord,
 	StoredMessage,
 	SummaryKind,
-} from "./types.js";
+} from "./types.ts";
 
 type SummaryInsertInput = {
 	summaryId: string;
@@ -79,7 +79,8 @@ export class LcmStore {
 		};
 	}
 
-	insertMessage(conversationId: number, message: StoredMessage): { inserted: boolean; messageId?: number } {
+	// Inner (un-transacted) insert — must be called inside an active transaction.
+	private insertMessageInner(conversationId: number, message: StoredMessage): { inserted: boolean; messageId?: number } {
 		const maxSeqRow = this.db
 			.prepare("SELECT COALESCE(MAX(seq), 0) AS max_seq FROM messages WHERE conversation_id = ?")
 			.get(conversationId) as { max_seq?: number };
@@ -87,7 +88,7 @@ export class LcmStore {
 
 		const result = this.db
 			.prepare(
-				`INSERT INTO messages (
+				`INSERT OR IGNORE INTO messages (
 					conversation_id,
 					seq,
 					entry_id,
@@ -96,8 +97,7 @@ export class LcmStore {
 					content_json,
 					token_estimate,
 					created_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-				ON CONFLICT(conversation_id, entry_id) DO NOTHING`
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 			)
 			.run(
 				conversationId,
@@ -114,16 +114,22 @@ export class LcmStore {
 			return { inserted: false };
 		}
 
-		const inserted = this.db
+		const row = this.db
 			.prepare("SELECT message_id FROM messages WHERE conversation_id = ? AND seq = ?")
-			.get(conversationId, seq) as { message_id?: number };
+			.get(conversationId, seq) as { message_id?: number } | undefined;
 
-		if (!inserted?.message_id) {
-			return { inserted: true };
+		if (!row?.message_id) {
+			throw new Error(
+				`LCM: message inserted (conversation_id=${conversationId} seq=${seq}) but post-insert lookup returned nothing`,
+			);
 		}
 
-		this.appendMessageContextItem(conversationId, inserted.message_id, message.createdAt);
-		return { inserted: true, messageId: inserted.message_id };
+		this.appendMessageContextItem(conversationId, row.message_id, message.createdAt);
+		return { inserted: true, messageId: row.message_id };
+	}
+
+	insertMessage(conversationId: number, message: StoredMessage): { inserted: boolean; messageId?: number } {
+		return this.inTransaction(() => this.insertMessageInner(conversationId, message));
 	}
 
 	appendMessageContextItem(conversationId: number, messageId: number, createdAt: number): void {
@@ -157,7 +163,7 @@ export class LcmStore {
 		return this.inTransaction(() => {
 			let inserted = 0;
 			for (const message of messages) {
-				const result = this.insertMessage(conversationId, message);
+				const result = this.insertMessageInner(conversationId, message);
 				if (result.inserted) {
 					inserted += 1;
 				}
@@ -225,7 +231,7 @@ export class LcmStore {
 		const placeholders = messageIds.map(() => "?").join(", ");
 		const rows = this.db
 			.prepare(
-				`SELECT message_id, seq, role, content_text, token_estimate, created_at
+				`SELECT message_id, seq, role, content_text, content_json, token_estimate, created_at
 				 FROM messages
 				 WHERE message_id IN (${placeholders})
 				 ORDER BY seq ASC`
@@ -236,6 +242,7 @@ export class LcmStore {
 			seq: Number(row.seq),
 			role: String(row.role),
 			contentText: String(row.content_text ?? ""),
+			contentJson: row.content_json === null || row.content_json === undefined ? null : String(row.content_json),
 			tokenEstimate: Number(row.token_estimate ?? 0),
 			createdAt: Number(row.created_at),
 		}));

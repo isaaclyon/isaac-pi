@@ -57,6 +57,7 @@ export type RalphRunnerConfig = {
 	model: string | null;
 	tools: string[] | null;
 	tmuxSessionPrefix: string;
+	modelContextWindowTokens: number;
 };
 
 export type RalphRunConfig = {
@@ -109,6 +110,15 @@ export type RalphCheckpointInput = {
 export type RalphEventInput = {
 	runId: string;
 	loopId?: number;
+	eventType: string;
+	payloadJson: string;
+	createdAt: number;
+};
+
+export type RalphEventRecord = {
+	eventId: number;
+	runId: string;
+	loopId: number | null;
 	eventType: string;
 	payloadJson: string;
 	createdAt: number;

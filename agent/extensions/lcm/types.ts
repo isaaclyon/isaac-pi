@@ -55,6 +55,7 @@ export type MessageRecord = {
 	seq: number;
 	role: string;
 	contentText: string;
+	contentJson: string | null;
 	tokenEstimate: number;
 	createdAt: number;
 };
@@ -129,7 +130,7 @@ export function toStoredMessage(message: AgentMessage, entryId: string | null): 
 				entryId,
 				role: message.role,
 				contentText: text,
-				contentJson: stringifyJson(content),
+				contentJson: stringifyJson(message),
 				tokenEstimate: estimateTokens(text),
 				createdAt: timestamp,
 			};

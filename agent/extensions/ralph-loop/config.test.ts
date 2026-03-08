@@ -12,6 +12,7 @@ describe("ralph-loop config", () => {
 		delete process.env.PI_RALPH_MAX_ASSISTANT_TURNS;
 		delete process.env.PI_RALPH_MAX_TOOL_CALLS;
 		delete process.env.PI_RALPH_MODEL;
+		delete process.env.PI_RALPH_MODEL_CONTEXT_WINDOW_TOKENS;
 	});
 
 	it("reads project config and applies sane defaults", () => {
@@ -26,7 +27,7 @@ describe("ralph-loop config", () => {
 					task: "Ship feature",
 					maxLoops: 3,
 					budget: { contextThresholdPercent: 40, maxAssistantTurns: 4, maxToolCalls: 20 },
-					runner: { cwd: ".", tmuxSessionPrefix: "ralphy", tools: ["read", "bash"] },
+					runner: { cwd: ".", tmuxSessionPrefix: "ralphy", tools: ["read", "bash"], modelContextWindowTokens: 180000 },
 					success: { mode: "deterministic-tdd", mustFail: ["pytest tests/fail.py"], mustPass: ["pytest tests/pass.py"] },
 				},
 			}),
@@ -39,6 +40,7 @@ describe("ralph-loop config", () => {
 		expect(config.defaultRun.maxLoops).toBe(3);
 		expect(config.defaultRun.budget.contextThresholdPercent).toBe(40);
 		expect(config.defaultRun.runner.tmuxSessionPrefix).toBe("ralphy");
+		expect(config.defaultRun.runner.modelContextWindowTokens).toBe(180000);
 		expect(config.defaultRun.success.mode).toBe("deterministic-tdd");
 
 		rmSync(cwd, { recursive: true, force: true });
@@ -56,6 +58,29 @@ describe("ralph-loop config", () => {
 		expect(config.defaultRun.budget.contextThresholdPercent).toBe(55);
 		expect(config.defaultRun.budget.maxAssistantTurns).toBe(6);
 		expect(config.defaultRun.budget.maxToolCalls).toBe(12);
+
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it("preserves project success config when env overrides only budget fields", () => {
+		const cwd = mkdtempSync(join(tmpdir(), "ralph-config-success-"));
+		mkdirSync(join(cwd, ".pi"), { recursive: true });
+		writeFileSync(
+			join(cwd, ".pi", "ralph-loop.json"),
+			JSON.stringify({
+				defaultRun: {
+					task: "Ship feature",
+					success: { mode: "quantitative", checks: [{ command: "echo good" }] },
+				},
+			}),
+			"utf8",
+		);
+
+		process.env.PI_RALPH_CONTEXT_THRESHOLD_PERCENT = "60";
+
+		const config = resolveRalphConfig(cwd);
+		expect(config.defaultRun.success.mode).toBe("quantitative");
+		expect(config.defaultRun.success).toEqual({ mode: "quantitative", checks: [{ command: "echo good" }] });
 
 		rmSync(cwd, { recursive: true, force: true });
 	});

@@ -23,6 +23,7 @@ const DEFAULT_RUN: RalphRunConfig = {
 		model: null,
 		tools: null,
 		tmuxSessionPrefix: "ralph",
+		modelContextWindowTokens: 200_000,
 	},
 };
 
@@ -171,6 +172,11 @@ function mergeRunConfig(base: RalphRunConfig, override: unknown): RalphRunConfig
 		typeof (runnerCandidate as { tmuxSessionPrefix?: unknown }).tmuxSessionPrefix === "string"
 			? (runnerCandidate as { tmuxSessionPrefix: string }).tmuxSessionPrefix.trim() || base.runner.tmuxSessionPrefix
 			: base.runner.tmuxSessionPrefix;
+	const modelContextWindowTokens =
+		typeof (runnerCandidate as { modelContextWindowTokens?: unknown }).modelContextWindowTokens === "number"
+			&& Number.isFinite((runnerCandidate as { modelContextWindowTokens: number }).modelContextWindowTokens)
+			? Math.max(8_000, Math.floor((runnerCandidate as { modelContextWindowTokens: number }).modelContextWindowTokens))
+			: base.runner.modelContextWindowTokens;
 
 	return {
 		task,
@@ -180,12 +186,13 @@ function mergeRunConfig(base: RalphRunConfig, override: unknown): RalphRunConfig
 			maxAssistantTurns,
 			maxToolCalls,
 		},
-		success: mergeSuccessConfig(candidate.success),
+		success: candidate.success === undefined ? base.success : mergeSuccessConfig(candidate.success),
 		runner: {
 			cwd,
 			model,
 			tools,
 			tmuxSessionPrefix,
+			modelContextWindowTokens,
 		},
 	};
 }
@@ -204,6 +211,10 @@ export function resolveRalphConfig(cwd: string): RalphExtensionConfig {
 		},
 		runner: {
 			model: process.env.PI_RALPH_MODEL,
+			modelContextWindowTokens:
+				typeof process.env.PI_RALPH_MODEL_CONTEXT_WINDOW_TOKENS === "string"
+					? Number(process.env.PI_RALPH_MODEL_CONTEXT_WINDOW_TOKENS)
+					: undefined,
 		},
 	});
 

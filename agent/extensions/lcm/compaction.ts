@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { estimateTokens, type ContextItemRecord, type ContextItemWrite, type MessageRecord } from "./types.js";
-import { LcmStore } from "./store.js";
+import { estimateTokens, type ContextItemRecord, type ContextItemWrite, type MessageRecord } from "./types.ts";
+import { LcmStore } from "./store.ts";
+import type { LcmSummarizer } from "./summarizer.ts";
 
 type CompactionStrategy = "normal" | "aggressive" | "fallback";
 
@@ -10,6 +11,9 @@ export type RunLcmCompactionOptions = {
 	freshTailCount: number;
 	leafChunkTokens: number;
 	incrementalMaxDepth: number;
+	/** Optional LLM-based summarizer. When provided, all leaf and condensed summaries
+	 *  are passed through it to produce semantic distillations instead of structural stubs. */
+	summarizer?: LcmSummarizer;
 };
 
 export type RunLcmCompactionResult = {
@@ -96,19 +100,27 @@ function replaceRangeWithSummary(
 }
 
 function getEvictableItems(items: ContextItemRecord[], freshTailCount: number): ContextItemRecord[] {
-	const messageItems = items.filter((item) => item.itemType === "message" && item.messageId !== null);
-	if (messageItems.length <= freshTailCount) {
+	if (items.length === 0) {
 		return [];
 	}
-	const protectedStartOrdinal = messageItems[messageItems.length - freshTailCount].ordinal;
+	// Prefer anchoring protection to raw message items (normal case).
+	// When raw messages are gone (fully-compacted conversation), fall back to
+	// protecting the last freshTailCount items by ordinal position regardless of type.
+	const messageItems = items.filter((item) => item.itemType === "message" && item.messageId !== null);
+	const anchorItems = messageItems.length > 0 ? messageItems : items;
+	const protectedStartOrdinal =
+		anchorItems.length <= freshTailCount
+			? anchorItems[0].ordinal
+			: anchorItems[anchorItems.length - freshTailCount].ordinal;
 	return items.filter((item) => item.ordinal < protectedStartOrdinal);
 }
 
-function buildLeafSummary(
+async function buildLeafSummary(
 	conversationId: number,
 	messages: MessageRecord[],
 	strategy: CompactionStrategy,
-): SummaryNode {
+	summarizer?: LcmSummarizer,
+): Promise<SummaryNode> {
 	const depth = 0;
 	const createdAt = Date.now();
 	const earliestAt = messages[0]?.createdAt ?? null;
@@ -148,6 +160,10 @@ function buildLeafSummary(
 		].join("\n");
 	}
 
+	if (summarizer) {
+		content = await summarizer(content);
+	}
+
 	const summaryId = makeSummaryId(
 		conversationId,
 		"leaf",
@@ -167,36 +183,46 @@ function buildLeafSummary(
 	};
 }
 
-function buildCondensedSummary(
+async function buildCondensedSummary(
 	conversationId: number,
 	depth: number,
 	strategy: CompactionStrategy,
 	parents: Array<{ summaryId: string; content: string; tokenEstimate: number; createdAt: number }>,
-): SummaryNode {
+	summarizer?: LcmSummarizer,
+): Promise<SummaryNode> {
 	const createdAt = Date.now();
 	const earliestAt = parents[0]?.createdAt ?? null;
 	const latestAt = parents[parents.length - 1]?.createdAt ?? null;
 	const totalTokens = parents.reduce((sum, parent) => sum + parent.tokenEstimate, 0);
+	const parentDepthSummary = Array.from(new Set(parents.map((parent) => parent.depth))).sort((a, b) => a - b).join(",");
 
 	let content = "";
 	if (strategy === "normal") {
 		content = [
 			`[lcm condensed normal depth=${depth}]`,
-			`parents=${parents.length} parent_tokens=${totalTokens}`,
+			`parents=${parents.length} parent_depths=${parentDepthSummary} parent_tokens=${totalTokens}`,
 			...parents.slice(0, 4).map((parent) => `- ${normalizeText(parent.content, 160)}`),
 		].join("\n");
 	} else if (strategy === "aggressive") {
 		content = [
 			`[lcm condensed aggressive depth=${depth}]`,
-			`parents=${parents.length}`,
+			`parents=${parents.length} parent_depths=${parentDepthSummary}`,
 			...parents.slice(0, 3).map((parent) => `- ${normalizeText(parent.content, 70)}`),
 		].join("\n");
 	} else {
+		const parentDigest = createHash("sha1")
+			.update(parents.map((parent) => parent.summaryId).join("|"))
+			.digest("hex")
+			.slice(0, 10);
 		content = [
 			`[lcm condensed fallback depth=${depth}]`,
-			`parents=${parents.length}`,
-			`ids=${parents.map((parent) => parent.summaryId).join(",")}`,
+			`parents=${parents.length} parent_depths=${parentDepthSummary}`,
+			`digest=${parentDigest}`,
 		].join("\n");
+	}
+
+	if (summarizer) {
+		content = await summarizer(content);
 	}
 
 	const summaryId = makeSummaryId(
@@ -218,7 +244,7 @@ function buildCondensedSummary(
 	};
 }
 
-function runLeafPass(store: LcmStore, strategy: CompactionStrategy, options: RunLcmCompactionOptions): boolean {
+async function runLeafPass(store: LcmStore, strategy: CompactionStrategy, options: RunLcmCompactionOptions): Promise<boolean> {
 	const items = store.listContextItems(options.conversationId);
 	const evictable = getEvictableItems(items, options.freshTailCount);
 	if (evictable.length === 0) {
@@ -258,7 +284,11 @@ function runLeafPass(store: LcmStore, strategy: CompactionStrategy, options: Run
 		return false;
 	}
 
-	const summary = buildLeafSummary(options.conversationId, messages, strategy);
+	const sourceTokenSum = messages.reduce((sum, message) => sum + message.tokenEstimate, 0);
+	let summary = await buildLeafSummary(options.conversationId, messages, strategy, options.summarizer);
+	if (!options.summarizer && summary.tokenEstimate >= sourceTokenSum) {
+		summary = await buildLeafSummary(options.conversationId, messages, "fallback");
+	}
 	const startOrdinal = chunk[0].ordinal;
 	const endOrdinal = chunk[chunk.length - 1].ordinal;
 
@@ -321,7 +351,7 @@ function findCondensableRun(items: ContextItemRecord[]): ContextItemRecord[] {
 	return run.length >= 2 ? run : [];
 }
 
-function runCondensedPass(store: LcmStore, strategy: CompactionStrategy, options: RunLcmCompactionOptions): boolean {
+async function runCondensedPass(store: LcmStore, strategy: CompactionStrategy, options: RunLcmCompactionOptions): Promise<boolean> {
 	const items = store.listContextItems(options.conversationId);
 	const evictable = getEvictableItems(items, options.freshTailCount);
 	if (evictable.length < 2) {
@@ -351,7 +381,11 @@ function runCondensedPass(store: LcmStore, strategy: CompactionStrategy, options
 		return false;
 	}
 
-	const summary = buildCondensedSummary(options.conversationId, nextDepth, strategy, parents);
+	const parentTokenSum = parents.reduce((sum, parent) => sum + parent.tokenEstimate, 0);
+	let summary = await buildCondensedSummary(options.conversationId, nextDepth, strategy, parents, options.summarizer);
+	if (!options.summarizer && summary.tokenEstimate >= parentTokenSum) {
+		summary = await buildCondensedSummary(options.conversationId, nextDepth, "fallback", parents);
+	}
 	const startOrdinal = run[0].ordinal;
 	const endOrdinal = run[run.length - 1].ordinal;
 
@@ -382,10 +416,10 @@ function runCondensedPass(store: LcmStore, strategy: CompactionStrategy, options
 	return true;
 }
 
-export function runLcmCompaction(
+export async function runLcmCompaction(
 	store: LcmStore,
 	options: RunLcmCompactionOptions,
-): RunLcmCompactionResult {
+): Promise<RunLcmCompactionResult> {
 	const initialTokens = store.getContextTokenEstimate(options.conversationId);
 	if (initialTokens <= options.targetTokens) {
 		return {
@@ -410,7 +444,7 @@ export function runLcmCompaction(
 			}
 
 			let changed = false;
-			if (runLeafPass(store, strategy, options)) {
+			if (await runLeafPass(store, strategy, options)) {
 				createdLeafCount += 1;
 				changed = true;
 				anyStrategyProgress = true;
@@ -420,7 +454,7 @@ export function runLcmCompaction(
 				break;
 			}
 
-			if (runCondensedPass(store, strategy, options)) {
+			if (await runCondensedPass(store, strategy, options)) {
 				createdCondensedCount += 1;
 				changed = true;
 				anyStrategyProgress = true;
@@ -431,7 +465,7 @@ export function runLcmCompaction(
 			}
 		}
 
-		if (anyStrategyProgress) {
+		if (anyStrategyProgress && strategyUsed === null) {
 			strategyUsed = strategy;
 		}
 		if (store.getContextTokenEstimate(options.conversationId) <= options.targetTokens) {

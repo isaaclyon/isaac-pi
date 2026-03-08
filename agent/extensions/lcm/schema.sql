@@ -17,12 +17,17 @@ CREATE TABLE IF NOT EXISTS messages (
 	content_json TEXT,
 	token_estimate INTEGER NOT NULL,
 	created_at INTEGER NOT NULL,
-	UNIQUE(conversation_id, entry_id),
 	FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_seq
 	ON messages(conversation_id, seq);
+
+-- Partial unique index: only deduplicate rows that have a non-NULL entry_id.
+-- A table-level UNIQUE would treat every NULL as distinct (SQLite behaviour),
+-- causing duplicate inserts for messages that have no session entry id.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_unique_entry
+	ON messages(conversation_id, entry_id) WHERE entry_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS summaries (
 	summary_row_id INTEGER PRIMARY KEY AUTOINCREMENT,

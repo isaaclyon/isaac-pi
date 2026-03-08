@@ -80,57 +80,57 @@ Build a new pi extension that runs a deterministic/restartable “Ralph loop” 
 
 ### Stage 2 — Runner engine (tmux + pi subprocess) [GATE]
 
-- [ ] Implement child-run launcher with tmux isolation:
-  - [ ] unique tmux session/window naming
-  - [ ] child `pi` invocation in JSON/print mode as appropriate
-  - [ ] lifecycle controls (start, monitor, cancel, cleanup)
-- [ ] Build loop supervisor state machine:
-  - [ ] initialize run from config + initial task
-  - [ ] execute loop N
-  - [ ] detect stop trigger (context threshold or caps)
-  - [ ] checkpoint + restart loop N+1
-- [ ] Persist per-loop telemetry/events to SQLite.
+- [x] Implement child-run launcher with tmux isolation:
+  - [x] unique tmux session/window naming
+  - [x] child `pi` invocation in JSON/print mode as appropriate
+  - [x] lifecycle controls (start, monitor, cancel, cleanup)
+- [x] Build loop supervisor state machine:
+  - [x] initialize run from config + initial task
+  - [x] execute loop N
+  - [x] detect stop trigger (context threshold or caps)
+  - [x] checkpoint + restart loop N+1
+- [x] Persist per-loop telemetry/events to SQLite.
 
 ### Stage 3 — Success evaluator + checkpoint handoff [GATE]
 
-- [ ] Implement deterministic TDD evaluator:
-  - [ ] precondition: `mustFail[]` commands fail before implementation loop(s)
-  - [ ] success: `mustPass[]` commands pass
-  - [ ] enforce same command set identity across run
-- [ ] Implement quantitative evaluator:
-  - [ ] command exit-code checks
-  - [ ] optional stdout/stderr regex assertions
-- [ ] Implement optional qualitative evaluator mode (explicitly marked non-deterministic).
-- [ ] Implement handoff prompt builder using last loop checkpoint + unchanged success conditions.
+- [x] Implement deterministic TDD evaluator:
+  - [x] precondition: `mustFail[]` commands fail before implementation loop(s)
+  - [x] success: `mustPass[]` commands pass
+  - [x] enforce same command set identity across run
+- [x] Implement quantitative evaluator:
+  - [x] command exit-code checks
+  - [x] optional stdout/stderr regex assertions
+- [x] Implement optional qualitative evaluator mode (explicitly marked non-deterministic).
+- [x] Implement handoff prompt builder using last loop checkpoint + unchanged success conditions.
 
 ### Stage 4 — Operator UX (commands + status widget/footer) [GATE]
 
-- [ ] Register commands:
-  - [ ] `/ralph-start <config-or-preset>`
-  - [ ] `/ralph-stop [runId]`
-  - [ ] `/ralph-status [runId]`
-  - [ ] `/ralph-runs`
-- [ ] Add status rendering:
-  - [ ] current run/loop number
-  - [ ] active trigger thresholds
-  - [ ] last evaluator result
-  - [ ] tmux child health
-- [ ] Ensure non-UI mode degrades cleanly (no crash).
+- [x] Register commands:
+  - [x] `/ralph-start <config-or-preset>`
+  - [x] `/ralph-stop [runId]`
+  - [x] `/ralph-status [runId]`
+  - [x] `/ralph-runs`
+- [x] Add status rendering:
+  - [x] current run/loop number
+  - [x] active trigger thresholds
+  - [x] last evaluator result
+  - [x] tmux child health
+- [x] Ensure non-UI mode degrades cleanly (no crash).
 
 ### Stage 5 — Validation + docs + handoff [FINAL GATE]
 
-- [ ] Add tests for:
-  - [ ] loop stop conditions
-  - [ ] evaluator correctness
-  - [ ] persistence/resume behavior
-  - [ ] command argument validation
-- [ ] Run end-to-end scenario with sample repo task.
-- [ ] Write usage docs under `agent/extensions/ralph-loop/README.md`.
-- [ ] Provide config presets:
-  - [ ] `deterministic-tdd`
-  - [ ] `quantitative-only`
-  - [ ] `hybrid`
-- [ ] Prepare final review summary and request your sign-off before any branch-finalization steps.
+- [x] Add tests for:
+  - [x] loop stop conditions
+  - [x] evaluator correctness
+  - [x] persistence/resume behavior
+  - [x] command argument validation
+- [x] Run end-to-end scenario with sample repo task.
+- [x] Write usage docs under `agent/extensions/ralph-loop/README.md`.
+- [x] Provide config presets:
+  - [x] `deterministic-tdd`
+  - [x] `quantitative-only`
+  - [x] `hybrid`
+- [x] Prepare final review summary and request your sign-off before any branch-finalization steps.
 
 ## Implementation notes (hard cuts)
 
