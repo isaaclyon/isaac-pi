@@ -13,6 +13,8 @@ import {
 	resolveProviderApiKey,
 	scoreRecall,
 } from "./stage4-live-eval-core.ts";
+import { lcmToolSchemas } from "./retrieval-tools.ts";
+import { runRetrievalAwareEval } from "./stage4-live-eval-retrieval-core.ts";
 import { LcmStore } from "./store.ts";
 import { toStoredMessage } from "./types.ts";
 
@@ -180,6 +182,100 @@ function assembleTranscript(messages) {
 		.join("\n");
 }
 
+function collectSummaryIds(messages) {
+	const ids = new Set();
+	for (const message of messages) {
+		const text = toPlainText(message.content);
+		for (const match of text.matchAll(/\[LCM Summary\]\s+id=([^\s]+)\s+depth=\d+/g)) {
+			if (match[1]) {
+				ids.add(match[1]);
+			}
+		}
+	}
+	return [...ids];
+}
+
+function createRetrievalToolDescriptors(store, conversationId) {
+	return [
+		{
+			name: "lcm_describe",
+			description: "Describe an LCM summary node by id, including depth, kind, and provenance pointers.",
+			parameters: lcmToolSchemas.lcm_describe,
+			execute: async (args) => {
+				const id = String(args?.id ?? "").trim();
+				if (!id) {
+					return { content: [{ type: "text", text: "lcm_describe requires id." }], details: { reason: "missing-id" }, isError: true };
+				}
+				const summary = store.getSummaryWithProvenance(conversationId, id);
+				if (!summary) {
+					return { content: [{ type: "text", text: `Unknown summary id: ${id}` }], details: { reason: "unknown-summary", id }, isError: true };
+				}
+				const sourceMessages = store.expandSummaryMessages(conversationId, id);
+				return {
+					content: [{
+						type: "text",
+						text:
+							`summary_id=${summary.summaryId}\n` +
+							`kind=${summary.kind} depth=${summary.depth}\n` +
+							`parents=${summary.parentSummaryIds.length} direct_messages=${summary.directMessageIds.length} source_messages=${sourceMessages.length}`,
+					}],
+					details: { summaryId: summary.summaryId, depth: summary.depth, kind: summary.kind, sourceMessageCount: sourceMessages.length },
+				};
+			},
+		},
+		{
+			name: "lcm_grep",
+			description: "Search persisted LCM message history for a substring, optionally scoped to a summary node.",
+			parameters: lcmToolSchemas.lcm_grep,
+			execute: async (args) => {
+				const pattern = String(args?.pattern ?? "").trim();
+				if (!pattern) {
+					return { content: [{ type: "text", text: "lcm_grep requires pattern." }], details: { reason: "missing-pattern" }, isError: true };
+				}
+				const summaryId = typeof args?.summary_id === "string" ? args.summary_id.trim() : undefined;
+				let scopedMessageIds;
+				if (summaryId) {
+					const summary = store.getSummaryWithProvenance(conversationId, summaryId);
+					if (!summary) {
+						return { content: [{ type: "text", text: `Unknown summary id: ${summaryId}` }], details: { reason: "unknown-summary", summaryId }, isError: true };
+					}
+					scopedMessageIds = store.expandSummaryMessages(conversationId, summaryId).map((m) => m.messageId);
+				}
+				const matches = store.searchMessages(conversationId, pattern, scopedMessageIds);
+				const lines = matches.slice(0, 25).map((m) => `#${m.seq} ${m.role} ${m.contentText.replace(/\s+/g, " ").trim()}`);
+				return {
+					content: [{
+						type: "text",
+						text: lines.length > 0 ? lines.join("\n") : `No matches for pattern '${pattern}'.`,
+					}],
+					details: { pattern, summaryId: summaryId ?? null, matchCount: matches.length },
+				};
+			},
+		},
+		{
+			name: "lcm_expand",
+			description: "Expand an LCM summary id into the ordered source messages that summary represents.",
+			parameters: lcmToolSchemas.lcm_expand,
+			execute: async (args) => {
+				const summaryId = String(args?.summary_id ?? "").trim();
+				if (!summaryId) {
+					return { content: [{ type: "text", text: "lcm_expand requires summary_id." }], details: { reason: "missing-summary-id" }, isError: true };
+				}
+				const summary = store.getSummaryWithProvenance(conversationId, summaryId);
+				if (!summary) {
+					return { content: [{ type: "text", text: `Unknown summary id: ${summaryId}` }], details: { reason: "unknown-summary", summaryId }, isError: true };
+				}
+				const messages = store.expandSummaryMessages(conversationId, summaryId);
+				const lines = messages.slice(0, 25).map((m) => `#${m.seq} ${m.role} ${m.contentText.replace(/\s+/g, " ").trim()}`);
+				return {
+					content: [{ type: "text", text: lines.join("\n") || "(no messages)" }],
+					details: { summaryId, messageCount: messages.length },
+				};
+			},
+		},
+	];
+}
+
 async function run() {
 	const cfg = resolveLiveEvalConfig(process.env);
 	assertProviderCredentials(cfg.provider, process.env);
@@ -241,33 +337,92 @@ async function run() {
 		const assembled = assembleContext(store, conv.conversationId);
 		const transcript = assembleTranscript(assembled);
 
-		recallModelCalls += 1;
 		const recallOptions =
 			cfg.provider === "openai-codex"
 				? (providerApiKey ? { apiKey: providerApiKey, reasoning: cfg.reasoning } : { reasoning: cfg.reasoning })
 				: (providerApiKey
 					? { temperature: 0, apiKey: providerApiKey, reasoning: cfg.reasoning }
 					: { temperature: 0, reasoning: cfg.reasoning });
-		const recallReply = await piAi.completeSimple(
-			model,
-			{
+		const summaryIds = collectSummaryIds(assembled);
+		const recallPrompt =
+			`Candidate IDs: ${facts.join(", ")}\n` +
+			`Summary IDs in context: ${summaryIds.join(", ") || "(none)"}\n\n` +
+			"Transcript:\n" +
+			transcript;
+
+		let recallAnswer = "";
+		let recallReplyMeta = { stopReason: "", errorMessage: undefined };
+		let retrieval = {
+			mode: cfg.retrievalMode,
+			used: false,
+			toolCallCount: 0,
+			toolErrorCount: 0,
+			toolNames: [],
+			steps: 0,
+			maxSteps: cfg.retrievalMaxSteps,
+			maxToolCalls: cfg.retrievalMaxToolCalls,
+		};
+
+		if (cfg.retrievalMode === "retrieval-aware") {
+			const remainingModelBudget = cfg.maxModelCalls - summaryModelCalls;
+			if (remainingModelBudget < 1) {
+				throw new Error(
+					`No model-call budget left for recall (${remainingModelBudget}). ` +
+					`Increase PI_LCM_LIVE_EVAL_MAX_MODEL_CALLS or reduce compaction pressure.`,
+				);
+			}
+			const maxSteps = Math.min(cfg.retrievalMaxSteps, remainingModelBudget);
+			const retrievalResult = await runRetrievalAwareEval({
+				candidateIds: facts,
 				systemPrompt:
-					"You are a strict evaluator. Identify which fact IDs are explicitly present in the transcript. " +
-					"Return only a comma-separated list of IDs found, or NONE.",
-				messages: [
-					{
-						role: "user",
-						content:
-							`Candidate IDs: ${facts.join(", ")}\n\n` +
-							"Transcript:\n" +
-							transcript,
-						timestamp: Date.now(),
-					},
-				],
-			},
-			recallOptions,
-		);
-		const recallAnswer = extractAssistantText(recallReply);
+					"You are a strict evaluator. Determine which candidate IDs are explicitly present in evidence. " +
+					"In retrieval-aware mode, begin by using retrieval tools (lcm_grep/lcm_describe/lcm_expand) to verify evidence before finalizing. " +
+					"Final answer must be only a comma-separated list of IDs from the candidate set, or NONE.",
+				userPrompt: recallPrompt,
+				maxSteps,
+				maxToolCalls: cfg.retrievalMaxToolCalls,
+				tools: createRetrievalToolDescriptors(store, conv.conversationId),
+				complete: async (context) =>
+					piAi.completeSimple(model, context, recallOptions),
+			});
+			recallModelCalls = retrievalResult.modelCalls;
+			recallAnswer = retrievalResult.finalAnswer;
+			recallReplyMeta = { stopReason: "retrieval-loop", errorMessage: undefined };
+			retrieval = {
+				mode: cfg.retrievalMode,
+				used: retrievalResult.used,
+				toolCallCount: retrievalResult.toolCallCount,
+				toolErrorCount: retrievalResult.toolErrorCount,
+				toolNames: retrievalResult.toolNames,
+				steps: retrievalResult.steps,
+				maxSteps,
+				maxToolCalls: cfg.retrievalMaxToolCalls,
+			};
+		} else {
+			recallModelCalls += 1;
+			const recallReply = await piAi.completeSimple(
+				model,
+				{
+					systemPrompt:
+						"You are a strict evaluator. Identify which fact IDs are explicitly present in the transcript. " +
+						"Return only a comma-separated list of IDs found, or NONE.",
+					messages: [
+						{
+							role: "user",
+							content: recallPrompt,
+							timestamp: Date.now(),
+						},
+					],
+				},
+				recallOptions,
+			);
+			recallAnswer = extractAssistantText(recallReply);
+			recallReplyMeta = {
+				stopReason: recallReply.stopReason,
+				errorMessage: recallReply.errorMessage,
+			};
+		}
+
 		const recall = scoreRecall(facts, recallAnswer);
 
 		const totalModelCalls = summaryModelCalls + recallModelCalls;
@@ -287,14 +442,18 @@ async function run() {
 				freshTailCount: cfg.freshTailCount,
 				leafChunkTokens: cfg.leafChunkTokens,
 				incrementalMaxDepth: cfg.incrementalMaxDepth,
+				retrievalMode: cfg.retrievalMode,
+				retrievalMaxSteps: cfg.retrievalMaxSteps,
+				retrievalMaxToolCalls: cfg.retrievalMaxToolCalls,
 			},
 			expectedFacts: facts,
 			modelAnswer: recallAnswer,
 			recallReply: {
-				stopReason: recallReply.stopReason,
-				errorMessage: recallReply.errorMessage,
+				stopReason: recallReplyMeta.stopReason,
+				errorMessage: recallReplyMeta.errorMessage,
 			},
 			recall,
+			retrieval,
 			modelCalls: {
 				summary: summaryModelCalls,
 				recall: recallModelCalls,
@@ -320,6 +479,8 @@ async function run() {
 		console.log(`Found                : ${recall.found.join(", ") || "(none)"}`);
 		console.log(`Missing              : ${recall.missing.join(", ") || "(none)"}`);
 		console.log(`Model calls          : ${totalModelCalls} (summary=${summaryModelCalls}, recall=${recallModelCalls})`);
+		console.log(`Retrieval mode       : ${cfg.retrievalMode}`);
+		console.log(`Retrieval telemetry  : used=${retrieval.used} toolCalls=${retrieval.toolCallCount} errors=${retrieval.toolErrorCount} steps=${retrieval.steps}`);
 		console.log(`Compaction           : ${compaction.initialTokens} -> ${compaction.finalTokens} (leaf=${compaction.createdLeafCount}, condensed=${compaction.createdCondensedCount}, strategy=${compaction.strategyUsed ?? "n/a"})`);
 		console.log(`Gate                 : ${gate.ok ? "PASS" : "FAIL"}`);
 		if (!gate.ok) {

@@ -140,6 +140,8 @@ async function testSummaryInjection(store) {
 		);
 	});
 	assert.ok(summaryMessages.length > 0, "expected at least one summary injection message");
+	const firstSummaryText = summaryMessages[0].content.find((block) => block.type === "text")?.text ?? "";
+	assert.match(firstSummaryText, /\[LCM Summary\] id=lcm_\w+_\d+_[a-f0-9]+\b/, "summary injection should include a machine-readable summary id");
 }
 
 // ---------------------------------------------------------------------------

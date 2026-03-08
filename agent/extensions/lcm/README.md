@@ -10,6 +10,7 @@ All stages implemented:
 - **Stage 2** — Leaf + condensed DAG compaction passes, escalation strategy (`normal → aggressive → deterministic fallback`), turn-end threshold trigger
 - **Stage 3** — Context assembly (`context` event override), fail-open fallback, tool-call round-trip fidelity
 - **Stage 4** — Evaluation harness, feasibility report → **GO recommendation**
+- **Stage 5** — Lossless retrieval protocol (`lcm_describe`, `lcm_grep`, `lcm_expand`) + summary-id annotations in assembled context
 
 ## Enable
 
@@ -40,6 +41,9 @@ node --experimental-strip-types agent/extensions/lcm/stage2-smoke-test.mjs  # St
 node --experimental-strip-types agent/extensions/lcm/stage3-smoke-test.mjs  # Stage 3: context assembly
 node --experimental-strip-types agent/extensions/lcm/stage4-eval.mjs        # Stage 4: deterministic evaluation
 node --experimental-strip-types agent/extensions/lcm/stage4-live-eval.mjs   # Stage 4: live LLM recall gate
+node --experimental-strip-types agent/extensions/lcm/stage4-live-eval-retrieval-core-test.mjs # Stage 4: retrieval-aware loop core
+node --experimental-strip-types agent/extensions/lcm/stage4-live-eval-sweep.mjs # Stage 4: repeated live sweep (multi-run)
+node --experimental-strip-types agent/extensions/lcm/lossless-retrieval-tools-test.mjs # Stage 5: retrieval tooling
 ```
 
 ### Live eval with local Codex OAuth (no API key env required)
@@ -55,8 +59,50 @@ The live eval script reads OAuth token from `~/.codex/auth.json` (`tokens.access
 Optional overrides:
 
 - `PI_LCM_LIVE_EVAL_REASONING` — one of `minimal|low|medium|high|xhigh` (default: `low`)
+- `PI_LCM_LIVE_EVAL_MODE` — `summary-only|retrieval-aware` (default: `summary-only`)
+- `PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_STEPS` — max recall-model turns when retrieval-aware (default: `3`)
+- `PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_TOOL_CALLS` — max retrieval tool calls per run (default: `6`)
 - `PI_LCM_LIVE_EVAL_CODEX_AUTH_PATH` — custom path to Codex auth file
 - `PI_LCM_LIVE_EVAL_API_KEY` — explicit token override
+
+### Multi-run sweep (5× low + 5× medium)
+
+```bash
+PI_LCM_LIVE_EVAL_SWEEP_RUNS=5 \
+PI_LCM_LIVE_EVAL_SWEEP_EFFORTS=low,medium \
+node --experimental-strip-types agent/extensions/lcm/stage4-live-eval-sweep.mjs
+```
+
+Sweep output:
+
+- Console comparison table (`mean/min/max/pass/fail` per effort)
+- JSON summary file at `agent/extensions/lcm/stage4-live-eval-sweep-summary.json` by default
+
+Sweep-specific env vars:
+
+- `PI_LCM_LIVE_EVAL_SWEEP_RUNS` — runs per effort (default: `5`)
+- `PI_LCM_LIVE_EVAL_SWEEP_EFFORTS` — comma-separated efforts (default: `low,medium`)
+- `PI_LCM_LIVE_EVAL_SWEEP_OUTPUT_PATH` — explicit summary JSON path
+
+## Lossless retrieval tools
+
+When LCM injects summaries into context, each summary is tagged inline:
+
+```text
+[LCM Summary] id=lcm_leaf_0_abc123 depth=0
+...summary content...
+```
+
+Tools:
+
+- `lcm_describe(id)`
+  - Returns summary metadata + provenance pointers (parent summary ids, direct message ids, source message count).
+- `lcm_grep(pattern, summary_id?)`
+  - Searches persisted immutable message history.
+  - Optional `summary_id` scopes search to messages represented by that summary.
+- `lcm_expand(summary_id)`
+  - Returns ordered source messages for the summary.
+  - Restricted to **sub-agent sessions** (root agent gets a guidance error).
 
 ## Key numbers (from `stage4-eval.mjs`)
 

@@ -22,6 +22,9 @@ function testResolveDefaults() {
 	assert.equal(cfg.leafChunkTokens, 300);
 	assert.equal(cfg.incrementalMaxDepth, 2);
 	assert.equal(cfg.targetTokens, 200);
+	assert.equal(cfg.retrievalMode, "summary-only");
+	assert.equal(cfg.retrievalMaxSteps, 3);
+	assert.equal(cfg.retrievalMaxToolCalls, 6);
 }
 
 function testResolveOverrides() {
@@ -35,6 +38,9 @@ function testResolveOverrides() {
 		PI_LCM_LIVE_EVAL_LEAF_CHUNK_TOKENS: "500",
 		PI_LCM_LIVE_EVAL_INCREMENTAL_MAX_DEPTH: "3",
 		PI_LCM_LIVE_EVAL_TARGET_TOKENS: "350",
+		PI_LCM_LIVE_EVAL_MODE: "retrieval-aware",
+		PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_STEPS: "4",
+		PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_TOOL_CALLS: "9",
 	});
 	assert.equal(cfg.provider, "openrouter");
 	assert.equal(cfg.modelId, "openai/gpt-4o-mini");
@@ -45,6 +51,9 @@ function testResolveOverrides() {
 	assert.equal(cfg.leafChunkTokens, 500);
 	assert.equal(cfg.incrementalMaxDepth, 3);
 	assert.equal(cfg.targetTokens, 350);
+	assert.equal(cfg.retrievalMode, "retrieval-aware");
+	assert.equal(cfg.retrievalMaxSteps, 4);
+	assert.equal(cfg.retrievalMaxToolCalls, 9);
 }
 
 function testInvalidThresholdsThrow() {
@@ -52,6 +61,9 @@ function testInvalidThresholdsThrow() {
 	assert.throws(() => resolveLiveEvalConfig({ PI_LCM_LIVE_EVAL_MAX_MODEL_CALLS: "0" }), /PI_LCM_LIVE_EVAL_MAX_MODEL_CALLS/);
 	assert.throws(() => resolveLiveEvalConfig({ PI_LCM_LIVE_EVAL_TARGET_TOKENS: "0" }), /PI_LCM_LIVE_EVAL_TARGET_TOKENS/);
 	assert.throws(() => resolveLiveEvalConfig({ PI_LCM_LIVE_EVAL_REASONING: "turbo" }), /PI_LCM_LIVE_EVAL_REASONING/);
+	assert.throws(() => resolveLiveEvalConfig({ PI_LCM_LIVE_EVAL_MODE: "legacy" }), /PI_LCM_LIVE_EVAL_MODE/);
+	assert.throws(() => resolveLiveEvalConfig({ PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_STEPS: "0" }), /PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_STEPS/);
+	assert.throws(() => resolveLiveEvalConfig({ PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_TOOL_CALLS: "0" }), /PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_TOOL_CALLS/);
 }
 
 function testScoreRecallCaseInsensitive() {

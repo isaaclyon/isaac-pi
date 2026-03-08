@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.57.0",
+  "lastChangelogVersion": "0.57.1",
   "enabledModels": [
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.3-codex-spark",
@@ -10,7 +10,7 @@
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.3-codex",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "medium",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,

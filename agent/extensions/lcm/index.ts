@@ -5,6 +5,7 @@ import { runLcmCompaction } from "./compaction.ts";
 import { resolveLcmConfig, type LcmConfig } from "./config.ts";
 import { closeAllLcmDbs, getLcmDb } from "./db.ts";
 import { createLlmSummarizer } from "./summarizer.ts";
+import { registerLcmRetrievalTools } from "./retrieval-tools.ts";
 import { LcmStore } from "./store.ts";
 import { toStoredFromEntry, toStoredMessage, type SessionMessageEntryLike } from "./types.ts";
 
@@ -115,6 +116,12 @@ export default function lcmExtension(pi: ExtensionAPI): void {
 		config: resolveLcmConfig(process.cwd()),
 		compactionInFlight: false,
 	};
+
+	registerLcmRetrievalTools(pi, () => ({
+		enabled: state.enabled,
+		store: state.store,
+		conversationId: state.conversationId,
+	}));
 
 	pi.on("session_start", (event, ctx) => {
 		void event;

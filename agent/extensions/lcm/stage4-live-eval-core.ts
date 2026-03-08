@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type LiveEvalReasoning = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type LiveEvalMode = "summary-only" | "retrieval-aware";
 
 export type LiveEvalConfig = {
 	provider: string;
@@ -13,6 +14,9 @@ export type LiveEvalConfig = {
 	freshTailCount: number;
 	leafChunkTokens: number;
 	incrementalMaxDepth: number;
+	retrievalMode: LiveEvalMode;
+	retrievalMaxSteps: number;
+	retrievalMaxToolCalls: number;
 };
 
 export type RecallScore = {
@@ -70,6 +74,22 @@ function parseReasoningEnv(
 	throw new Error(`${key} invalid: ${raw}. Expected one of: minimal, low, medium, high, xhigh.`);
 }
 
+function parseModeEnv(
+	env: Record<string, string | undefined>,
+	key: string,
+	fallback: LiveEvalMode,
+): LiveEvalMode {
+	const raw = env[key];
+	if (!raw || raw.trim() === "") {
+		return fallback;
+	}
+	const value = raw.trim().toLowerCase();
+	if (value === "summary-only" || value === "retrieval-aware") {
+		return value;
+	}
+	throw new Error(`${key} invalid: ${raw}. Expected one of: summary-only, retrieval-aware.`);
+}
+
 export function resolveLiveEvalConfig(env: Record<string, string | undefined>): LiveEvalConfig {
 	return {
 		provider: env.PI_LCM_LIVE_EVAL_PROVIDER?.trim() || "openai-codex",
@@ -81,6 +101,9 @@ export function resolveLiveEvalConfig(env: Record<string, string | undefined>): 
 		freshTailCount: parseNumberEnv(env, "PI_LCM_LIVE_EVAL_FRESH_TAIL_COUNT", 2, (v) => Number.isInteger(v) && v >= 1, "an integer >= 1"),
 		leafChunkTokens: parseNumberEnv(env, "PI_LCM_LIVE_EVAL_LEAF_CHUNK_TOKENS", 300, (v) => Number.isInteger(v) && v >= 1, "an integer >= 1"),
 		incrementalMaxDepth: parseNumberEnv(env, "PI_LCM_LIVE_EVAL_INCREMENTAL_MAX_DEPTH", 2, (v) => Number.isInteger(v) && v >= 0, "an integer >= 0"),
+		retrievalMode: parseModeEnv(env, "PI_LCM_LIVE_EVAL_MODE", "summary-only"),
+		retrievalMaxSteps: parseNumberEnv(env, "PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_STEPS", 3, (v) => Number.isInteger(v) && v >= 1, "an integer >= 1"),
+		retrievalMaxToolCalls: parseNumberEnv(env, "PI_LCM_LIVE_EVAL_RETRIEVAL_MAX_TOOL_CALLS", 6, (v) => Number.isInteger(v) && v >= 1, "an integer >= 1"),
 	};
 }
 

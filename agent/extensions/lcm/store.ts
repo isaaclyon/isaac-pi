@@ -21,6 +21,24 @@ type SummaryInsertInput = {
 	createdAt: number;
 };
 
+export type SummaryWithProvenance = {
+	summaryId: string;
+	conversationId: number;
+	depth: number;
+	kind: SummaryKind;
+	content: string;
+	tokenEstimate: number;
+	earliestAt: number | null;
+	latestAt: number | null;
+	createdAt: number;
+	parentSummaryIds: string[];
+	directMessageIds: number[];
+};
+
+function escapeLike(value: string): string {
+	return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
 export class LcmStore {
 	private db: DatabaseSync;
 
@@ -271,6 +289,155 @@ export class LcmStore {
 			});
 		}
 		return summaryIds.map((id) => map.get(id)).filter((value): value is { summaryId: string; depth: number; content: string; tokenEstimate: number; createdAt: number } => Boolean(value));
+	}
+
+	private listSummaryParentIds(conversationId: number, summaryId: string): string[] {
+		const rows = this.db
+			.prepare(
+				`SELECT sp.parent_summary_id
+				 FROM summary_parents sp
+				 INNER JOIN summaries s ON s.summary_id = sp.summary_id
+				 INNER JOIN summaries p ON p.summary_id = sp.parent_summary_id
+				 WHERE s.conversation_id = ? AND p.conversation_id = ? AND sp.summary_id = ?
+				 ORDER BY sp.ordinal ASC`
+			)
+			.all(conversationId, conversationId, summaryId);
+		return rows.map((row) => String(row.parent_summary_id));
+	}
+
+	private listSummaryMessageIds(conversationId: number, summaryId: string): number[] {
+		const rows = this.db
+			.prepare(
+				`SELECT sm.message_id
+				 FROM summary_messages sm
+				 INNER JOIN summaries s ON s.summary_id = sm.summary_id
+				 INNER JOIN messages m ON m.message_id = sm.message_id
+				 WHERE s.conversation_id = ? AND m.conversation_id = ? AND sm.summary_id = ?
+				 ORDER BY sm.ordinal ASC`
+			)
+			.all(conversationId, conversationId, summaryId);
+		return rows.map((row) => Number(row.message_id));
+	}
+
+	getSummaryWithProvenance(conversationId: number, summaryId: string): SummaryWithProvenance | null {
+		const row = this.db
+			.prepare(
+				`SELECT
+					summary_id,
+					conversation_id,
+					depth,
+					kind,
+					content,
+					token_estimate,
+					earliest_at,
+					latest_at,
+					created_at
+				 FROM summaries
+				 WHERE conversation_id = ? AND summary_id = ?`
+			)
+			.get(conversationId, summaryId) as
+			| {
+					summary_id: string;
+					conversation_id: number;
+					depth: number;
+					kind: SummaryKind;
+					content: string;
+					token_estimate: number;
+					earliest_at: number | null;
+					latest_at: number | null;
+					created_at: number;
+			  }
+			| undefined;
+
+		if (!row) {
+			return null;
+		}
+
+		return {
+			summaryId: String(row.summary_id),
+			conversationId: Number(row.conversation_id),
+			depth: Number(row.depth),
+			kind: row.kind,
+			content: String(row.content ?? ""),
+			tokenEstimate: Number(row.token_estimate ?? 0),
+			earliestAt: row.earliest_at === null ? null : Number(row.earliest_at),
+			latestAt: row.latest_at === null ? null : Number(row.latest_at),
+			createdAt: Number(row.created_at),
+			parentSummaryIds: this.listSummaryParentIds(conversationId, summaryId),
+			directMessageIds: this.listSummaryMessageIds(conversationId, summaryId),
+		};
+	}
+
+	expandSummaryMessages(conversationId: number, summaryId: string): MessageRecord[] {
+		const root = this.getSummaryWithProvenance(conversationId, summaryId);
+		if (!root) {
+			return [];
+		}
+
+		const visited = new Set<string>();
+		const orderedMessageIds: number[] = [];
+		const seenMessageIds = new Set<number>();
+
+		const walk = (currentSummaryId: string): void => {
+			if (visited.has(currentSummaryId)) {
+				return;
+			}
+			visited.add(currentSummaryId);
+
+			const parentIds = this.listSummaryParentIds(conversationId, currentSummaryId);
+			for (const parentId of parentIds) {
+				walk(parentId);
+			}
+
+			const messageIds = this.listSummaryMessageIds(conversationId, currentSummaryId);
+			for (const messageId of messageIds) {
+				if (seenMessageIds.has(messageId)) {
+					continue;
+				}
+				seenMessageIds.add(messageId);
+				orderedMessageIds.push(messageId);
+			}
+		};
+
+		walk(summaryId);
+		return this.getMessagesByIds(orderedMessageIds);
+	}
+
+	searchMessages(conversationId: number, pattern: string, messageIds?: number[]): MessageRecord[] {
+		const normalizedPattern = pattern.trim();
+		if (!normalizedPattern) {
+			return [];
+		}
+
+		const args: Array<number | string> = [conversationId, `%${escapeLike(normalizedPattern)}%`];
+		let inClause = "";
+		if (Array.isArray(messageIds)) {
+			if (messageIds.length === 0) {
+				return [];
+			}
+			inClause = ` AND message_id IN (${messageIds.map(() => "?").join(", ")})`;
+			args.push(...messageIds);
+		}
+
+		const rows = this.db
+			.prepare(
+				`SELECT message_id, seq, role, content_text, content_json, token_estimate, created_at
+				 FROM messages
+				 WHERE conversation_id = ?
+				 AND content_text LIKE ? ESCAPE '\\'${inClause}
+				 ORDER BY seq ASC`
+			)
+			.all(...args);
+
+		return rows.map((row) => ({
+			messageId: Number(row.message_id),
+			seq: Number(row.seq),
+			role: String(row.role),
+			contentText: String(row.content_text ?? ""),
+			contentJson: row.content_json === null || row.content_json === undefined ? null : String(row.content_json),
+			tokenEstimate: Number(row.token_estimate ?? 0),
+			createdAt: Number(row.created_at),
+		}));
 	}
 
 	upsertSummary(input: SummaryInsertInput): void {

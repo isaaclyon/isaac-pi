@@ -2,7 +2,9 @@ import type { AgentMessage } from "@mariozechner/pi-coding-agent";
 import type { LcmStore } from "./store.ts";
 import type { MessageRecord } from "./types.ts";
 
-const LCM_SUMMARY_PREFIX = "[LCM Summary]\n";
+function formatSummaryPrefix(summaryId: string, depth: number): string {
+	return `[LCM Summary] id=${summaryId} depth=${depth}\n`;
+}
 
 /**
  * Reconstruct an AgentMessage from a stored MessageRecord.
@@ -83,7 +85,7 @@ export function assembleContext(store: LcmStore, conversationId: number): AgentM
 			// understands it's compressed context, not a live turn.
 			assembled.push({
 				role: "user",
-				content: [{ type: "text" as const, text: LCM_SUMMARY_PREFIX + summary.content }],
+				content: [{ type: "text" as const, text: `${formatSummaryPrefix(summary.summaryId, summary.depth)}${summary.content}` }],
 				timestamp: item.createdAt,
 			} as unknown as AgentMessage);
 		} else if (item.itemType === "message" && item.messageId !== null) {
