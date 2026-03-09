@@ -8,9 +8,9 @@
     "anthropic/claude-haiku-4-5",
     "anthropic/claude-sonnet-4-6"
   ],
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.3-codex",
-  "defaultThinkingLevel": "medium",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-opus-4-6",
+  "defaultThinkingLevel": "high",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
