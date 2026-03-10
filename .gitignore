@@ -9,6 +9,7 @@ logs/
 agent/auth.json
 agent/mcp-cache.json
 agent/sessions/
+cache/
 
 # Local extension databases
 agent/extensions/**/tmp/

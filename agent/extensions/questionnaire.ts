@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Editor, type EditorTheme, Key, Text, matchesKey, parseKey, truncateToWidth } from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme, Key, Text, matchesKey, parseKey, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 interface QuestionOption {
@@ -63,7 +63,7 @@ const QuestionOptionSchema = Type.Object({
 	value: Type.String({ description: "The value returned when selected" }),
 	label: Type.String({ description: "Display label for the option" }),
 	description: Type.Optional(Type.String({ description: "Optional description shown below label" })),
-	recommended: Type.Optional(Type.Boolean({ description: "Marks this option as the recommended choice" })),
+	recommended: Type.Optional(Type.Boolean({ description: "Marks this option as the recommended choice. Exactly one option per question must be recommended." })),
 });
 
 const QuestionSchema = Type.Object({
@@ -121,39 +121,48 @@ export default function questionnaire(pi: ExtensionAPI) {
 				return errorResult("Error: No questions provided");
 			}
 
-			const questions: Question[] = params.questions.map((q, i) => {
-				const normalizedOptions = q.options.map((option) => ({ ...option, recommended: option.recommended === true }));
-				const firstRecommendedIndex = normalizedOptions.findIndex((option) => option.recommended === true);
-				if (normalizedOptions.length > 0) {
-					const enforcedRecommendedIndex = firstRecommendedIndex >= 0 ? firstRecommendedIndex : 0;
-					for (let optionIndex = 0; optionIndex < normalizedOptions.length; optionIndex++) {
-						normalizedOptions[optionIndex] = {
-							...normalizedOptions[optionIndex],
-							recommended: optionIndex === enforcedRecommendedIndex,
-						};
-					}
-				}
-
-				return {
-					...q,
-					options: normalizedOptions,
-					label: q.label || `Q${i + 1}`,
-					allowOther: q.allowOther !== false,
-					multiSelect: q.multiSelect === true,
-				};
-			});
-
+			// Validate recommendations before building questions
+			const skippedErrors: string[] = [];
+			const validQuestions: Question[] = [];
 			const seenIds = new Set<string>();
-			for (const q of questions) {
+
+			for (let i = 0; i < params.questions.length; i++) {
+				const q = params.questions[i];
+				const qName = q.id ?? `Q${i + 1}`;
+
 				if (seenIds.has(q.id)) {
-					return errorResult(`Error: Duplicate question id '${q.id}'`, questions);
+					skippedErrors.push(`Question '${qName}' skipped: duplicate id`);
+					continue;
 				}
 				seenIds.add(q.id);
 
-				if (q.options.length === 0 && !q.allowOther) {
-					return errorResult(`Error: Question '${q.id}' has no options and allowOther=false`, questions);
+				if (q.options.length === 0) {
+					skippedErrors.push(`Question '${qName}' skipped: no options provided`);
+					continue;
 				}
+
+				if (!q.options.some((o) => o.recommended === true)) {
+					skippedErrors.push(`Question '${qName}' skipped: no option marked as recommended. Exactly one option per question must have recommended: true.`);
+					continue;
+				}
+
+				const normalizedOptions = q.options.map((option) => ({ ...option, recommended: option.recommended === true }));
+
+				validQuestions.push({
+					...q,
+					options: normalizedOptions,
+					label: q.label || `Q${i + 1}`,
+					allowOther: true,
+					multiSelect: q.multiSelect === true,
+				});
 			}
+
+			if (validQuestions.length === 0) {
+				const reasons = skippedErrors.join("\n");
+				return errorResult(`Error: All questions were invalid and skipped:\n${reasons}`, []);
+			}
+
+			const questions = validQuestions;
 
 			const questionById = new Map(questions.map((q) => [q.id, q]));
 			const isMultiQuestionnaire = questions.length > 1;
@@ -697,7 +706,13 @@ export default function questionnaire(pi: ExtensionAPI) {
 							}
 
 							if (opt.description) {
-								add(`     ${theme.fg("muted", opt.description)}`);
+								const indent = "     ";
+								const descText = theme.fg("muted", opt.description);
+								const wrapWidth = Math.max(1, width - indent.length);
+								const wrappedLines = wrapTextWithAnsi(descText, wrapWidth);
+								for (const wl of wrappedLines) {
+									lines.push(`${indent}${wl}`);
+								}
 							}
 						}
 					}
@@ -803,8 +818,13 @@ export default function questionnaire(pi: ExtensionAPI) {
 				return `${qLabel}: ${segments.join(" + ")}`;
 			});
 
+			let resultText = answerLines.join("\n");
+			if (skippedErrors.length > 0) {
+				resultText += `\n\n⚠ The following questions were skipped due to errors:\n${skippedErrors.map((e) => `  - ${e}`).join("\n")}`;
+			}
+
 			return {
-				content: [{ type: "text", text: answerLines.join("\n") }],
+				content: [{ type: "text", text: resultText }],
 				details: result,
 			};
 		},

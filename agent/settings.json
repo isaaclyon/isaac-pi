@@ -8,8 +8,8 @@
     "anthropic/claude-haiku-4-5",
     "anthropic/claude-sonnet-4-6"
   ],
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-opus-4-6",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.4",
   "defaultThinkingLevel": "high",
   "steeringMode": "all",
   "transport": "websocket",
@@ -21,6 +21,7 @@
     "npm:pi-caffeinate",
     "npm:@aaronmaturen/pi-context7",
     "npm:pi-mcp-adapter",
+    "npm:pi-markdown-preview",
     "npm:pi-scheduler"
   ],
   "hideThinkingBlock": false
