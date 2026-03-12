@@ -654,6 +654,21 @@ export default function questionnaire(pi: ExtensionAPI) {
 					const opts = currentOptions();
 					const add = (s: string) => lines.push(truncateToWidth(s, width));
 
+					function addPrompt(prompt: string) {
+						const indent = " ";
+						const wrapWidth = Math.max(1, width - indent.length);
+						for (const para of prompt.split("\n")) {
+							if (!para.trim()) {
+								lines.push("");
+							} else {
+								const styled = theme.fg("text", para);
+								for (const wl of wrapTextWithAnsi(styled, wrapWidth)) {
+									lines.push(`${indent}${wl}`);
+								}
+							}
+						}
+					}
+
 					add(theme.fg("accent", "─".repeat(width)));
 
 					if (isMultiQuestionnaire) {
@@ -718,7 +733,7 @@ export default function questionnaire(pi: ExtensionAPI) {
 					}
 
 					if (inputMode && q) {
-						add(theme.fg("text", ` ${q.prompt}`));
+						addPrompt(q.prompt);
 						lines.push("");
 						renderOptions(q);
 						lines.push("");
@@ -748,7 +763,7 @@ export default function questionnaire(pi: ExtensionAPI) {
 							add(theme.fg("warning", ` Unanswered: ${missing}`));
 						}
 					} else if (q) {
-						add(theme.fg("text", ` ${q.prompt}`));
+						addPrompt(q.prompt);
 						lines.push("");
 						renderOptions(q);
 					}
