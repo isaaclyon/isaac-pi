@@ -50,3 +50,41 @@ Required:
 4. If tests are truly impractical for a specific change (e.g., pure one-off scaffolding or non-executable docs), explicitly state why and still add the closest reasonable automated check.
 
 "Within reason" means using engineering judgment about cost vs. value - not skipping tests by default. The burden of proof is on skipping tests, not on writing them.
+
+## 6) Keep AGENTS.md / CLAUDE.md up to date with discovered repo knowledge
+When you uncover stable, reusable repo-specific knowledge during work, update the nearest relevant `AGENTS.md` and/or `CLAUDE.md` in the same session.
+
+What to capture (concise, high-signal):
+- Recurring gotchas and failure modes (and how to avoid them)
+- Proven local commands/workflows that save time
+- Naming/path conventions that are easy to get wrong
+- Test or CI quirks that repeatedly affect delivery
+
+Guidelines:
+1. Prefer small, incremental doc updates over large rewrites.
+2. Only record patterns that are likely to matter again (avoid one-off noise).
+3. Keep entries actionable (what to do / what to avoid), not narrative.
+4. If multiple AGENTS/CLAUDE files exist, update the closest scoped file(s) rather than only a global one.
+
+## 7) Core coding preferences
+- Prefer the strictest practical typing for both Python and TypeScript.
+- Python typing/tooling baseline: Pyright with strict settings where feasible.
+- Use `uv` instead of `python`/`python3` for Python execution and workflows.
+- Always use the `questionnaire` tool when asking the user questions.
+- When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
+
+## 8) Engineering principles
+- **Error handling:** Fail loudly. Do not silently swallow errors.
+- **Defense in depth:** Validate inputs at each boundary.
+- **No comments by default:** Prefer readable naming/structure over explanatory comments.
+- **File size discipline:** Keep files focused; split before they become monolithic (target <600 lines).
+- **Explicit over implicit:** Prefer clear, straightforward code over clever shortcuts.
+- **No hardcoded config/secrets:** Use environment/config boundaries.
+- **Library choices:** Prefer well-known, maintained libraries.
+- **Scope discipline:** Stay on task; flag out-of-scope refactors before doing them.
+- **When uncertain, ask:** Surface ambiguity and tradeoffs before implementation.
+- **Explain plainly:** Favor accessible, plain-language explanations over heavy jargon.
+
+## 9) Delivery discipline
+- **Verification-first closeout:** Run relevant tests/lint/type-check before declaring completion.
+- **Structured handoff:** Summarize every completed change as: what changed / why / risk / how verified.
