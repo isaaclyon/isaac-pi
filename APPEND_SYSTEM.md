@@ -74,6 +74,7 @@ Guidelines:
 - When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
 
 ## 8) Engineering principles
+- **Minimal-change bias:** Prefer the smallest reasonable code change that solves the problem safely. Reuse and adapt existing code before introducing new abstractions, files, or layers.
 - **Error handling:** Fail loudly. Do not silently swallow errors.
 - **Defense in depth:** Validate inputs at each boundary.
 - **No comments by default:** Prefer readable naming/structure over explanatory comments.

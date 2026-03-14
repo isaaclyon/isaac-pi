@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.57.1",
+  "lastChangelogVersion": "0.58.0",
   "enabledModels": [
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.3-codex",
@@ -7,9 +7,9 @@
     "anthropic/claude-sonnet-4-6",
     "anthropic/claude-opus-4-6"
   ],
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.3-codex",
-  "defaultThinkingLevel": "minimal",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-6",
+  "defaultThinkingLevel": "medium",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
