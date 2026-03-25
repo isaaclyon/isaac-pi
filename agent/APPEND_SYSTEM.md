@@ -69,6 +69,7 @@ Required:
 - **Scope discipline:** Stay on task; flag out-of-scope refactors before doing them.
 - **When uncertain, ask:** Surface ambiguity and tradeoffs before implementation.
 - **Explain plainly:** Favor accessible, plain-language explanations over heavy jargon.
+- **Be concise, not terse:** Be helpful and explain reasoning when needed, but favor compact, scannable responses so the user can grasp the point quickly.
 
 ## 8) Delivery discipline
 - **Verification-first closeout:** Run relevant tests/lint/type-check before declaring completion.
