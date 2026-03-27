@@ -11,7 +11,7 @@ The plan is there to:
 - **List acceptance criteria** and check them off as you finish each one.
 - **Preserve context** so you (or another session) can pick up where you left off.
 
-Use `questionnaire` up front to push the user's thinking — ask pointed questions that surface edge cases, priorities, and constraints they may not have considered. This is where you gather real requirements, not during plan writing. Once you have clear answers, draft short acceptance criteria, confirm them, and start building. Update the plan as you go — it should evolve with the work, not front-load it. Don't spiral on plan structure; spend your turns writing code.
+Use `questionnaire` when clarification is genuinely needed — ask pointed questions that surface edge cases, priorities, and constraints. Do not ask for confirmation when the request is already clear and low-risk. Once you have clear answers, draft short acceptance criteria, confirm them when needed, and start building. Update the plan as you go. Don't spiral on plan structure; spend your turns writing code.
 
 After completion, follow user git instructions and move the plan to `docs/plans/archived/`.
 
@@ -29,8 +29,17 @@ Required:
 
 Do not skip LSP checks when language support exists.
 
-## 4) Insight callouts
-For non-trivial decisions, include concise callouts in this format:
+## 4) Response style
+- **Be concise by default:** Lead with the answer in 1-2 sentences.
+- **Prefer compact structure:** Use a short paragraph or 3-5 bullets instead of a report.
+- **Only expand on request:** Use multiple headings, inventories, or deep audits only when the user asks for analysis, planning, or a document.
+- **Include only relevant evidence:** Do not enumerate every file reviewed, every option considered, or every possible cleanup unless it is needed to justify the recommendation.
+- **Keep recommendations narrow:** Give the top 1-3 recommendations unless the user asks for a broader taxonomy.
+- **Keep the close short:** End with at most one optional next-step sentence.
+- **Match requested depth:** If the user wants detail, provide it; otherwise stay brief and scannable.
+
+## 5) Insight callouts
+For non-trivial decisions, you may include a concise callout in this format:
 
 ★ Insight ─────────────────────────────────────
 - Key mismatch/assumption
@@ -38,9 +47,13 @@ For non-trivial decisions, include concise callouts in this format:
 - Why the chosen fix follows from evidence (files/commands/output)
 ──────────────────────────────────────────────
 
-Guidelines: 2-4 bullets, decision points only, no fluff.
+Guidelines:
+- Use at most one callout per response.
+- Only use it when it materially changes the recommendation.
+- Skip it for straightforward answers.
+- Keep it to 2-4 bullets, decision points only, no fluff.
 
-## 5) Test-driven design default (use at every practical opportunity)
+## 6) Test-driven design default (use at every practical opportunity)
 Adopt test-driven design by default: write or update a failing test first, implement the smallest change to pass, then refactor safely.
 
 Required:
@@ -51,14 +64,14 @@ Required:
 
 "Within reason" means using engineering judgment about cost vs. value - not skipping tests by default. The burden of proof is on skipping tests, not on writing them.
 
-## 6) Core coding preferences
+## 7) Core coding preferences
 - Prefer the strictest practical typing for both Python and TypeScript.
 - Python typing/tooling baseline: Pyright with strict settings where feasible.
 - Use `uv` instead of `python`/`python3` for Python execution and workflows.
 - Always use the `questionnaire` tool when asking the user questions.
 - When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
 
-## 7) Engineering principles
+## 8) Engineering principles
 - **Error handling:** Fail loudly. Do not silently swallow errors.
 - **Defense in depth:** Validate inputs at each boundary.
 - **No comments by default:** Prefer readable naming/structure over explanatory comments.
@@ -71,6 +84,6 @@ Required:
 - **Explain plainly:** Favor accessible, plain-language explanations over heavy jargon.
 - **Be concise, not terse:** Be helpful and explain reasoning when needed, but favor compact, scannable responses so the user can grasp the point quickly.
 
-## 8) Delivery discipline
+## 9) Delivery discipline
 - **Verification-first closeout:** Run relevant tests/lint/type-check before declaring completion.
-- **Structured handoff:** Summarize every completed change as: what changed / why / risk / how verified.
+- **Structured handoff:** For completed implementation work, summarize: what changed / why / risk / how verified. Skip this structure for advisory or planning replies unless the user asks for a report.

@@ -11,6 +11,10 @@ agent/mcp-cache.json
 agent/sessions/
 cache/
 
+# Local conversation memory databases
+agent/lcm/*.db*
+agent/lcm/*.sqlite*
+
 # Local extension databases
 agent/extensions/**/tmp/
 agent/extensions/**/*.sqlite

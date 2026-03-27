@@ -257,6 +257,12 @@ See [Workflows Reference](./resources/workflows-reference.md) for detailed examp
 
 ## Resources
 
+### Brand
+- [Lola Color Palette](./resources/lola-color-palette.md)
+
+### Chart Customization
+- [Metric Overrides & Period-over-Period](./resources/metric-overrides-and-pop-reference.md)
+
 ### Semantic Layer
 - [Dimensions Reference](./resources/dimensions-reference.md)
 - [Metrics Reference](./resources/metrics-reference.md)
