@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.63.1",
+  "lastChangelogVersion": "0.64.0",
   "enabledModels": [
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.4-mini",
@@ -9,8 +9,8 @@
     "anthropic/claude-opus-4-6"
   ],
   "defaultProvider": "anthropic",
-  "defaultModel": "claude-sonnet-4-6",
-  "defaultThinkingLevel": "high",
+  "defaultModel": "claude-opus-4-6",
+  "defaultThinkingLevel": "medium",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
@@ -22,7 +22,7 @@
     "npm:@aaronmaturen/pi-context7@1.0.1",
     "npm:pi-mcp-adapter@2.1.2",
     "npm:pi-tool-display@0.1.11",
-    "npm:pi-lcm"
+    "../vendor/pi-lcm"
   ],
   "hideThinkingBlock": false,
   "lcm": {
@@ -35,5 +35,6 @@
     "leafPassConcurrency": 4,
     "debugMode": true
   },
-  "treeFilterMode": "default"
+  "treeFilterMode": "no-tools",
+  "doubleEscapeAction": "tree"
 }
