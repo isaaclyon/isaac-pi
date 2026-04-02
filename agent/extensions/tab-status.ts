@@ -340,8 +340,8 @@ export default function (pi: ExtensionAPI) {
 		if (getSessionNameLabel(ctx)) return { attempted: false, updated: false, reason: "session-name-set" };
 		const model = selectRerollModel(ctx);
 		if (!model) return { attempted: false, updated: false, reason: "no-model" };
-		const apiKey = await ctx.modelRegistry.getApiKey(model);
-		if (!apiKey) return { attempted: false, updated: false, reason: "no-api-key" };
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		if (!auth.ok) return { attempted: false, updated: false, reason: "no-api-key" };
 		const input = buildRerollInput(messages, diffSummary, totalDiffLines);
 		if (!input.trim()) return { attempted: false, updated: false, reason: "no-input" };
 
@@ -355,7 +355,7 @@ export default function (pi: ExtensionAPI) {
 			response = await complete(
 				model,
 				{ systemPrompt: TITLE_REROLL_SYSTEM_PROMPT, messages: [userMessage] },
-				{ apiKey, maxTokens: 32 },
+				{ apiKey: auth.apiKey, headers: auth.headers, maxTokens: 32 },
 			);
 		} catch {
 			return { attempted: true, updated: false, reason: "request-failed" };
