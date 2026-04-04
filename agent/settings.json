@@ -10,7 +10,7 @@
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4-mini",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "low",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,

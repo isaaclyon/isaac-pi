@@ -5,6 +5,7 @@ description: "Commit all dirty work and leave the branch clean"
 You are executing the user's direct request to commit all dirty work and leave the working tree clean.
 
 Arguments passed to template: $@
+Ignore extra words in the arguments, including "push" or "pr". This command is commit-only.
 
 Execution rules:
 1) Inspect `git status`.

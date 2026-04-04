@@ -12,6 +12,7 @@
 - For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
 - Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
 - When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
+- You MUST bear in mind frequently which skills could be applicable and proactively invoke them to increase the quality of your outputs.
 
 ## Engineering principles
 - Do not add shims, legacy paths, or backward-compatibility code unless explicitly requested.

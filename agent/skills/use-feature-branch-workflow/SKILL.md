@@ -9,37 +9,12 @@ Finish work in a feature branch: commit → push → PR → check conflicts → 
 
 **Assumes:** You're in a repo with work to ship. If currently on `main`, automatically create and switch to a feature branch before committing.
 
-**Mandatory first decision:** explicitly choose PR target branch before creating/updating any PR.
-- `dev` = shared development environment
-- `main` = production promotion path
-
-```
 Commit → Push → PR → Check Conflicts → Monitor CI → Merge
                           │                  │
                           ▼                  ▼
                      CONFLICTS?          CI FAILED?
                      Report & stop       Report & stop
 ```
-
-## Step 0: Select PR target (required)
-
-Always capture the target branch up front.
-
-```bash
-# Required: pick exactly one target branch for this PR
-# dev  = promote to shared dev environment
-# main = promote to production path
-TARGET_BRANCH="<dev-or-main>"
-
-if [[ "$TARGET_BRANCH" != "dev" && "$TARGET_BRANCH" != "main" ]]; then
-  echo "Error: TARGET_BRANCH must be 'dev' or 'main'."
-  exit 1
-fi
-
-echo "Using PR target: $TARGET_BRANCH"
-```
-
-Do not continue until `TARGET_BRANCH` is explicit.
 
 ## Step 1: Verify Context (and auto-branch if needed)
 
@@ -51,10 +26,7 @@ current_branch=$(git branch --show-current)
 # Name format: <type>/<short-slug>-<YYYYMMDD>
 # - type: feat | fix | chore (pick based on the work)
 # - short-slug: 2-6 kebab-case words describing the change
-if [ "$current_branch" = "main" ]; then
-  branch_name="feat/<short-slug>-$(date +%Y%m%d)"
-  git switch -c "$branch_name"
-fi
+git switch -c "$branch_name"
 
 # Check working tree
 git status
@@ -120,7 +92,8 @@ gh pr view --json mergeable,mergeStateStatus,baseRefName -q '{state: .mergeState
 
 | Status | Action |
 |--------|--------|
-| `DIRTY` or `BLOCKED` | **STOP** - Report conflicts, provide: `git fetch && git merge origin/$TARGET_BRANCH` |
+| `DIRTY` | **STOP** - Report conflicts, provide: `git fetch && git merge origin/$TARGET_BRANCH` |
+| `Blocked` | It may just be that CI is running and you cannot merge till it is complete; check for CI progress|
 | `BEHIND` | Warn user, suggest merge/rebase from `origin/$TARGET_BRANCH`, continue |
 | `CLEAN` or `UNSTABLE` | Continue to CI |
 
@@ -150,12 +123,12 @@ gh pr merge --squash
 
 - Confirm merge completed
 - Report the merged PR URL
-- Report target branch used (`dev` or `main`)
 - Remind user to clean up the local worktree when done:
   ```bash
   # From the main worktree:
   git worktree remove .worktrees/<name>
   git branch -d <branch-name>
+  # or run "wtd"
   ```
 
 ---
@@ -164,8 +137,6 @@ gh pr merge --squash
 
 | Scenario | Detection | Action |
 |----------|-----------|--------|
-| Missing target branch choice | `TARGET_BRANCH` empty | Stop and require explicit `dev` or `main` |
-| Invalid target branch | not `dev`/`main` | Stop and correct target |
 | On main branch | `git branch --show-current` = main | Auto-create/switch to feature branch, then continue |
 | No changes | git status clean, no commits ahead | Stop, nothing to do |
 | Merge conflicts | mergeStateStatus = DIRTY | Stop, provide merge command against `origin/$TARGET_BRANCH` |
@@ -178,7 +149,6 @@ gh pr merge --squash
 
 | Action | Command |
 |--------|---------|
-| Set required target | `TARGET_BRANCH="dev"` or `TARGET_BRANCH="main"` |
 | Check branch | `git branch --show-current` |
 | Auto-create feature branch (if on main) | `git switch -c feat/<short-slug>-$(date +%Y%m%d)` |
 | Commit | `git add file && git commit -m "type: msg"` |
