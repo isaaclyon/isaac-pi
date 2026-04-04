@@ -21,20 +21,9 @@
     "npm:pi-caffeinate@2.0.0",
     "npm:@aaronmaturen/pi-context7@1.0.1",
     "npm:pi-mcp-adapter@2.1.2",
-    "npm:pi-tool-display@0.1.11",
-    "../vendor/pi-lcm"
+    "npm:pi-tool-display@0.1.11"
   ],
   "hideThinkingBlock": false,
-  "lcm": {
-    "enabled": true,
-    "leafChunkTokens": 4000,
-    "condensationThreshold": 6,
-    "maxDepth": 5,
-    "maxSummaryTokens": 8000,
-    "minMessagesForCompaction": 10,
-    "leafPassConcurrency": 4,
-    "debugMode": true
-  },
   "treeFilterMode": "no-tools",
   "doubleEscapeAction": "tree"
 }
