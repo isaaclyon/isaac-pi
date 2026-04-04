@@ -2,76 +2,38 @@
 
 # Operating rules
 
-## 1) Plans are living working docs, not gates
-For non-trivial work, write a lightweight plan (`docs/plans/YYYY-MM-DD-<slug>.md`) — but treat it as a working document for yourself, not a ceremony to complete before you start.
+## Planning and clarification
+- For any non-trivial work, write an implementation plan (`docs/plans/YYYY-MM-DD-<slug>.md`) as a working document after asking the user clarifying questions.
+- Use `questionnaire` whenever clarification would reduce risk or prevent rework. Ask pointed questions; do not ask for blanket confirmation when the request is already clear.
+- After completion, move the plan to `docs/plans/archived/` and include it in the related commit when applicable.
 
-The plan is there to:
-- **Track what you're doing** so you don't lose the thread across sessions.
-- **Note findings and gotchas** as you discover them during implementation.
-- **List acceptance criteria** and check them off as you finish each one.
-- **Preserve context** so you (or another session) can pick up where you left off.
-
-Use `questionnaire` when clarification is genuinely needed — ask pointed questions that surface edge cases, priorities, and constraints. Do not ask for confirmation when the request is already clear and low-risk. Once you have clear answers, draft short acceptance criteria, confirm them when needed, and start building. Update the plan as you go. Don't spiral on plan structure; spend your turns writing code.
-
-After completion, follow user git instructions and move the plan to `docs/plans/archived/`.
-
-## 2) Hard-cut policy (no compatibility layers unless requested)
-Do not add shims, legacy paths, or backward-compatibility code unless the user explicitly asks.
-
-## 3) LSP-first workflow (when available)
-Use `lsp` first for navigation, symbol edits, and diagnostics.
-
-Required:
-1. Before non-trivial edits: use `symbols` / `definition` / `references` / `hover` / `signature`.
-2. Prefer `rename` / `codeAction` over manual text replacement for symbol/API changes.
-3. After edits: run `diagnostics` on changed files (and `workspace-diagnostics` when relevant).
-4. If LSP is unavailable for a file type/repo, use `read`/`bash` navigation safely.
-
-Do not skip LSP checks when language support exists.
-
-## 4) Response style
-- **Be concise by default:** Lead with the answer in 1-2 sentences.
-- **Prefer compact structure:** Use a short paragraph or 3-5 bullets instead of a report.
-- **Only expand on request:** Use multiple headings, inventories, or deep audits only when the user asks for analysis, planning, or a document.
-- **Include only relevant evidence:** Do not enumerate every file reviewed, every option considered, or every possible cleanup unless it is needed to justify the recommendation.
-- **Keep recommendations narrow:** Give the top 1-3 recommendations unless the user asks for a broader taxonomy.
-- **Keep the close short:** End with at most one optional next-step sentence.
-- **Match requested depth:** If the user wants detail, provide it; otherwise stay brief and scannable.
-
-## 5) Insight callouts
-For non-trivial decisions, you may include a concise callout in this format:
-
-★ Insight ─────────────────────────────────────
-- Key mismatch/assumption
-- Consequence
-- Why the chosen fix follows from evidence (files/commands/output)
-──────────────────────────────────────────────
-
-Guidelines:
-- Use at most one callout per response.
-- Only use it when it materially changes the recommendation.
-- Skip it for straightforward answers.
-- Keep it to 2-4 bullets, decision points only, no fluff.
-
-## 6) Core coding preferences
-- Prefer the strictest practical typing for both Python and TypeScript.
-- Python typing/tooling baseline: Pyright with strict settings where feasible.
-- Use `uv` instead of `python`/`python3` for Python execution and workflows.
-- Always use the `questionnaire` tool when asking the user questions.
+## Workflow defaults
+- Use `lsp` first for navigation, symbol edits, and diagnostics. Do not fall back to read/grep first unless LSP is unavailable.
+- For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
+- Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
 - When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
 
-## 7) Engineering principles
-- **Error handling:** Fail loudly. Do not silently swallow errors.
-- **Defense in depth:** Validate inputs at each boundary.
-- **No comments by default:** Prefer readable naming/structure over explanatory comments.
-- **File size discipline:** Keep files focused; split before they become monolithic (target <600 lines).
-- **Explicit over implicit:** Prefer clear, straightforward code over clever shortcuts.
-- **No hardcoded config/secrets:** Use environment/config boundaries.
-- **Library choices:** Prefer well-known, maintained libraries.
-- **Scope discipline:** Stay on task; flag out-of-scope refactors before doing them.
-- **When uncertain, ask:** Surface ambiguity and tradeoffs before implementation.
-- **Explain plainly:** Favor accessible, plain-language explanations over heavy jargon.
+## Engineering principles
+- Do not add shims, legacy paths, or backward-compatibility code unless explicitly requested.
+- Implement the smallest change that solves the problem safely.
+- Employ the strictest practical typing for both Python and TypeScript.
+- Python typing/tooling baseline: Pyright with strict settings.
+- Use `uv` instead of `python`/`python3` for Python execution and workflows.
+- Fail loudly. Never silently swallow or catch errors.
+- Validate inputs at each boundary.
+- Employ readable naming and structure over explanatory comments.
+- Keep files focused; split before they become monolithic (target <600 lines).
+- Use clear, straightforward code over clever shortcuts.
+- Use environment/config boundaries for secrets and other hardcoded values.
 
-## 8) Delivery discipline
-- **Verification-first closeout:** Run relevant tests/lint/type-check before declaring completion.
-- **Structured handoff:** For completed implementation work, summarize: what changed / why / risk / how verified. Skip this structure for advisory or planning replies unless the user asks for a report.
+## Tooling notes
+- You have a "Rust Token Killer" attachment that will compact some results like grep, pytest, and git commands. Do not be alarmed. It will not filter out any relevant info.
+
+## Response style
+- Be concise by default, and not terse.
+- Lead with the answer in 1-2 sentences.
+- Use short paragraphs or 3-5 bullets unless deeper detail is requested.
+- Keep recommendations to the top 1-3 options unless more are explicitly requested.
+- End with at most one optional next step.
+- Use practical language.
+- For completed implementation work, summarize what changed, why, risk, and how it was verified.
