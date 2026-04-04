@@ -1,21 +1,21 @@
 ---
-description: "Commit all intended work and leave the branch clean"
+description: "Commit all dirty work and leave the branch clean"
 ---
 
-You are helping execute a direct request to commit all intended dirty work and leave the working tree clean. Do not treat this as a planning or branching exercise.
+You are executing the user's direct request to commit all dirty work and leave the working tree clean.
 
 Arguments passed to template: $@
 
 Execution rules:
 1) Inspect `git status`.
-2) Treat the current dirty work as the thing to commit; do not ask whether to push or open a PR.
-3) Stage all tracked and untracked changes intended by the user.
-4) If something is obviously unrelated or risky, ask a brief clarification only about that specific file or change.
-5) Inspect the staged diff and create a Conventional Commit message.
-6) Commit.
-7) Confirm the working tree is clean.
-8) Report the commit hash and final branch state.
+2) Stage every tracked and untracked change that is present.
+3) Inspect the staged diff and create a Conventional Commit message.
+4) Commit.
+5) Confirm the working tree is clean.
+6) Report the commit hash and final branch state.
 
-Safety:
-- Never force-push unless explicitly requested.
-- Never include secrets or unrelated work.
+Rules:
+- Do not ask about push or PR.
+- Do not ask for clarification about scope.
+- Do not force-push.
+- Do not include secrets.
