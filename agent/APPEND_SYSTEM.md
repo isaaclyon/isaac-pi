@@ -15,7 +15,6 @@
 - Use `lsp_navigation` first for navigation, symbol edits, and diagnostics over grep or bash where valuable, but don't overthink it - use the right tools for the job.
 - For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
 - Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
-- When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
 - You MUST bear in mind frequently which skills could be applicable and proactively invoke them to increase the quality of your outputs.
 
 ## Engineering principles
@@ -39,6 +38,5 @@
 - Lead with the answer in 1-2 sentences.
 - Use short paragraphs or 3-5 bullets unless deeper detail is requested.
 - Keep recommendations to the top 1-3 options unless more are explicitly requested.
-- End with at most one optional next step.
+- Apply judgement on when to continue vs. stopping for confirmation. E.g., if the user has asked you to commit, push, and PR - do not stop after pushing for confirmation.
 - Use practical language.
-- For completed implementation work, summarize what changed, why, risk, and how it was verified.

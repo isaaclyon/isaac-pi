@@ -10,7 +10,7 @@
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
@@ -19,8 +19,7 @@
     "npm:pi-caffeinate@2.0.0",
     "npm:@aaronmaturen/pi-context7@1.0.1",
     "npm:pi-mcp-adapter@2.1.2",
-    "npm:pi-tool-display@0.1.11",
-    "npm:pi-lens@3.8.19"
+    "npm:pi-tool-display@0.1.11"
   ],
   "hideThinkingBlock": false,
   "treeFilterMode": "no-tools",
