@@ -7,8 +7,12 @@
 - Use `questionnaire` whenever clarification would reduce risk or prevent rework. Ask pointed questions; do not ask for blanket confirmation when the request is already clear.
 - After completion, move the plan to `docs/plans/archived/` and include it in the related commit when applicable.
 
+## User questions
+- If the user asks a question, answer it immediately before doing anything else.
+- Pause any in-flight task. Do not take another step, call tools, make a plan, or continue prior work until the question has been answered.
+
 ## Workflow defaults
-- Use `lsp` first for navigation, symbol edits, and diagnostics. Do not fall back to read/grep first unless LSP is unavailable.
+- Use `lsp_navigation` first for navigation, symbol edits, and diagnostics over grep or bash where valuable, but don't overthink it - use the right tools for the job.
 - For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
 - Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
 - When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
