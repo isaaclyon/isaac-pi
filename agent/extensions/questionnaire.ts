@@ -87,6 +87,34 @@ const QuestionnaireParams = Type.Object({
 	questions: Type.Array(QuestionSchema, { description: "Questions to ask the user" }),
 });
 
+function parseOptionShortcutIndex(data: string): number | null {
+	if (data.length === 1 && data >= "1" && data <= "9") {
+		return Number(data) - 1;
+	}
+
+	const parsed = parseKey(data);
+	if (parsed && parsed.length === 1 && parsed >= "1" && parsed <= "9") {
+		return Number(parsed) - 1;
+	}
+
+	const kittyDigitMatch = data.match(/^\x1b\[(\d+)(?::\d*)?(?::\d+)?(?:;(\d+))?(?::(\d+))?u$/);
+	if (!kittyDigitMatch) return null;
+
+	const codepoint = Number(kittyDigitMatch[1]);
+	const modifierValue = kittyDigitMatch[2] ? Number(kittyDigitMatch[2]) : 1;
+	const eventType = kittyDigitMatch[3] ? Number(kittyDigitMatch[3]) : 1;
+	const isUnmodifiedPress = modifierValue === 1 && eventType !== 3;
+	if (isUnmodifiedPress && codepoint >= 49 && codepoint <= 57) {
+		return codepoint - 49;
+	}
+
+	return null;
+}
+
+export function isFinalSubmitShortcut(data: string): boolean {
+	return matchesKey(data, Key.enter) || parseOptionShortcutIndex(data) === 0;
+}
+
 function errorResult(
 	message: string,
 	questions: Question[] = [],
@@ -401,32 +429,6 @@ export default function questionnaire(pi: ExtensionAPI) {
 					return parsed === letter;
 				}
 
-				function parseOptionShortcutIndex(data: string): number | null {
-					if (data.length === 1 && data >= "1" && data <= "9") {
-						return Number(data) - 1;
-					}
-
-					const parsed = parseKey(data);
-					if (parsed && parsed.length === 1 && parsed >= "1" && parsed <= "9") {
-						return Number(parsed) - 1;
-					}
-
-					// Kitty protocol may send digits as CSI-u sequences, which parseKey currently
-					// does not normalize into "1"-"9" key names.
-					const kittyDigitMatch = data.match(/^\x1b\[(\d+)(?::\d*)?(?::\d+)?(?:;(\d+))?(?::(\d+))?u$/);
-					if (!kittyDigitMatch) return null;
-
-					const codepoint = Number(kittyDigitMatch[1]);
-					const modifierValue = kittyDigitMatch[2] ? Number(kittyDigitMatch[2]) : 1;
-					const eventType = kittyDigitMatch[3] ? Number(kittyDigitMatch[3]) : 1;
-					const isUnmodifiedPress = modifierValue === 1 && eventType !== 3;
-					if (isUnmodifiedPress && codepoint >= 49 && codepoint <= 57) {
-						return codepoint - 49;
-					}
-
-					return null;
-				}
-
 				function handleInput(data: string) {
 					if (inputMode) {
 						if (matchesKey(data, Key.escape)) {
@@ -458,9 +460,9 @@ export default function questionnaire(pi: ExtensionAPI) {
 					}
 
 					if (currentTab === questions.length) {
-						if (matchesKey(data, Key.enter) && allAnswered()) {
+						if (isFinalSubmitShortcut(data) && allAnswered()) {
 							submit(false);
-						} else if (matchesKey(data, Key.enter)) {
+						} else if (isFinalSubmitShortcut(data)) {
 							setStatus("Please answer all questions before submitting.");
 						} else if (matchesKey(data, Key.escape)) {
 							submit(true);
@@ -754,7 +756,7 @@ export default function questionnaire(pi: ExtensionAPI) {
 						}
 						lines.push("");
 						if (allAnswered()) {
-							add(theme.fg("success", " Press Enter to submit"));
+							add(theme.fg("success", " Press Enter or 1 to submit"));
 						} else {
 							const missing = questions
 								.filter((question) => !answers.has(question.id))
