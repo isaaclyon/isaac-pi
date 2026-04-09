@@ -1,16 +1,13 @@
 {
-  "lastChangelogVersion": "0.65.2",
+  "lastChangelogVersion": "0.66.1",
   "enabledModels": [
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.4-mini",
-    "openai-codex/gpt-5.3-codex",
-    "anthropic/claude-haiku-4-5",
-    "anthropic/claude-sonnet-4-6",
-    "anthropic/claude-opus-4-6"
+    "openai-codex/gpt-5.3-codex"
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
@@ -18,7 +15,6 @@
   "packages": [
     "npm:pi-caffeinate@2.0.0",
     "npm:@aaronmaturen/pi-context7@1.0.1",
-    "npm:pi-mcp-adapter@2.1.2",
     "npm:pi-tool-display@0.1.11"
   ],
   "hideThinkingBlock": false,

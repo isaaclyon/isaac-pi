@@ -65,7 +65,7 @@ function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
-function formatLastTwoPathSegments(cwd: string): string {
+function formatLastPathSegments(cwd: string, segmentCount: number): string {
 	let display = cwd;
 	const home = process.env.HOME || process.env.USERPROFILE;
 	if (home && cwd.startsWith(home)) {
@@ -73,11 +73,11 @@ function formatLastTwoPathSegments(cwd: string): string {
 	}
 
 	const segments = display.split("/").filter((segment) => segment.length > 0);
-	if (segments.length >= 2) {
-		return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+	if (segments.length >= segmentCount) {
+		return segments.slice(-segmentCount).join("/");
 	}
-	if (segments.length === 1) {
-		return segments[0]!;
+	if (segments.length > 0) {
+		return segments.join("/");
 	}
 	return display || ".";
 }
@@ -192,37 +192,107 @@ async function getGitSummary(pi: ExtensionAPI, cwd: string): Promise<GitSummary 
 	};
 }
 
+function formatLabelValue(label: string, value: string, theme: ExtensionContext["ui"]["theme"]): string {
+	return `${label} ${theme.fg("dim", value)}`;
+}
+
 function buildGitStateText(theme: ExtensionContext["ui"]["theme"], summary: GitSummary | null): string {
 	if (!summary) {
-		return theme.fg("dim", "git: n/a");
+		return formatLabelValue("git:", "n/a", theme);
 	}
 
 	const parts: string[] = [];
 
 	if (summary.dirtyFiles === 0) {
-		parts.push(theme.fg("success", "✅ clean"));
+		parts.push(theme.fg("dim", "clean"));
 	} else {
-		const dirtyDetails: string[] = [];
-		if (summary.unstaged > 0) dirtyDetails.push(`✏️${summary.unstaged}`);
-		if (summary.staged > 0) dirtyDetails.push(`📦${summary.staged}`);
-		if (summary.untracked > 0) dirtyDetails.push(`❓${summary.untracked}`);
-
-		parts.push(theme.fg("warning", `⚠️ dirty:${summary.dirtyFiles}`));
-		if (dirtyDetails.length > 0) {
-			parts.push(theme.fg("dim", `(${dirtyDetails.join(" ")})`));
-		}
+		parts.push(theme.fg("warning", `dirty ${summary.dirtyFiles}`));
+		if (summary.staged > 0) parts.push(theme.fg("dim", `staged ${summary.staged}`));
+		if (summary.unstaged > 0) parts.push(theme.fg("dim", `unstaged ${summary.unstaged}`));
+		if (summary.untracked > 0) parts.push(theme.fg("dim", `untracked ${summary.untracked}`));
 	}
 
 	if (summary.hasUpstream) {
-		const aheadText = summary.ahead > 0 ? theme.fg("warning", `↑${summary.ahead}`) : theme.fg("dim", "↑0");
-		const behindText =
-			summary.behind > 0 ? theme.fg("warning", `↓${summary.behind}`) : theme.fg("dim", "↓0");
-		parts.push(`${aheadText}/${behindText}`);
+		parts.push(summary.ahead > 0 ? theme.fg("warning", `↑${summary.ahead}`) : theme.fg("dim", "↑0"));
+		parts.push(summary.behind > 0 ? theme.fg("warning", `↓${summary.behind}`) : theme.fg("dim", "↓0"));
 	} else {
-		parts.push(theme.fg("dim", "↑- / ↓-"));
+		parts.push(theme.fg("dim", "↑-"));
+		parts.push(theme.fg("dim", "↓-"));
 	}
 
-	return parts.join(" ");
+	return `git: ${parts.join(` ${theme.fg("dim", "·")} `)}`;
+}
+
+function shouldHideExtensionStatus(key: string): boolean {
+	const normalizedKey = key.toLowerCase();
+	return normalizedKey.includes("mcp") || normalizedKey === "context7";
+}
+
+export function formatExtensionStatuses(statuses: ReadonlyMap<string, string>): string {
+	return Array.from(statuses.entries())
+		.map(([key, value]) => [key, value.trim()] as const)
+		.filter(([key, value]) => !shouldHideExtensionStatus(key) && value.length > 0)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([, value]) => value)
+		.join("  ");
+}
+
+type FooterLineArgs = {
+	theme: ExtensionContext["ui"]["theme"];
+	width: number;
+	cwd: string;
+	contextPercentValue: number | null;
+	contextWindow: number;
+	branch: string | null;
+	worktreeName: string | null;
+	gitSummary: GitSummary | null;
+	extensionStatuses: string;
+	rightSide: string;
+};
+
+export function buildFooterLines({
+	theme,
+	width,
+	cwd,
+	contextPercentValue,
+	contextWindow,
+	branch,
+	worktreeName,
+	gitSummary,
+	extensionStatuses,
+	rightSide,
+}: FooterLineArgs): string[] {
+	const shortPath = formatLastPathSegments(cwd, 3);
+	const branchLabel = formatLabelValue("branch:", branch ?? "no-branch", theme);
+	const treeLabel = formatLabelValue("worktree:", worktreeName ?? "none", theme);
+	const gitState = buildGitStateText(theme, gitSummary);
+	const contextPercent = contextPercentValue === null ? "?" : contextPercentValue.toFixed(1);
+	const contextText =
+		contextPercentValue === null
+			? `?/${formatTokens(contextWindow)}`
+			: `${contextPercent}%/${formatTokens(contextWindow)}`;
+
+	let contextStyled = theme.fg("dim", contextText);
+	if (contextPercentValue !== null) {
+		if (contextPercentValue > 90) {
+			contextStyled = theme.fg("error", contextText);
+		} else if (contextPercentValue > 70) {
+			contextStyled = theme.fg("warning", contextText);
+		}
+	}
+
+	const topLine = alignLeftRight(theme.fg("dim", shortPath), contextStyled, width);
+	const middleLine = truncateToWidth(
+		[theme.fg("dim", treeLabel), theme.fg("dim", branchLabel)].join("  "),
+		width,
+	);
+	const bottomLeftParts = [gitState];
+	if (extensionStatuses) {
+		bottomLeftParts.push(theme.fg("dim", extensionStatuses));
+	}
+	const bottomLine = alignLeftRight(bottomLeftParts.join("  "), theme.fg("dim", rightSide), width);
+
+	return [truncateToWidth(topLine, width), middleLine, truncateToWidth(bottomLine, width)];
 }
 
 export default function (pi: ExtensionAPI) {
@@ -271,39 +341,20 @@ export default function (pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					const shortPath = formatLastTwoPathSegments(ctx.cwd);
-					const branch = footerData.getGitBranch();
-					const branchLabel = branch ? `🌿 ${branch}` : "🌿 no-branch";
-					const treeLabel = worktreeName ? `🌳 ${worktreeName}` : "🌳 none";
-					const gitState = buildGitStateText(theme, gitSummary);
-
 					const usage = ctx.getContextUsage();
-					const contextPercentValue = usage?.percent ?? null;
-					const contextPercent = contextPercentValue === null ? "?" : contextPercentValue.toFixed(1);
-					const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-					const contextText =
-						contextPercentValue === null
-							? `?/${formatTokens(contextWindow)}`
-							: `${contextPercent}%/${formatTokens(contextWindow)}`;
 
-					let contextStyled = theme.fg("dim", contextText);
-					if (contextPercentValue !== null) {
-						if (contextPercentValue > 90) {
-							contextStyled = theme.fg("error", contextText);
-						} else if (contextPercentValue > 70) {
-							contextStyled = theme.fg("warning", contextText);
-						}
-					}
-
-					const rightSide = theme.fg(
-						"dim",
-						buildRightSide(ctx, pi, footerData.getAvailableProviderCount() > 1),
-					);
-					const topLine = alignLeftRight(theme.fg("accent", shortPath), contextStyled, width);
-					const bottomLeft = `${theme.fg("accent", branchLabel)}  ${theme.fg("accent", treeLabel)}  ${gitState}`;
-					const bottomLine = alignLeftRight(bottomLeft, rightSide, width);
-
-					return [truncateToWidth(topLine, width), truncateToWidth(bottomLine, width)];
+					return buildFooterLines({
+						theme,
+						width,
+						cwd: ctx.cwd,
+						contextPercentValue: usage?.percent ?? null,
+						contextWindow: usage?.contextWindow ?? ctx.model?.contextWindow ?? 0,
+						branch: footerData.getGitBranch(),
+						worktreeName,
+						gitSummary,
+						extensionStatuses: formatExtensionStatuses(footerData.getExtensionStatuses()),
+						rightSide: buildRightSide(ctx, pi, footerData.getAvailableProviderCount() > 1),
+					});
 				},
 			};
 		});
