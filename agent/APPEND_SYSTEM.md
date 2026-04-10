@@ -16,6 +16,7 @@
 - For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
 - Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
 - You MUST bear in mind frequently which skills could be applicable and proactively invoke them to increase the quality of your outputs.
+- Use project memory tools intentionally when they would materially help. Prefer `project_memory_search` for questions about prior decisions, rationale, earlier implementation context, or project history; use `project_memory_status` to inspect availability/state and `project_memory_sync` when an explicit sync is useful. Do not rely on hidden recall alone when a targeted memory tool call would be clearer.
 
 ## Engineering principles
 - Do not add shims, legacy paths, or backward-compatibility code unless explicitly requested.

@@ -18,6 +18,11 @@ cache/
 agent/lcm/*.db*
 agent/lcm/*.sqlite*
 
+# Repo-local MemPalace memory/state
+.pi/memory/
+mempalace.yaml
+entities.json
+
 # Local extension databases
 agent/extensions/**/tmp/
 agent/extensions/**/*.sqlite
@@ -26,6 +31,10 @@ agent/extensions/**/*.sqlite-*
 # Env files
 .env
 .env.*
+
+# Python cache
+__pycache__/
+*.pyc
 
 # OS/editor noise
 .DS_Store
