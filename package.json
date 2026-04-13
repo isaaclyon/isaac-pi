@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "lsp-pi": "^1.0.4",
+    "pi-schedule-prompt": "^0.1.2"
+  }
+}

@@ -6,7 +6,7 @@ describe("custom footer extension statuses", () => {
 	it("joins extension statuses in key order, skips blanks, and hides MCP and Context7 statuses", () => {
 		const statuses = new Map<string, string>([
 			["zeta", "Z status"],
-			["notion-mcp", "Notion MCP connected"],
+			["example-mcp", "Example MCP connected"],
 			["context7", "⚡ context7"],
 			["github-pr", "PR #123 ✓ merged"],
 			["empty", "   "],

@@ -15,7 +15,6 @@
 - Use `lsp_navigation` first for navigation, symbol edits, and diagnostics over grep or bash where valuable, but don't overthink it - use the right tools for the job.
 - For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
 - Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
-- When delegating to subagents, use `interactive_shell` with `mode="dispatch"` by default.
 - You MUST bear in mind frequently which skills could be applicable and proactively invoke them to increase the quality of your outputs.
 
 ## Engineering principles

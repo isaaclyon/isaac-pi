@@ -15,7 +15,8 @@
   "packages": [
     "npm:pi-caffeinate@2.0.0",
     "npm:@aaronmaturen/pi-context7@1.0.1",
-    "npm:pi-tool-display@0.1.11"
+    "npm:pi-tool-display@0.1.11",
+    "npm:pi-subagents"
   ],
   "hideThinkingBlock": false,
   "treeFilterMode": "no-tools",

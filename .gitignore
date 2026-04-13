@@ -9,7 +9,6 @@ logs/
 agent/auth.json
 agent/mcp-cache.json
 agent/sessions/
-agent/extensions/notion-mcp.json
 .pi-lens/
 .pi/suggester/
 cache/
