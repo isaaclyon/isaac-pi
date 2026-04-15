@@ -26,6 +26,7 @@ entities.json
 agent/extensions/**/tmp/
 agent/extensions/**/*.sqlite
 agent/extensions/**/*.sqlite-*
+.pi/vendor/**/node_modules/
 
 # Env files
 .env
