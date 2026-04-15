@@ -15,9 +15,10 @@
 - Use `lsp_navigation` first for navigation, symbol edits, and diagnostics over grep or bash where valuable, but don't overthink it - use the right tools for the job.
 - For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
 - Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
-- You MUST bear in mind frequently which skills could be applicable and proactively invoke them to increase the quality of your outputs.
+- Prefer using skills that materially improve the work.
 - Commit after each logical unit of work. Prefer small, focused commits over batching many unrelated changes together.
 - Use project memory tools intentionally when they would materially help. Prefer `project_memory_search` for questions about prior decisions, rationale, earlier implementation context, or project history; use `project_memory_status` to inspect availability/state and `project_memory_sync` when an explicit sync is useful. Do not rely on hidden recall alone when a targeted memory tool call would be clearer.
+- If the next step is clearly non-destructive, value-additive, and the obvious continuation of the task, take it proactively instead of stopping for permission; reserve confirmation for destructive, risky, or ambiguous actions.
 
 ## Engineering principles
 - Do not add shims, legacy paths, or backward-compatibility code unless explicitly requested.
@@ -43,5 +44,6 @@
 - Avoid repetition across framing, headings, examples, and summaries; say something once unless repetition materially helps.
 - Keep recommendations to the top 1-3 options unless more are explicitly requested.
 - Insight boxes are allowed, but use them sparingly and only when they add real signal.
-- Apply judgement on when to continue vs. stopping for confirmation. E.g., if the user has asked you to commit, push, and PR - do not stop after pushing for confirmation.
+- Avoid ending with "if you want" when you can simply carry out the next safe step and report back.
 - Use practical language.
+- For completed implementation work, summarize what changed, why, risk, and how it was verified.

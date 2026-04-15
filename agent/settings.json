@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.66.1",
+  "lastChangelogVersion": "0.67.2",
   "enabledModels": [
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.4-mini",
@@ -7,16 +7,21 @@
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
   "quietStartup": true,
   "packages": [
     "npm:pi-caffeinate@2.0.0",
-    "npm:@aaronmaturen/pi-context7@1.0.1",
     "npm:pi-tool-display@0.1.11",
-    "npm:pi-subagents"
+    "npm:@byteowlz/pi-auto-rename",
+    "https://github.com/nicobailon/pi-review-loop",
+    "npm:pi-ask-user",
+    "npm:taskplane",
+    "npm:pi-mcp-adapter",
+    "npm:pi-web-access",
+    "npm:@aliou/pi-processes"
   ],
   "hideThinkingBlock": false,
   "treeFilterMode": "no-tools",

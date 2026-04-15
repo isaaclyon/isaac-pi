@@ -533,25 +533,13 @@ export default function (pi: ExtensionAPI) {
 				if (!ctx.hasUI || result.updated || rerollHintShown) return;
 				if (result.reason !== "no-model" && result.reason !== "no-api-key") return;
 				rerollHintShown = true;
-				ctx.ui.notify(`Tab reroll unavailable (${result.reason}). Try /retitle after /login.`, "warning");
+				ctx.ui.notify(`Tab reroll unavailable (${result.reason}). Try again after /login.`, "warning");
 			})
 			.catch(() => {
 				// Best-effort only: keep existing label if reroll fails.
 			});
 	});
 
-	pi.registerCommand("retitle", {
-		description: "Reroll the tab title slug with the codex spark model",
-		handler: async (_args: string, ctx: ExtensionContext) => {
-			const result = await maybeRerollTitle(ctx, runId, status.state, { force: true });
-			if (!ctx.hasUI) return;
-			if (result.updated) {
-				ctx.ui.notify(`Tab title updated: ${displayLabel(ctx)}`, "info");
-				return;
-			}
-			ctx.ui.notify(`Tab title unchanged (${result.reason})`, "info");
-		},
-	});
 
 	pi.on("session_shutdown", async (_event: SessionShutdownEvent, ctx: ExtensionContext) => {
 		clearTabTimeout();
