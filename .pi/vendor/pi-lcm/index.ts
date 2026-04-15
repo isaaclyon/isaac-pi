@@ -9,8 +9,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { complete } from "@mariozechner/pi-ai";
-import { resolveConfig, type LcmConfig } from "./src/config.js";
+import { resolveConfig } from "./src/config.js";
 import { openDb, closeDb, checkpointDb } from "./src/db/connection.js";
 import { runMigrations } from "./src/db/schema.js";
 import { LcmStore } from "./src/db/store.js";
@@ -24,7 +23,7 @@ import { createLcmDescribeTool } from "./src/tools/lcm-describe.js";
 import { createLcmExpandTool } from "./src/tools/lcm-expand.js";
 import { loadSettings, saveSettings, type SettingsScope } from "./src/settings.js";
 import { LcmSettingsPanel, type LcmPanelDeps } from "./src/settings-panel.js";
-import { resolveRequestAuth } from "./src/auth.js";
+import { callCompactionModel } from "./src/compaction-model.js";
 
 export default function (pi: ExtensionAPI) {
   let config = resolveConfig();
@@ -278,50 +277,3 @@ export default function (pi: ExtensionAPI) {
 }
 
 // ── LLM call for compaction ─────────────────────────────────────
-
-async function callCompactionModel(ctx: any, config: LcmConfig, prompt: string, signal?: AbortSignal): Promise<string> {
-  for (const cfg of config.compactionModels) {
-    const model = ctx.modelRegistry.find?.(cfg.provider, cfg.id)
-      ?? ctx.modelRegistry.getAll().find((m: any) => m.provider === cfg.provider && m.id === cfg.id);
-    if (!model) continue;
-
-    const auth = await resolveRequestAuth(ctx.modelRegistry, model, console, `compaction model ${model.provider}/${model.id}`);
-    if (!auth) continue;
-
-    try {
-      const response = await complete(
-        model,
-        {
-          systemPrompt: "You are a precise conversation summarizer. Output only the summary, nothing else.",
-          messages: [{ role: "user" as const, content: [{ type: "text" as const, text: prompt }], timestamp: Date.now() }],
-        },
-        { apiKey: auth.apiKey, headers: auth.headers, signal },
-      );
-
-      const text = response.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n").trim();
-      if (text.length > 0) return text;
-    } catch (e: any) {
-      if (signal?.aborted) throw e;
-      continue;
-    }
-  }
-
-  // Fall back to session model
-  if (ctx.model) {
-    const fallbackAuth = await resolveRequestAuth(ctx.modelRegistry, ctx.model, console, `fallback model ${ctx.model.provider}/${ctx.model.id}`);
-    if (fallbackAuth) {
-      const response = await complete(
-        ctx.model,
-        {
-          systemPrompt: "You are a precise conversation summarizer. Output only the summary, nothing else.",
-          messages: [{ role: "user" as const, content: [{ type: "text" as const, text: prompt }], timestamp: Date.now() }],
-        },
-        { apiKey: fallbackAuth.apiKey, headers: fallbackAuth.headers, signal },
-      );
-      const text = response.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n").trim();
-      if (text.length > 0) return text;
-    }
-  }
-
-  throw new Error("No model available for compaction summarization");
-}
