@@ -7,7 +7,7 @@
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "xhigh",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
@@ -21,7 +21,8 @@
     "npm:taskplane",
     "npm:pi-mcp-adapter",
     "npm:pi-web-access",
-    "npm:@aliou/pi-processes"
+    "npm:@aliou/pi-processes",
+    "npm:pi-updater"
   ],
   "hideThinkingBlock": false,
   "treeFilterMode": "no-tools",
