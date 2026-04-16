@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import {
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import tabStatusExtension, {
 	buildSessionSummaryInput,
 	extractConversationPairs,
 	getSummaryThresholdToEvaluate,
@@ -19,6 +20,97 @@ const assistantMessage = (text: string): AgentMessage => ({
 	content: [{ type: "text", text }],
 	timestamp: 0,
 }) as AgentMessage;
+
+type RegisteredCommand = {
+	handler: (args: string, ctx: ExtensionContext) => Promise<void>;
+};
+
+const createExtensionHarness = (): {
+	handlers: Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void> | void>;
+	command: RegisteredCommand | undefined;
+} => {
+	const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void> | void>();
+	let command: RegisteredCommand | undefined;
+	const pi = {
+		on: vi.fn((event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void) => {
+			handlers.set(event, handler);
+		}),
+		registerCommand: vi.fn((name: string, config: RegisteredCommand) => {
+			if (name === "rename-tab") {
+				command = config;
+			}
+		}),
+	} as unknown as ExtensionAPI;
+	 tabStatusExtension(pi);
+	return { handlers, command };
+};
+
+const createContext = (options?: { sessionName?: string; branch?: AgentMessage[] }): ExtensionContext => {
+	const branchMessages = options?.branch ?? [];
+	return {
+		hasUI: true,
+		cwd: "/tmp/pi-agent",
+		ui: {
+			setTitle: vi.fn(),
+			notify: vi.fn(),
+		} as unknown as ExtensionContext["ui"],
+		sessionManager: {
+			getSessionName: () => options?.sessionName,
+			getBranch: () => branchMessages.map((message) => ({ type: "message", message })),
+		} as unknown as ExtensionContext["sessionManager"],
+		modelRegistry: {
+			find: vi.fn(),
+			getAvailable: vi.fn(() => []),
+		} as unknown as ExtensionContext["modelRegistry"],
+		model: undefined,
+		isIdle: () => true,
+		signal: undefined,
+		abort: vi.fn(),
+		hasPendingMessages: () => false,
+		shutdown: vi.fn(),
+		getContextUsage: () => undefined,
+		compact: vi.fn(),
+		getSystemPrompt: () => "",
+	} as ExtensionContext;
+};
+
+afterEach(() => {
+	vi.useRealTimers();
+});
+
+describe("tab status command", () => {
+	it("registers /rename-tab", () => {
+		const { command } = createExtensionHarness();
+		expect(command).toBeDefined();
+	});
+
+	it("shows usage when no label is provided", async () => {
+		const { command } = createExtensionHarness();
+		const ctx = createContext();
+
+		await command!.handler("   ", ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Usage: /rename-tab <new tab label>", "error");
+	});
+
+	it("keeps a manual tab label through prompt refreshes until auto rename runs", async () => {
+		vi.useFakeTimers();
+		const { command, handlers } = createExtensionHarness();
+		const ctx = createContext();
+
+		await handlers.get("session_start")!({ type: "session_start", reason: "new" }, ctx);
+		vi.mocked(ctx.ui.setTitle).mockClear();
+
+		await command!.handler("Focus label", ctx);
+		expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("Focus label: 🆕");
+
+		vi.mocked(ctx.ui.setTitle).mockClear();
+		await handlers.get("before_agent_start")!({ type: "before_agent_start", prompt: "Switch to some other fallback label" }, ctx);
+		await handlers.get("session_shutdown")!({ type: "session_shutdown" }, ctx);
+
+		expect(ctx.ui.setTitle).toHaveBeenCalledWith("Focus label");
+	});
+});
 
 describe("tab status session pair extraction", () => {
 	it("treats consecutive user messages as one exchange pair", () => {

@@ -89,6 +89,10 @@ const clipSummaryMessage = (text: string): string => {
 	return `${normalized.slice(0, SUMMARY_MESSAGE_MAX_CHARS - 3).trimEnd()}...`;
 };
 
+const normalizeManualLabel = (text: string): string => {
+	return clip(text.replace(/\s+/g, " ").trim());
+};
+
 const normalizeLabel = (text: string, maxWords: number): string => {
 	const normalized = text
 		.replace(/["'`]/g, "")
@@ -239,7 +243,7 @@ export default function (pi: ExtensionAPI) {
 	let runId = 0;
 	let lastSummaryPairThreshold = 0;
 	let summaryHintShown = false;
-	let labelMode: "fallback" | "summary" = "fallback";
+	let labelMode: "fallback" | "manual" | "summary" = "fallback";
 	let lastRenderedLabel: string | undefined;
 
 	const cwdBase = (ctx: ExtensionContext): string => basename(ctx.cwd || "pi");
@@ -269,7 +273,7 @@ export default function (pi: ExtensionAPI) {
 			labelMode = "fallback";
 			return;
 		}
-		if (labelMode === "summary" && !options?.force) {
+		if ((labelMode === "manual" || labelMode === "summary") && !options?.force) {
 			return;
 		}
 		const source = prompt || getLatestPromptFromBranch(ctx);
@@ -479,6 +483,26 @@ export default function (pi: ExtensionAPI) {
 		}
 		return undefined;
 	};
+
+	pi.registerCommand("rename-tab", {
+		description: "Temporarily rename the current tab until automatic retitling runs again",
+		handler: async (args, ctx) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("rename-tab requires interactive mode", "error");
+				return;
+			}
+
+			const nextLabel = normalizeManualLabel(args);
+			if (!nextLabel) {
+				ctx.ui.notify("Usage: /rename-tab <new tab label>", "error");
+				return;
+			}
+
+			workLabel = nextLabel;
+			labelMode = "manual";
+			setTitle(ctx, status.state);
+		},
+	});
 
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		lastSummaryPairThreshold = 0;
