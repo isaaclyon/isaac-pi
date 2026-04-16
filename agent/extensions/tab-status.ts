@@ -27,6 +27,11 @@ type StatusTracker = {
 	sawCommit: boolean;
 };
 
+export type ConversationPair = {
+	user: string;
+	assistant: string;
+};
+
 const STATUS_TEXT: Record<StatusState, string> = {
 	new: ": 🆕",
 	running: ": 🔄",
@@ -38,26 +43,177 @@ const STATUS_TEXT: Record<StatusState, string> = {
 const INACTIVE_TIMEOUT_MS = 180_000;
 const FALLBACK_REFRESH_MS = 5 * 60_000;
 const GIT_COMMIT_RE = /\bgit\b[^\n]*\bcommit\b/;
-const MAX_TOPIC_WORDS = 5;
-const MAX_TOPIC_LENGTH = 36;
-const TITLE_REROLL_PROVIDER = "openai-codex";
-const TITLE_REROLL_MODEL_ID = "gpt-5.3-codex-spark";
-const TITLE_REROLL_USER_MESSAGES = 5;
-const TITLE_REROLL_DIFF_FILES = 15;
-const TITLE_REROLL_DIFF_DELTA_THRESHOLD = 25;
-const TITLE_REROLL_STICKY_PROMPTS = 4;
-const MAX_DIFF_SUMMARY_CHARS = 1200;
-const TITLE_REROLL_SYSTEM_PROMPT = `You generate short terminal tab labels for coding sessions.
-Return only the label text.
+const MAX_FALLBACK_WORDS = 5;
+const MAX_SUMMARY_WORDS = 4;
+const MAX_LABEL_LENGTH = 36;
+const SUMMARY_PROVIDER = "openai-codex";
+const SUMMARY_MODEL_ID = "gpt-5.4-mini";
+const SUMMARY_INTERVAL_PAIRS = 4;
+const SUMMARY_WINDOW_PAIRS = 2;
+const SUMMARY_MESSAGE_MAX_CHARS = 220;
+const SUMMARY_MAX_TOKENS = 48;
+const SUMMARY_SYSTEM_PROMPT = `You generate short terminal tab labels for coding sessions.
+Return exactly one minified JSON object with this schema:
+{"label":"string"}
 Rules:
-- Max 5 words.
-- Plain text only.
-- No surrounding quotes.
+- The label must be plain text only.
+- The label must be 1 to 4 words.
 - No emoji.
+- No surrounding commentary.
 - No trailing punctuation.
-- Prefer the most concrete current coding task.
-- Use the provided user prompts and git diff summary.
+- Prefer a stable, concrete description of the session.
+- Use the opening exchanges for enduring context and the recent exchanges for the current focus.
+- If they diverge, prefer the recent dominant task.
 `;
+
+const clip = (text: string): string => {
+	const normalized = text.trim();
+	if (normalized.length <= MAX_LABEL_LENGTH) return normalized;
+	return `${normalized.slice(0, MAX_LABEL_LENGTH - 1).trimEnd()}…`;
+};
+
+const clipSummaryMessage = (text: string): string => {
+	const normalized = text.trim();
+	if (normalized.length <= SUMMARY_MESSAGE_MAX_CHARS) return normalized;
+	return `${normalized.slice(0, SUMMARY_MESSAGE_MAX_CHARS - 3).trimEnd()}...`;
+};
+
+const normalizeLabel = (text: string, maxWords: number): string => {
+	const normalized = text
+		.replace(/["'`]/g, "")
+		.replace(/[\r\n]+/g, " ")
+		.replace(/\s+/g, " ")
+		.replace(/[.!?,;:]+$/g, "")
+		.trim();
+	if (!normalized) return "";
+	return clip(normalized.split(" ").slice(0, maxWords).join(" "));
+};
+
+const promptToSlug = (prompt: string): string => {
+	const cleaned = prompt
+		.replace(/```[\s\S]*?```/g, " ")
+		.replace(/`[^`]*`/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!cleaned) return "";
+	return normalizeLabel(cleaned, MAX_FALLBACK_WORDS);
+};
+
+export const getMessageText = (message: AgentMessage): string => {
+	if (!message || typeof message !== "object") return "";
+	const maybeMessage = message as { role?: string; content?: unknown };
+	if (maybeMessage.role !== "user" && maybeMessage.role !== "assistant") return "";
+	const { content } = maybeMessage;
+	if (typeof content === "string") {
+		return content.replace(/\s+/g, " ").trim();
+	}
+	if (!Array.isArray(content)) return "";
+	return content
+		.map((part) => {
+			if (!part || typeof part !== "object") return "";
+			const maybePart = part as { type?: string; text?: unknown };
+			return maybePart.type === "text" && typeof maybePart.text === "string" ? maybePart.text : "";
+		})
+		.join(" ")
+		.replace(/\s+/g, " ")
+		.trim();
+};
+
+export const getUserPromptFromMessage = (message: AgentMessage): string | undefined => {
+	if (!message || typeof message !== "object") return undefined;
+	const maybeMessage = message as { role?: string };
+	if (maybeMessage.role !== "user") return undefined;
+	const text = getMessageText(message);
+	return text || undefined;
+};
+
+export const extractConversationPairs = (messages: AgentMessage[]): ConversationPair[] => {
+	const pairs: ConversationPair[] = [];
+	const pendingUserMessages: string[] = [];
+
+	for (const message of messages) {
+		const text = clipSummaryMessage(getMessageText(message));
+		if (!text) continue;
+
+		if (message.role === "user") {
+			pendingUserMessages.push(text);
+			continue;
+		}
+
+		if (message.role !== "assistant" || pendingUserMessages.length === 0) {
+			continue;
+		}
+
+		pairs.push({
+			user: pendingUserMessages.join("\n"),
+			assistant: text,
+		});
+		pendingUserMessages.length = 0;
+	}
+
+	return pairs;
+};
+
+const formatPairs = (pairs: ConversationPair[], startIndex: number): string => {
+	return pairs
+		.map(
+			(pair, index) =>
+				`${startIndex + index + 1}. User: ${pair.user}\n   Assistant: ${pair.assistant}`,
+		)
+		.join("\n\n");
+};
+
+export const buildSessionSummaryInput = (messages: AgentMessage[]): string => {
+	const pairs = extractConversationPairs(messages);
+	if (pairs.length === 0) return "";
+
+	if (pairs.length <= SUMMARY_WINDOW_PAIRS * 2) {
+		return [
+			`Completed exchange pairs: ${pairs.length}`,
+			"Session exchange pairs:",
+			formatPairs(pairs, 0),
+		].join("\n");
+	}
+
+	const openingPairs = pairs.slice(0, SUMMARY_WINDOW_PAIRS);
+	const recentStartIndex = pairs.length - SUMMARY_WINDOW_PAIRS;
+	const recentPairs = pairs.slice(recentStartIndex);
+
+	return [
+		`Completed exchange pairs: ${pairs.length}`,
+		`Opening session pairs (first ${openingPairs.length}):`,
+		formatPairs(openingPairs, 0),
+		"",
+		`Recent session pairs (last ${recentPairs.length}):`,
+		formatPairs(recentPairs, recentStartIndex),
+	].join("\n");
+};
+
+export const getSummaryThresholdToEvaluate = (
+	pairCount: number,
+	lastEvaluatedPairCount: number,
+): number | null => {
+	if (pairCount < SUMMARY_INTERVAL_PAIRS) return null;
+	const nextThreshold = Math.floor(pairCount / SUMMARY_INTERVAL_PAIRS) * SUMMARY_INTERVAL_PAIRS;
+	return nextThreshold > lastEvaluatedPairCount ? nextThreshold : null;
+};
+
+export const parseStructuredSessionLabel = (text: string): string => {
+	const normalized = text.trim();
+	if (!normalized) return "";
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(normalized);
+	} catch {
+		return "";
+	}
+
+	if (!parsed || typeof parsed !== "object") return "";
+	const maybeLabel = (parsed as { label?: unknown }).label;
+	if (typeof maybeLabel !== "string") return "";
+	return normalizeLabel(maybeLabel, MAX_SUMMARY_WORDS);
+};
 
 export default function (pi: ExtensionAPI) {
 	const status: StatusTracker = {
@@ -70,59 +226,18 @@ export default function (pi: ExtensionAPI) {
 	const nativeClearTimeout = globalThis.clearTimeout;
 	let workLabel = "pi";
 	let runId = 0;
-	let promptCount = 0;
-	let promptsSinceReroll = 0;
-	let lastRerollDiffLines: number | null = null;
-	let rerollHintShown = false;
-	let labelMode: "fallback" | "reroll" = "fallback";
+	let lastSummaryPairThreshold = 0;
+	let summaryHintShown = false;
+	let labelMode: "fallback" | "summary" = "fallback";
 	let lastRenderedLabel: string | undefined;
 
-
 	const cwdBase = (ctx: ExtensionContext): string => basename(ctx.cwd || "pi");
-
-	const clip = (text: string): string => {
-		const normalized = text.trim();
-		if (normalized.length <= MAX_TOPIC_LENGTH) return normalized;
-		return `${normalized.slice(0, MAX_TOPIC_LENGTH - 1).trimEnd()}…`;
-	};
-
-	const promptToSlug = (prompt: string): string => {
-		const cleaned = prompt
-			.replace(/```[\s\S]*?```/g, " ")
-			.replace(/`[^`]*`/g, " ")
-			.replace(/\s+/g, " ")
-			.trim();
-		if (!cleaned) return "";
-		return clip(cleaned.split(" ").slice(0, MAX_TOPIC_WORDS).join(" "));
-	};
 
 	const getSessionNameLabel = (ctx: ExtensionContext): string | undefined => {
 		const name = ctx.sessionManager.getSessionName();
 		if (!name) return undefined;
 		const normalized = name.trim();
 		return normalized ? clip(normalized) : undefined;
-	};
-
-	const getUserPromptFromMessage = (message: AgentMessage): string | undefined => {
-		if (!message || typeof message !== "object") return undefined;
-		const maybeMessage = message as { role?: string; content?: unknown };
-		if (maybeMessage.role !== "user") return undefined;
-		const { content } = maybeMessage;
-		if (typeof content === "string") {
-			const normalized = content.trim();
-			return normalized || undefined;
-		}
-		if (!Array.isArray(content)) return undefined;
-		const text = content
-			.map((part) => {
-				if (!part || typeof part !== "object") return "";
-				const maybePart = part as { type?: string; text?: unknown };
-				return maybePart.type === "text" && typeof maybePart.text === "string" ? maybePart.text : "";
-			})
-			.join(" ")
-			.replace(/\s+/g, " ")
-			.trim();
-		return text || undefined;
 	};
 
 	const getLatestPromptFromBranch = (ctx: ExtensionContext): string | undefined => {
@@ -137,61 +252,25 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const refreshWorkLabel = (ctx: ExtensionContext, prompt?: string, options?: { force?: boolean }): void => {
-		if (labelMode === "reroll" && !options?.force) {
-			if (promptsSinceReroll < TITLE_REROLL_STICKY_PROMPTS) {
-				return;
-			}
-			labelMode = "fallback";
-		}
 		const sessionName = getSessionNameLabel(ctx);
 		if (sessionName) {
 			workLabel = sessionName;
 			labelMode = "fallback";
-			promptsSinceReroll = 0;
+			return;
+		}
+		if (labelMode === "summary" && !options?.force) {
 			return;
 		}
 		const source = prompt || getLatestPromptFromBranch(ctx);
 		const slug = source ? promptToSlug(source) : "";
 		workLabel = slug || cwdBase(ctx);
 		labelMode = "fallback";
-		promptsSinceReroll = 0;
 	};
 
 	const displayLabel = (ctx: ExtensionContext): string => {
 		const sessionName = getSessionNameLabel(ctx);
 		if (sessionName) return sessionName;
 		return workLabel || cwdBase(ctx);
-	};
-
-	const normalizeModelLabel = (text: string): string => {
-		const normalized = text
-			.replace(/[\"'`]/g, "")
-			.replace(/[\r\n]+/g, " ")
-			.replace(/\s+/g, " ")
-			.replace(/[.!?,;:]+$/g, "")
-			.trim();
-		if (!normalized) return "";
-		return clip(normalized);
-	};
-
-	const getMessageText = (message: AgentMessage): string => {
-		if (!message || typeof message !== "object") return "";
-		const maybeMessage = message as { role?: string; content?: unknown };
-		if (maybeMessage.role !== "user" && maybeMessage.role !== "assistant") return "";
-		const { content } = maybeMessage;
-		if (typeof content === "string") {
-			return content.replace(/\s+/g, " ").trim();
-		}
-		if (!Array.isArray(content)) return "";
-		return content
-			.map((part) => {
-				if (!part || typeof part !== "object") return "";
-				const maybePart = part as { type?: string; text?: unknown };
-				return maybePart.type === "text" && typeof maybePart.text === "string" ? maybePart.text : "";
-			})
-			.join(" ")
-			.replace(/\s+/g, " ")
-			.trim();
 	};
 
 	const getBranchMessages = (ctx: ExtensionContext): AgentMessage[] => {
@@ -204,93 +283,17 @@ export default function (pi: ExtensionAPI) {
 		return messages;
 	};
 
-	const getRecentUserPrompts = (messages: AgentMessage[]): string[] => {
-		const prompts: string[] = [];
-		for (let i = messages.length - 1; i >= 0 && prompts.length < TITLE_REROLL_USER_MESSAGES; i -= 1) {
-			const message = messages[i];
-			if (!message || typeof message !== "object") continue;
-			const maybeMessage = message as { role?: string };
-			if (maybeMessage.role !== "user") continue;
-			const text = getMessageText(message);
-			if (!text) continue;
-			const clipped = text.length > 220 ? `${text.slice(0, 217)}...` : text;
-			prompts.unshift(clipped);
-		}
-		return prompts;
-	};
-
-	const parseNumstat = (numstat: string): { total: number; lines: string[] } => {
-		const lines = numstat
-			.split("\n")
-			.map((line) => line.trim())
-			.filter(Boolean);
-		let total = 0;
-		const summaryLines: string[] = [];
-		for (const line of lines) {
-			const parts = line.split("\t");
-			if (parts.length < 3) continue;
-			const [addedRaw, deletedRaw, file] = parts;
-			const added = Number.parseInt(addedRaw, 10);
-			const deleted = Number.parseInt(deletedRaw, 10);
-			const binaryChange = Number.isNaN(added) || Number.isNaN(deleted);
-			const lineDelta = binaryChange ? 10 : added + deleted;
-			total += lineDelta;
-			summaryLines.push(binaryChange ? `${file} (binary)` : `${file} (+${added}/-${deleted})`);
-		}
-		return { total, lines: summaryLines };
-	};
-
-	const getGitDiffSnapshot = async (
-		ctx: ExtensionContext,
-	): Promise<{ totalLines: number; summary: string; available: boolean }> => {
-		const diff = await pi.exec("git", ["diff", "--numstat", "HEAD", "--"], { cwd: ctx.cwd, timeout: 5000 });
-		if (diff.code !== 0) {
-			return { totalLines: 0, summary: "git diff unavailable", available: false };
-		}
-
-		const parsed = parseNumstat(diff.stdout);
-		const untracked = await pi.exec("git", ["ls-files", "--others", "--exclude-standard"], {
-			cwd: ctx.cwd,
-			timeout: 5000,
-		});
-		const untrackedFiles = untracked.code === 0
-			? untracked.stdout
-					.split("\n")
-					.map((line) => line.trim())
-					.filter(Boolean)
-			: [];
-		const untrackedLines = untrackedFiles.map((file) => `${file} (new file)`);
-		const totalLines = parsed.total + untrackedFiles.length * 10;
-		const diffLines = [...parsed.lines, ...untrackedLines];
-		const summary = diffLines.length > 0
-			? diffLines.slice(0, TITLE_REROLL_DIFF_FILES).join("\n").slice(0, MAX_DIFF_SUMMARY_CHARS)
-			: "no changes";
-		return { totalLines, summary, available: true };
-	};
-
-	const buildRerollInput = (messages: AgentMessage[], diffSummary: string, totalDiffLines: number): string => {
-		const userPrompts = getRecentUserPrompts(messages);
-		const promptBlock = userPrompts.length > 0
-			? userPrompts.map((prompt, index) => `${index + 1}. ${prompt}`).join("\n")
-			: "(none)";
-		return [
-			`Recent user prompts (last ${TITLE_REROLL_USER_MESSAGES}):`,
-			promptBlock,
-			"",
-			`Git diff summary (total changed lines: ${totalDiffLines}):`,
-			diffSummary,
-		].join("\n");
-	};
-
-	const selectRerollModel = (ctx: ExtensionContext): Model<Api> | undefined => {
-		const exact = ctx.modelRegistry.find(TITLE_REROLL_PROVIDER, TITLE_REROLL_MODEL_ID) as Model<Api> | undefined;
+	const selectSummaryModel = (ctx: ExtensionContext): Model<Api> | undefined => {
+		const exact = ctx.modelRegistry.find(SUMMARY_PROVIDER, SUMMARY_MODEL_ID) as Model<Api> | undefined;
 		if (exact) return exact;
 		const available = ctx.modelRegistry.getAvailable();
-		const sparkLike = available.find(
-			(model) => model.provider === TITLE_REROLL_PROVIDER && model.id.toLowerCase().includes("codex-spark"),
+		const miniLike = available.find(
+			(model) => model.provider === SUMMARY_PROVIDER && model.id.toLowerCase().includes(SUMMARY_MODEL_ID),
 		) as Model<Api> | undefined;
-		if (sparkLike) return sparkLike;
-		if (ctx.model?.provider === TITLE_REROLL_PROVIDER) return ctx.model as Model<Api>;
+		if (miniLike) return miniLike;
+		if (ctx.model?.provider === SUMMARY_PROVIDER && ctx.model.id.toLowerCase().includes(SUMMARY_MODEL_ID)) {
+			return ctx.model as Model<Api>;
+		}
 		return undefined;
 	};
 
@@ -327,22 +330,20 @@ export default function (pi: ExtensionAPI) {
 		}
 	};
 
-	const rerollWorkLabel = async (
+	const summarizeWorkLabel = async (
 		ctx: ExtensionContext,
 		messages: AgentMessage[],
-		diffSummary: string,
-		totalDiffLines: number,
 		runIdSnapshot: number,
-		stateAfterReroll: StatusState,
+		stateAfterSummary: StatusState,
 	): Promise<{ attempted: boolean; updated: boolean; reason: string }> => {
 		if (!ctx.hasUI) return { attempted: false, updated: false, reason: "no-ui" };
 		if (status.running) return { attempted: false, updated: false, reason: "running" };
 		if (getSessionNameLabel(ctx)) return { attempted: false, updated: false, reason: "session-name-set" };
-		const model = selectRerollModel(ctx);
+		const model = selectSummaryModel(ctx);
 		if (!model) return { attempted: false, updated: false, reason: "no-model" };
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-		if (!auth.ok) return { attempted: false, updated: false, reason: "no-api-key" };
-		const input = buildRerollInput(messages, diffSummary, totalDiffLines);
+		if (!auth.ok || !auth.apiKey) return { attempted: false, updated: false, reason: "no-api-key" };
+		const input = buildSessionSummaryInput(messages);
 		if (!input.trim()) return { attempted: false, updated: false, reason: "no-input" };
 
 		let response: AssistantMessage;
@@ -354,8 +355,13 @@ export default function (pi: ExtensionAPI) {
 			};
 			response = await complete(
 				model,
-				{ systemPrompt: TITLE_REROLL_SYSTEM_PROMPT, messages: [userMessage] },
-				{ apiKey: auth.apiKey, headers: auth.headers, maxTokens: 32 },
+				{ systemPrompt: SUMMARY_SYSTEM_PROMPT, messages: [userMessage] },
+				{
+					apiKey: auth.apiKey,
+					headers: auth.headers,
+					maxTokens: SUMMARY_MAX_TOKENS,
+					reasoningEffort: "low",
+				},
 			);
 		} catch {
 			return { attempted: true, updated: false, reason: "request-failed" };
@@ -363,7 +369,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (runIdSnapshot !== runId || status.running) return { attempted: true, updated: false, reason: "stale" };
 		if (response.stopReason === "error" || response.stopReason === "aborted") {
-			const detail = normalizeModelLabel(response.errorMessage || "") || response.stopReason;
+			const detail = normalizeLabel(response.errorMessage || "", MAX_SUMMARY_WORDS) || response.stopReason;
 			return { attempted: true, updated: false, reason: `bad-stop-reason (${detail})` };
 		}
 		const generated = response.content
@@ -372,48 +378,36 @@ export default function (pi: ExtensionAPI) {
 			.join(" ")
 			.replace(/\s+/g, " ")
 			.trim();
-		const nextLabel = normalizeModelLabel(generated);
-		if (!nextLabel) return { attempted: true, updated: false, reason: "empty-label" };
-		labelMode = "reroll";
-		promptsSinceReroll = 0;
+		const nextLabel = parseStructuredSessionLabel(generated);
+		if (!nextLabel) return { attempted: true, updated: false, reason: "invalid-label" };
+		labelMode = "summary";
 		if (nextLabel === workLabel) return { attempted: true, updated: false, reason: "unchanged" };
 		workLabel = nextLabel;
-		setTitle(ctx, stateAfterReroll);
+		setTitle(ctx, stateAfterSummary);
 		return { attempted: true, updated: true, reason: "updated" };
 	};
 
-	const maybeRerollTitle = async (
+	const maybeSummarizeTitle = async (
 		ctx: ExtensionContext,
 		runIdSnapshot: number,
-		stateAfterReroll: StatusState,
-		options?: { force?: boolean },
+		stateAfterSummary: StatusState,
 	): Promise<{ attempted: boolean; updated: boolean; reason: string }> => {
-		if (!options?.force && promptCount < 1) {
-			return { attempted: false, updated: false, reason: "awaiting-first-user-prompt" };
+		const messages = getBranchMessages(ctx);
+		const pairCount = extractConversationPairs(messages).length;
+		const threshold = getSummaryThresholdToEvaluate(pairCount, lastSummaryPairThreshold);
+		if (threshold === null) {
+			if (pairCount < SUMMARY_INTERVAL_PAIRS) {
+				return {
+					attempted: false,
+					updated: false,
+					reason: `pairs-${pairCount}-lt-${SUMMARY_INTERVAL_PAIRS}`,
+				};
+			}
+			return { attempted: false, updated: false, reason: "threshold-already-evaluated" };
 		}
 
-		const diff = await getGitDiffSnapshot(ctx);
-		const delta = lastRerollDiffLines == null ? null : Math.abs(diff.totalLines - lastRerollDiffLines);
-		if (!options?.force && lastRerollDiffLines != null && delta != null && delta < TITLE_REROLL_DIFF_DELTA_THRESHOLD) {
-			return {
-				attempted: false,
-				updated: false,
-				reason: `diff-delta-${delta}-lt-${TITLE_REROLL_DIFF_DELTA_THRESHOLD}`,
-			};
-		}
-
-		const result = await rerollWorkLabel(
-			ctx,
-			getBranchMessages(ctx),
-			diff.summary,
-			diff.totalLines,
-			runIdSnapshot,
-			stateAfterReroll,
-		);
-		if (result.attempted) {
-			lastRerollDiffLines = diff.totalLines;
-		}
-		return result;
+		lastSummaryPairThreshold = threshold;
+		return summarizeWorkLabel(ctx, messages, runIdSnapshot, stateAfterSummary);
 	};
 
 	const clearTabTimeout = (): void => {
@@ -465,9 +459,8 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
-		promptCount = 0;
-		promptsSinceReroll = 0;
-		lastRerollDiffLines = null;
+		lastSummaryPairThreshold = 0;
+		summaryHintShown = false;
 		refreshWorkLabel(ctx, undefined, { force: true });
 		resetState(ctx, "new");
 		clearFallbackRefresh();
@@ -475,9 +468,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_switch", async (event: SessionSwitchEvent, ctx: ExtensionContext) => {
-		promptCount = 0;
-		promptsSinceReroll = 0;
-		lastRerollDiffLines = null;
+		lastSummaryPairThreshold = 0;
+		summaryHintShown = false;
 		refreshWorkLabel(ctx, undefined, { force: true });
 		resetState(ctx, event.reason === "new" ? "new" : "doneCommitted");
 		clearFallbackRefresh();
@@ -485,12 +477,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", async (event: BeforeAgentStartEvent, ctx: ExtensionContext) => {
-		if (event.prompt.trim()) {
-			promptCount += 1;
-			if (labelMode === "reroll") {
-				promptsSinceReroll += 1;
-			}
-		}
 		refreshWorkLabel(ctx, event.prompt);
 		markActivity(ctx);
 	});
@@ -528,18 +514,17 @@ export default function (pi: ExtensionAPI) {
 		}
 		const finalState: StatusState = status.sawCommit ? "doneCommitted" : "doneNoCommit";
 		setTitle(ctx, finalState);
-		void maybeRerollTitle(ctx, completedRunId, finalState)
+		void maybeSummarizeTitle(ctx, completedRunId, finalState)
 			.then((result) => {
-				if (!ctx.hasUI || result.updated || rerollHintShown) return;
+				if (!ctx.hasUI || result.updated || summaryHintShown) return;
 				if (result.reason !== "no-model" && result.reason !== "no-api-key") return;
-				rerollHintShown = true;
-				ctx.ui.notify(`Tab reroll unavailable (${result.reason}). Try again after /login.`, "warning");
+				summaryHintShown = true;
+				ctx.ui.notify(`Tab summarizer unavailable (${result.reason}). Try again after /login.`, "warning");
 			})
 			.catch(() => {
-				// Best-effort only: keep existing label if reroll fails.
+				// Best-effort only: keep existing label if summarization fails.
 			});
 	});
-
 
 	pi.on("session_shutdown", async (_event: SessionShutdownEvent, ctx: ExtensionContext) => {
 		clearTabTimeout();
