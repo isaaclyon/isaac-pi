@@ -2,5 +2,9 @@
   "dependencies": {
     "lsp-pi": "^1.0.4",
     "pi-schedule-prompt": "^0.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "vitest": "^4.1.4"
   }
 }

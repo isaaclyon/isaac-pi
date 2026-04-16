@@ -27,6 +27,17 @@ type StatusTracker = {
 	sawCommit: boolean;
 };
 
+type ModelAuthResult =
+	| {
+			ok: true;
+			apiKey?: string;
+			headers?: Record<string, string>;
+	  }
+	| {
+			ok: false;
+			error: string;
+	  };
+
 export type ConversationPair = {
 	user: string;
 	assistant: string;
@@ -303,6 +314,16 @@ export default function (pi: ExtensionAPI) {
 		fallbackRefreshId = undefined;
 	};
 
+	const resolveModelAuth = async (ctx: ExtensionContext, model: Model<Api>): Promise<ModelAuthResult> => {
+		const maybeModelRegistry = ctx.modelRegistry as {
+			getApiKeyAndHeaders?: (selectedModel: Model<Api>) => Promise<ModelAuthResult>;
+		};
+		if (typeof maybeModelRegistry.getApiKeyAndHeaders !== "function") {
+			return { ok: false, error: "model-registry-auth-unavailable" };
+		}
+		return maybeModelRegistry.getApiKeyAndHeaders(model);
+	};
+
 	const resetFallbackRefreshTimer = (ctx: ExtensionContext): void => {
 		clearFallbackRefresh();
 		if (!ctx.hasUI) return;
@@ -341,8 +362,9 @@ export default function (pi: ExtensionAPI) {
 		if (getSessionNameLabel(ctx)) return { attempted: false, updated: false, reason: "session-name-set" };
 		const model = selectSummaryModel(ctx);
 		if (!model) return { attempted: false, updated: false, reason: "no-model" };
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-		if (!auth.ok || !auth.apiKey) return { attempted: false, updated: false, reason: "no-api-key" };
+		const auth = await resolveModelAuth(ctx, model);
+		if (!auth.ok) return { attempted: false, updated: false, reason: auth.error };
+		if (!auth.apiKey) return { attempted: false, updated: false, reason: "no-api-key" };
 		const input = buildSessionSummaryInput(messages);
 		if (!input.trim()) return { attempted: false, updated: false, reason: "no-input" };
 
