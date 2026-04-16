@@ -267,13 +267,13 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const refreshWorkLabel = (ctx: ExtensionContext, prompt?: string, options?: { force?: boolean }): void => {
+		if ((labelMode === "manual" || labelMode === "summary") && !options?.force) {
+			return;
+		}
 		const sessionName = getSessionNameLabel(ctx);
 		if (sessionName) {
 			workLabel = sessionName;
 			labelMode = "fallback";
-			return;
-		}
-		if ((labelMode === "manual" || labelMode === "summary") && !options?.force) {
 			return;
 		}
 		const source = prompt || getLatestPromptFromBranch(ctx);
@@ -283,6 +283,9 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const displayLabel = (ctx: ExtensionContext): string => {
+		if (labelMode === "manual" || labelMode === "summary") {
+			return workLabel || cwdBase(ctx);
+		}
 		const sessionName = getSessionNameLabel(ctx);
 		if (sessionName) return sessionName;
 		return workLabel || cwdBase(ctx);
@@ -363,7 +366,6 @@ export default function (pi: ExtensionAPI) {
 	): Promise<{ attempted: boolean; updated: boolean; reason: string }> => {
 		if (!ctx.hasUI) return { attempted: false, updated: false, reason: "no-ui" };
 		if (status.running) return { attempted: false, updated: false, reason: "running" };
-		if (getSessionNameLabel(ctx)) return { attempted: false, updated: false, reason: "session-name-set" };
 		const model = selectSummaryModel(ctx);
 		if (!model) return { attempted: false, updated: false, reason: "no-model" };
 		const auth = await resolveModelAuth(ctx, model);

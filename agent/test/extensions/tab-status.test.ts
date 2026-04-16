@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+	return {
+		...actual,
+		complete: vi.fn(),
+	};
+});
+
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { complete } from "@mariozechner/pi-ai";
 import tabStatusExtension, {
 	buildSessionSummaryInput,
 	extractConversationPairs,
@@ -25,6 +34,14 @@ type RegisteredCommand = {
 	handler: (args: string, ctx: ExtensionContext) => Promise<void>;
 };
 
+type ModelRegistryOverrides = Partial<ExtensionContext["modelRegistry"]> & {
+	getApiKeyAndHeaders?: (model: NonNullable<ExtensionContext["model"]>) => Promise<{
+		ok: boolean;
+		apiKey?: string;
+		headers?: Record<string, string>;
+	}>;
+};
+
 const createExtensionHarness = (): {
 	handlers: Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void> | void>;
 	command: RegisteredCommand | undefined;
@@ -41,11 +58,16 @@ const createExtensionHarness = (): {
 			}
 		}),
 	} as unknown as ExtensionAPI;
-	 tabStatusExtension(pi);
+	tabStatusExtension(pi);
 	return { handlers, command };
 };
 
-const createContext = (options?: { sessionName?: string; branch?: AgentMessage[] }): ExtensionContext => {
+const createContext = (options?: {
+	sessionName?: string;
+	branch?: AgentMessage[];
+	modelRegistry?: ModelRegistryOverrides;
+	model?: ExtensionContext["model"];
+}): ExtensionContext => {
 	const branchMessages = options?.branch ?? [];
 	return {
 		hasUI: true,
@@ -61,8 +83,9 @@ const createContext = (options?: { sessionName?: string; branch?: AgentMessage[]
 		modelRegistry: {
 			find: vi.fn(),
 			getAvailable: vi.fn(() => []),
+			...(options?.modelRegistry ?? {}),
 		} as unknown as ExtensionContext["modelRegistry"],
-		model: undefined,
+		model: options?.model,
 		isIdle: () => true,
 		signal: undefined,
 		abort: vi.fn(),
@@ -74,7 +97,13 @@ const createContext = (options?: { sessionName?: string; branch?: AgentMessage[]
 	} as ExtensionContext;
 };
 
+const flushMicrotasks = async (): Promise<void> => {
+	await Promise.resolve();
+	await Promise.resolve();
+};
+
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.useRealTimers();
 });
 
@@ -109,6 +138,71 @@ describe("tab status command", () => {
 		await handlers.get("session_shutdown")!({ type: "session_shutdown" }, ctx);
 
 		expect(ctx.ui.setTitle).toHaveBeenCalledWith("Focus label");
+	});
+
+	it("lets /rename-tab override a visible session name", async () => {
+		const { command, handlers } = createExtensionHarness();
+		const ctx = createContext({ sessionName: "Existing Session Name" });
+
+		await handlers.get("session_start")!({ type: "session_start", reason: "resume" }, ctx);
+		vi.mocked(ctx.ui.setTitle).mockClear();
+
+		await command!.handler("Focus label", ctx);
+
+		expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("Focus label: 🆕");
+	});
+
+	it("lets automatic summaries override a visible session name", async () => {
+		const { handlers } = createExtensionHarness();
+		vi.mocked(complete).mockResolvedValue({
+			role: "assistant",
+			content: [{ type: "text", text: '{"label":"Session summary"}' }],
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			model: "gpt-5.4-mini",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: 0,
+		} as Awaited<ReturnType<typeof complete>>);
+		const model = { provider: "openai-codex", id: "gpt-5.4-mini" } as NonNullable<ExtensionContext["model"]>;
+		const ctx = createContext({
+			sessionName: "Existing Session Name",
+			branch: [
+				userMessage("pair one user"),
+				assistantMessage("pair one assistant"),
+				userMessage("pair two user"),
+				assistantMessage("pair two assistant"),
+				userMessage("pair three user"),
+				assistantMessage("pair three assistant"),
+				userMessage("pair four user"),
+				assistantMessage("pair four assistant"),
+			],
+			model,
+			modelRegistry: {
+				find: vi.fn(() => model),
+				getAvailable: vi.fn(() => [model]),
+				getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: "key", headers: {} })),
+			},
+		});
+
+		await handlers.get("session_start")!({ type: "session_start", reason: "resume" }, ctx);
+		await handlers.get("agent_start")!({ type: "agent_start" }, ctx);
+		vi.mocked(ctx.ui.setTitle).mockClear();
+
+		await handlers.get("agent_end")!(
+			{ type: "agent_end", messages: [{ ...assistantMessage("done"), stopReason: "stop" }] },
+			ctx,
+		);
+		await flushMicrotasks();
+
+		expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("Session summary: 🚧");
 	});
 });
 
