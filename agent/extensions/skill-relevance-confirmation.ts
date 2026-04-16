@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const SKILL_RELEVANCE_INSTRUCTION =
-	'Before responding, if any available skill is relevant to the user\'s request, state exactly: "{x skill} is relevant to this request", invoke that skill, and then continue.';
+const SKILL_RELEVANCE_INSTRUCTION = "Invoke any relevant skills.";
 
 export default function skillRelevanceConfirmationExtension(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event) => {
