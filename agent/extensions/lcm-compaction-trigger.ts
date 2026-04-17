@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import type { ContextUsage, ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 type TriggerPolicy = {
@@ -128,14 +128,15 @@ function parsePolicy(raw: unknown): CompactionTriggerPolicy {
 	if (!obj) return DEFAULT_POLICY;
 
 	const enabled = asBoolean(obj.enabled) ?? DEFAULT_POLICY.enabled;
+	const rawSummaryRetention = asObject(obj.summaryRetention);
 	return {
 		enabled,
 		trigger: { ...DEFAULT_POLICY.trigger, ...parseTriggerPatch(obj.trigger) },
 		ui: { ...DEFAULT_POLICY.ui, ...parseUiPatch(obj.ui) },
-		summaryRetention: asObject(obj.summaryRetention)
+		summaryRetention: rawSummaryRetention
 			? {
-				mode: obj.summaryRetention.mode === "percent" ? "percent" : "tokens",
-				value: asNonNegativeInteger(obj.summaryRetention.value) ?? 0,
+				mode: rawSummaryRetention.mode === "percent" ? "percent" : "tokens",
+				value: asNonNegativeInteger(rawSummaryRetention.value) ?? 0,
 			}
 			: undefined,
 		profiles: parseProfiles(obj.profiles),
@@ -156,7 +157,7 @@ export function loadCompactionTriggerPolicy(cwd: string): CompactionTriggerPolic
 
 export function resolveEffectivePolicy(
 	policy: CompactionTriggerPolicy,
-	model: ExtensionContext["model"],
+	model: Pick<Model<any>, "provider" | "id"> | undefined,
 ): CompactionTriggerPolicy {
 	if (!model || !policy.profiles) return policy;
 	const selector = `${model.provider}/${model.id}`;
@@ -209,9 +210,10 @@ function formatTokenCount(value: number): string {
 
 export function formatStatus(
 	policy: CompactionTriggerPolicy,
-	usage: Pick<ContextUsage, "tokens" | "contextWindow">,
+	usage: Pick<ContextUsage, "tokens" | "contextWindow"> | undefined,
 ): string | undefined {
 	if (!policy.enabled || !policy.ui.showStatus) return undefined;
+	if (!usage) return policy.ui.name;
 	const limit = policy.trigger.maxTokens && policy.trigger.maxTokens > 0
 		? policy.trigger.maxTokens
 		: usage.contextWindow;

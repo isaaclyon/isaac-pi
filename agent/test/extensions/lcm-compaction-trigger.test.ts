@@ -140,7 +140,7 @@ describe("formatStatus", () => {
 				ui: { ...DEFAULT_POLICY.ui, name: "ctx" },
 				trigger: { ...DEFAULT_POLICY.trigger, maxTokens: 100_000 },
 			},
-			{ tokens: 25_000, percent: 2.5, contextWindow: 1_000_000 },
+			{ tokens: 25_000, contextWindow: 1_000_000 },
 		);
 
 		expect(status).toBe("ctx · 25.0% (25k/100k)");
