@@ -1,13 +1,11 @@
 {
-  "lastChangelogVersion": "0.67.2",
+  "lastChangelogVersion": "0.67.6",
   "enabledModels": [
-    "openai-codex/gpt-5.4",
-    "openai-codex/gpt-5.4-mini",
-    "openai-codex/gpt-5.3-codex"
+    "openai-codex/gpt-5.4"
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
-  "defaultThinkingLevel": "xhigh",
+  "defaultThinkingLevel": "high",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
@@ -18,14 +16,31 @@
     "npm:@byteowlz/pi-auto-rename",
     "https://github.com/nicobailon/pi-review-loop",
     "npm:pi-ask-user",
-    "npm:taskplane",
     "npm:pi-mcp-adapter",
     "npm:pi-web-access",
     "npm:@aliou/pi-processes",
     "npm:pi-updater",
-    "../.pi/vendor/pi-lcm"
+    "../.pi/vendor/pi-lcm",
+    "npm:lsp-pi"
   ],
   "hideThinkingBlock": false,
   "treeFilterMode": "no-tools",
-  "doubleEscapeAction": "tree"
+  "doubleEscapeAction": "tree",
+  "theme": "dark",
+  "lcm": {
+    "enabled": true,
+    "leafChunkTokens": 4000,
+    "condensationThreshold": 6,
+    "maxDepth": 5,
+    "maxSummaryTokens": 8000,
+    "minMessagesForCompaction": 10,
+    "leafPassConcurrency": 6,
+    "compactionModels": [
+      {
+        "provider": "openai-codex",
+        "id": "gpt-5.4-mini"
+      }
+    ],
+    "debugMode": true
+  }
 }
