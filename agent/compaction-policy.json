@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "trigger": {
+    "maxTokens": 150000
+  },
+  "models": [
+    {
+      "model": "openai-codex/gpt-5.4-mini",
+      "thinkingLevel": "medium"
+    }
+  ]
+}

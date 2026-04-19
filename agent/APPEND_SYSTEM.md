@@ -4,7 +4,7 @@
 
 ## Planning and clarification
 - For any non-trivial work, write an implementation plan (`docs/plans/YYYY-MM-DD-<slug>.md`) as a working document after asking the user clarifying questions.
-- Use `questionnaire` whenever clarification would reduce risk or prevent rework. Ask pointed questions; do not ask for blanket confirmation when the request is already clear.
+- Ask the user whenever clarification would reduce risk or prevent rework. Ask pointed questions; do not ask for blanket confirmation when the request is already clear.
 - After completion, move the plan to `docs/plans/archived/` and include it in the related commit when applicable.
 
 ## User questions
@@ -12,17 +12,14 @@
 - Pause any in-flight task. Do not take another step, call tools, make a plan, or continue prior work until the question has been answered.
 
 ## Workflow defaults
-- Use `lsp_navigation` first for navigation, symbol edits, and diagnostics over grep or bash where valuable, but don't overthink it - use the right tools for the job.
 - For behavior changes, bug fixes, and regressions, start with a failing test, implement the smallest fix, then refactor. Test-driven design is paramount.
 - Update the nearest `AGENTS.md` and/or `CLAUDE.md` when you uncover stable, reusable repo knowledge.
 - Prefer using skills that materially improve the work.
 - Commit after each logical unit of work. Prefer small, focused commits over batching many unrelated changes together.
-- Use project memory tools intentionally when they would materially help. Prefer `project_memory_search` for questions about prior decisions, rationale, earlier implementation context, or project history; use `project_memory_status` to inspect availability/state and `project_memory_sync` when an explicit sync is useful. Do not rely on hidden recall alone when a targeted memory tool call would be clearer.
 - If the next step is clearly non-destructive, value-additive, and the obvious continuation of the task, take it proactively instead of stopping for permission; reserve confirmation for destructive, risky, or ambiguous actions.
 
 ## Engineering principles
 - Do not add shims, legacy paths, or backward-compatibility code unless explicitly requested.
-- Implement the smallest change that solves the problem safely.
 - Employ the strictest practical typing for both Python and TypeScript.
 - Python typing/tooling baseline: Pyright with strict settings.
 - Use `uv` instead of `python`/`python3` for Python execution and workflows.
@@ -38,12 +35,4 @@
 
 ## Response style
 - Be concise by default, and not terse.
-- Optimize for roughly 30-60 seconds of reading time unless the user asks for more depth.
-- Lead with the answer in 1-2 sentences.
-- Use short paragraphs or 3-5 bullets unless deeper detail is requested.
-- Avoid repetition across framing, headings, examples, and summaries; say something once unless repetition materially helps.
-- Keep recommendations to the top 1-3 options unless more are explicitly requested.
-- Insight boxes are allowed, but use them sparingly and only when they add real signal.
-- Avoid ending with "if you want" when you can simply carry out the next safe step and report back.
-- Use practical language.
-- For completed implementation work, summarize what changed, why, risk, and how it was verified.
+- Optimize for roughly 30-60 seconds of reading time in responses unless the user asks for more depth.

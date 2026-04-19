@@ -1,13 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildFooterLines, formatExtensionStatuses } from "../../extensions/custom-footer.js";
 
 describe("custom footer extension statuses", () => {
-	it("joins extension statuses in key order, skips blanks, and hides MCP and Context7 statuses", () => {
+	it("joins extension statuses in key order, skips blanks, and hides MCP, Context7, LSP, and compaction statuses", () => {
 		const statuses = new Map<string, string>([
 			["zeta", "Z status"],
 			["example-mcp", "Example MCP connected"],
 			["context7", "⚡ context7"],
+			["lsp", "LSP (tool)"],
+			["lcm", "LCM 12m 4s"],
+			["lcm-compaction-trigger", "LCM proactive compaction"],
 			["github-pr", "PR #123 ✓ merged"],
 			["empty", "   "],
 			["alpha", "Alpha status"],
@@ -15,6 +18,10 @@ describe("custom footer extension statuses", () => {
 
 		expect(formatExtensionStatuses(statuses)).toBe("Alpha status  PR #123 ✓ merged  Z status");
 	});
+});
+
+afterEach(() => {
+	vi.unstubAllEnvs();
 });
 
 describe("custom footer layout", () => {
@@ -85,6 +92,76 @@ describe("custom footer layout", () => {
 		});
 
 		expect(lines[0]).toContain("repo/.worktrees/name");
+	});
+
+	it("does not treat similarly prefixed directories as the home directory", () => {
+		vi.stubEnv("HOME", "/Users/isaaclyon");
+
+		const theme = {
+			fg: (_tone: string, text: string) => text,
+		};
+
+		const lines = buildFooterLines({
+			theme: theme as never,
+			width: 220,
+			cwd: "/Users/isaaclyon-work/repo",
+			contextPercentValue: 42.1,
+			contextWindow: 200_000,
+			branch: "feature/test",
+			worktreeName: "repo",
+			gitSummary: null,
+			extensionStatuses: "",
+			rightSide: "gpt-5.4",
+		});
+
+		expect(lines[0]).toContain("Users/isaaclyon-work/repo");
+		expect(lines[0]).not.toContain("~/work/repo");
+	});
+
+	it("handles Windows-style separators when shortening the cwd", () => {
+		vi.stubEnv("HOME", "");
+		vi.stubEnv("USERPROFILE", "C:\\Users\\isaaclyon");
+
+		const theme = {
+			fg: (_tone: string, text: string) => text,
+		};
+
+		const lines = buildFooterLines({
+			theme: theme as never,
+			width: 220,
+			cwd: "C:\\Users\\isaaclyon\\repo\\worktrees\\name",
+			contextPercentValue: 42.1,
+			contextWindow: 200_000,
+			branch: "feature/test",
+			worktreeName: "name",
+			gitSummary: null,
+			extensionStatuses: "",
+			rightSide: "gpt-5.4",
+		});
+
+		expect(lines[0]).toContain("repo/worktrees/name");
+		expect(lines[0]).not.toContain("\\");
+	});
+
+	it("preserves backslashes in ordinary Unix paths", () => {
+		const theme = {
+			fg: (_tone: string, text: string) => text,
+		};
+
+		const lines = buildFooterLines({
+			theme: theme as never,
+			width: 220,
+			cwd: "/Users/isaaclyon/project/foo\\bar/baz",
+			contextPercentValue: 42.1,
+			contextWindow: 200_000,
+			branch: "feature/test",
+			worktreeName: "baz",
+			gitSummary: null,
+			extensionStatuses: "",
+			rightSide: "gpt-5.4",
+		});
+
+		expect(lines[0]).toContain("foo\\bar/baz");
 	});
 
 	it("uses muted colors for normal footer text and reserves warning colors for problem states", () => {

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import type { Stats } from "node:fs";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
@@ -14,45 +15,65 @@ type GitSummary = {
 };
 
 type GitPaths = {
-	workTree: string;
-	gitDir: string;
 	gitArgsPrefix: string[];
 };
+
+type GitRefreshState = {
+	cwd: string;
+	promise: Promise<void>;
+};
+
+function getFsErrorCode(error: unknown): string | undefined {
+	if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+
+	const code = (error as { code?: unknown }).code;
+	return typeof code === "string" ? code : undefined;
+}
 
 async function resolveGitPaths(cwd: string): Promise<GitPaths | null> {
 	let currentDir = path.resolve(cwd);
 
 	while (true) {
 		const dotGit = path.join(currentDir, ".git");
-		try {
-			const stats = await fs.stat(dotGit);
-			if (stats.isDirectory()) {
-				return {
-					workTree: currentDir,
-					gitDir: dotGit,
-					gitArgsPrefix: ["--git-dir", dotGit, "--work-tree", currentDir],
-				};
-			}
+		let stats: Stats;
 
-			if (stats.isFile()) {
+		try {
+			stats = await fs.stat(dotGit);
+		} catch (error) {
+			const code = getFsErrorCode(error);
+			if (code === "EACCES" || code === "EPERM") return null;
+			if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+
+			const parentDir = path.dirname(currentDir);
+			if (parentDir === currentDir) return null;
+			currentDir = parentDir;
+			continue;
+		}
+
+		if (stats.isDirectory()) {
+			return {
+				gitArgsPrefix: ["--git-dir", dotGit, "--work-tree", currentDir],
+			};
+		}
+
+		if (stats.isFile()) {
+			try {
 				const gitFileContent = await fs.readFile(dotGit, "utf8");
 				const match = gitFileContent.match(/^gitdir:\s*(.+)$/m);
 				if (!match) return null;
 
 				const gitDir = path.resolve(currentDir, match[1]!.trim());
 				return {
-					workTree: currentDir,
-					gitDir,
 					gitArgsPrefix: ["--git-dir", gitDir, "--work-tree", currentDir],
 				};
+			} catch (error) {
+				const code = getFsErrorCode(error);
+				if (code === "EACCES" || code === "EPERM" || code === "ENOENT") return null;
+				throw error;
 			}
-		} catch {
-			// Keep walking up.
 		}
 
-		const parentDir = path.dirname(currentDir);
-		if (parentDir === currentDir) return null;
-		currentDir = parentDir;
+		return null;
 	}
 }
 
@@ -65,11 +86,23 @@ function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
+function isWindowsStylePath(value: string): boolean {
+	return /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\");
+}
+
+function normalizePathSeparators(value: string): string {
+	return value.replace(/\\/g, "/");
+}
+
 function formatLastPathSegments(cwd: string, segmentCount: number): string {
-	let display = cwd;
+	const shouldNormalizeSeparators = isWindowsStylePath(cwd) || isWindowsStylePath(process.env.HOME || "") || isWindowsStylePath(process.env.USERPROFILE || "");
+	let display = shouldNormalizeSeparators ? normalizePathSeparators(cwd) : cwd;
 	const home = process.env.HOME || process.env.USERPROFILE;
-	if (home && cwd.startsWith(home)) {
-		display = `~${cwd.slice(home.length)}`;
+	if (home) {
+		const normalizedHome = shouldNormalizeSeparators ? normalizePathSeparators(home) : home;
+		if (display === normalizedHome || display.startsWith(`${normalizedHome}/`)) {
+			display = `~${display.slice(normalizedHome.length)}`;
+		}
 	}
 
 	const segments = display.split("/").filter((segment) => segment.length > 0);
@@ -225,7 +258,13 @@ function buildGitStateText(theme: ExtensionContext["ui"]["theme"], summary: GitS
 
 function shouldHideExtensionStatus(key: string): boolean {
 	const normalizedKey = key.toLowerCase();
-	return normalizedKey.includes("mcp") || normalizedKey === "context7";
+	return (
+		normalizedKey.includes("mcp") ||
+		normalizedKey === "context7" ||
+		normalizedKey === "lsp" ||
+		normalizedKey === "lcm" ||
+		normalizedKey === "lcm-compaction-trigger"
+	);
 }
 
 export function formatExtensionStatuses(statuses: ReadonlyMap<string, string>): string {
@@ -298,27 +337,42 @@ export function buildFooterLines({
 export default function (pi: ExtensionAPI) {
 	let worktreeName: string | null = null;
 	let gitSummary: GitSummary | null = null;
-	let gitRefreshInFlight: Promise<void> | null = null;
+	let gitRefreshInFlight: GitRefreshState | null = null;
+	let activeSessionId: string | null = null;
+	let footerActivationToken = 0;
 	let activeCwd = process.cwd();
 
 	async function refreshGitData(): Promise<void> {
-		if (gitRefreshInFlight) return gitRefreshInFlight;
+		const cwd = activeCwd;
+		if (gitRefreshInFlight?.cwd === cwd) return gitRefreshInFlight.promise;
 
-		gitRefreshInFlight = (async () => {
-			const [nextWorktreeName, nextGitSummary] = await Promise.all([
-				getWorktreeName(pi, activeCwd),
-				getGitSummary(pi, activeCwd),
-			]);
+		const promise = (async () => {
+			const [nextWorktreeName, nextGitSummary] = await Promise.all([getWorktreeName(pi, cwd), getGitSummary(pi, cwd)]);
+			if (activeCwd !== cwd) return;
 			worktreeName = nextWorktreeName;
 			gitSummary = nextGitSummary;
 		})().finally(() => {
-			gitRefreshInFlight = null;
+			if (gitRefreshInFlight?.promise === promise) {
+				gitRefreshInFlight = null;
+			}
 		});
 
-		return gitRefreshInFlight;
+		gitRefreshInFlight = { cwd, promise };
+		return promise;
+	}
+
+	async function activateFooter(ctx: ExtensionContext): Promise<void> {
+		const sessionId = ctx.sessionManager.getSessionId();
+		const activationToken = ++footerActivationToken;
+		activeSessionId = sessionId;
+		activeCwd = ctx.cwd;
+		await refreshGitData();
+		if (activationToken !== footerActivationToken || activeSessionId !== sessionId) return;
+		installFooter(ctx);
 	}
 
 	function installFooter(ctx: ExtensionContext) {
+		activeSessionId = ctx.sessionManager.getSessionId();
 		activeCwd = ctx.cwd;
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			let disposed = false;
@@ -361,18 +415,18 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
-		activeCwd = ctx.cwd;
-		await refreshGitData();
-		installFooter(ctx);
+		await activateFooter(ctx);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
-		activeCwd = ctx.cwd;
-		await refreshGitData();
-		installFooter(ctx);
+		await activateFooter(ctx);
 	});
 
 	pi.on("model_select", async (_event, ctx) => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (activeSessionId !== null && activeSessionId !== sessionId) return;
+		footerActivationToken += 1;
+		activeSessionId = sessionId;
 		activeCwd = ctx.cwd;
 		installFooter(ctx);
 	});

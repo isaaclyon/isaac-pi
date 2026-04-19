@@ -5,8 +5,8 @@
     "openai-codex/gpt-5.4-mini"
   ],
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.4-mini",
-  "defaultThinkingLevel": "low",
+  "defaultModel": "gpt-5.4",
+  "defaultThinkingLevel": "high",
   "steeringMode": "all",
   "transport": "websocket",
   "collapseChangelog": true,
@@ -14,14 +14,15 @@
   "packages": [
     "npm:pi-caffeinate@2.0.0",
     "npm:pi-tool-display@0.1.11",
-    "./git/github.com/nicobailon/pi-review-loop",
+    "npm:pi-interactive-shell",
     "npm:pi-ask-user",
     "npm:pi-mcp-adapter",
     "npm:pi-web-access",
     "npm:@aliou/pi-processes",
     "npm:pi-updater",
     "../.pi/vendor/pi-lcm",
-    "npm:lsp-pi"
+    "npm:lsp-pi",
+    "npm:@plannotator/pi-extension"
   ],
   "hideThinkingBlock": false,
   "treeFilterMode": "no-tools",
