@@ -115,17 +115,17 @@ function formatLastPathSegments(cwd: string, segmentCount: number): string {
 	return display || ".";
 }
 
-function buildRightSide(ctx: ExtensionContext, pi: ExtensionAPI, includeProvider: boolean): string {
-	const modelId = ctx.model?.id || "no-model";
+function buildRightSide(model: ExtensionContext["model"], pi: ExtensionAPI, includeProvider: boolean): string {
+	const modelId = model?.id || "no-model";
 	let right = modelId;
 
-	if (ctx.model?.reasoning) {
+	if (model?.reasoning) {
 		const thinking = pi.getThinkingLevel();
 		right = thinking === "off" ? `${modelId} • thinking off` : `${modelId} • ${thinking}`;
 	}
 
-	if (includeProvider && ctx.model?.provider) {
-		right = `(${ctx.model.provider}) ${right}`;
+	if (includeProvider && model?.provider) {
+		right = `(${model.provider}) ${right}`;
 	}
 
 	return right;
@@ -334,6 +334,21 @@ export function buildFooterLines({
 	return [truncateToWidth(topLine, width), middleLine, truncateToWidth(bottomLine, width)];
 }
 
+function getContextUsageSafely(ctx: ExtensionContext) {
+	try {
+		return ctx.getContextUsage();
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message.includes("This extension instance is stale after session replacement or reload")
+		) {
+			return null;
+		}
+
+		throw error;
+	}
+}
+
 export default function (pi: ExtensionAPI) {
 	let worktreeName: string | null = null;
 	let gitSummary: GitSummary | null = null;
@@ -395,19 +410,20 @@ export default function (pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					const usage = ctx.getContextUsage();
+					const usage = getContextUsageSafely(ctx);
 
+					const model = ctx.model;
 					return buildFooterLines({
 						theme,
 						width,
-						cwd: ctx.cwd,
+						cwd: activeCwd,
 						contextPercentValue: usage?.percent ?? null,
-						contextWindow: usage?.contextWindow ?? ctx.model?.contextWindow ?? 0,
+						contextWindow: usage?.contextWindow ?? model?.contextWindow ?? 0,
 						branch: footerData.getGitBranch(),
 						worktreeName,
 						gitSummary,
 						extensionStatuses: formatExtensionStatuses(footerData.getExtensionStatuses()),
-						rightSide: buildRightSide(ctx, pi, footerData.getAvailableProviderCount() > 1),
+						rightSide: buildRightSide(model, pi, footerData.getAvailableProviderCount() > 1),
 					});
 				},
 			};

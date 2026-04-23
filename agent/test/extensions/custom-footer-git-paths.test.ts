@@ -57,6 +57,10 @@ function createEaccesError(): NodeJS.ErrnoException {
 	return error;
 }
 
+function createStaleExtensionError(): Error {
+	return new Error("This extension instance is stale after session replacement or reload. Use the provided replacement-session context instead.");
+}
+
 function createDirectoryStats(): never {
 	return {
 		isDirectory: () => true,
@@ -266,5 +270,127 @@ describe("custom footer git path resolution", () => {
 
 		expect(lines[2]).toContain("model-b");
 		expect(lines[2]).not.toContain("model-a");
+	});
+
+	it("does not throw if context usage becomes stale during render", async () => {
+		mockStat.mockResolvedValue(createDirectoryStats());
+		mockReadFile.mockResolvedValue("gitdir: /tmp/repo/.git\n");
+
+		const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void> | void>();
+		let footerFactory: unknown;
+		const setFooter = vi.fn((factory: unknown) => {
+			footerFactory = factory;
+		});
+		const exec = vi.fn(async (command: string, args: string[]) => {
+			if (command !== "git") throw new Error(`unexpected command: ${command}`);
+			if (args.includes("rev-parse")) return { stdout: "/tmp/repo\n", code: 0 };
+			if (args.includes("status")) return { stdout: "## main...origin/main\n", code: 0 };
+			throw new Error(`unexpected args: ${args.join(" ")}`);
+		});
+		const pi = {
+			on: vi.fn((event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void) => {
+				handlers.set(event, handler);
+			}),
+			exec,
+		} as unknown as ExtensionAPI;
+
+		customFooterExtension(pi);
+
+		const ctx = {
+			cwd: "/tmp/repo",
+			sessionManager: createSessionManager("session-a"),
+			ui: {
+				setFooter,
+			},
+			model: { id: "model-a", contextWindow: 200_000 },
+			getContextUsage: vi.fn(() => {
+				throw createStaleExtensionError();
+			}),
+		} as unknown as ExtensionContext;
+
+		await expect(handlers.get("session_start")!({ type: "session_start", reason: "new" }, ctx)).resolves.toBeUndefined();
+		expect(setFooter).toHaveBeenCalledTimes(1);
+
+		const theme = {
+			fg: (_tone: string, text: string) => text,
+		};
+		const tui = {
+			requestRender: vi.fn(),
+		};
+		const footerData = {
+			onBranchChange: vi.fn(() => vi.fn()),
+			getGitBranch: vi.fn(() => "feature/test"),
+			getExtensionStatuses: vi.fn(() => new Map()),
+			getAvailableProviderCount: vi.fn(() => 1),
+		};
+		const footer = (footerFactory as FooterFactory)(tui, theme, footerData);
+
+		expect(() => footer.render(220)).not.toThrow();
+		const lines = footer.render(220);
+		expect(lines[0]).toContain("?/200k");
+	});
+
+	it("does not throw if the footer context becomes stale during render", async () => {
+		mockStat.mockResolvedValue(createDirectoryStats());
+		mockReadFile.mockResolvedValue("gitdir: /tmp/repo/.git\n");
+
+		const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void> | void>();
+		let footerFactory: unknown;
+		const setFooter = vi.fn((factory: unknown) => {
+			footerFactory = factory;
+		});
+		const exec = vi.fn(async (command: string, args: string[]) => {
+			if (command !== "git") throw new Error(`unexpected command: ${command}`);
+			if (args.includes("rev-parse")) return { stdout: "/tmp/repo\n", code: 0 };
+			if (args.includes("status")) return { stdout: "## main...origin/main\n", code: 0 };
+			throw new Error(`unexpected args: ${args.join(" ")}`);
+		});
+		const pi = {
+			on: vi.fn((event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void) => {
+				handlers.set(event, handler);
+			}),
+			exec,
+		} as unknown as ExtensionAPI;
+
+		customFooterExtension(pi);
+
+		let cwdReads = 0;
+		const ctx = {
+			sessionManager: createSessionManager("session-a"),
+			ui: {
+				setFooter,
+			},
+			model: { id: "model-a", contextWindow: 200_000 },
+			getContextUsage: vi.fn(() => ({ tokens: 20_000, contextWindow: 200_000, percent: 10 })),
+		} as unknown as ExtensionContext;
+
+		Object.defineProperty(ctx, "cwd", {
+			get() {
+				cwdReads += 1;
+				if (cwdReads <= 2) return "/tmp/repo";
+				throw createStaleExtensionError();
+			},
+		});
+
+		await expect(handlers.get("session_start")!({ type: "session_start", reason: "new" }, ctx)).resolves.toBeUndefined();
+		expect(setFooter).toHaveBeenCalledTimes(1);
+
+		const theme = {
+			fg: (_tone: string, text: string) => text,
+		};
+		const tui = {
+			requestRender: vi.fn(),
+		};
+		const footerData = {
+			onBranchChange: vi.fn(() => vi.fn()),
+			getGitBranch: vi.fn(() => "feature/test"),
+			getExtensionStatuses: vi.fn(() => new Map()),
+			getAvailableProviderCount: vi.fn(() => 1),
+		};
+		const footer = (footerFactory as FooterFactory)(tui, theme, footerData);
+
+		expect(() => footer.render(220)).not.toThrow();
+		const lines = footer.render(220);
+		expect(lines[0]).toContain("tmp/repo");
 	});
 });
