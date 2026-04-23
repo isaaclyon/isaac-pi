@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { AutocompleteProvider, AutocompleteSuggestions } from "@mariozechner/pi-tui";
 import {
+	SkillAutocompleteEditor,
 	createSkillAutocompleteExtension,
 	createSkillAutocompleteProvider,
 	extractSkillToken,
 	filterSkills,
+	shouldAutoTriggerSkillAutocomplete,
 } from "../../extensions/skill-autocomplete.js";
 
 const createCurrentProvider = (): AutocompleteProvider => ({
@@ -25,6 +27,22 @@ const createCurrentProvider = (): AutocompleteProvider => ({
 	},
 });
 
+const dummyTui = {
+	requestRender: vi.fn(),
+	terminal: { rows: 24 },
+} as never;
+
+const dummyTheme = {
+	borderColor: (value: string) => value,
+	selectList: {
+		selectedPrefix: (value: string) => value,
+		selectedText: (value: string) => value,
+		description: (value: string) => value,
+		scrollInfo: (value: string) => value,
+		noMatch: (value: string) => value,
+	},
+} as never;
+
 describe("skill autocomplete token extraction", () => {
 	it("extracts a skill token after a dollar sign at a word boundary", () => {
 		expect(extractSkillToken("invoke $use-gh-cli")).toBe("use-gh-cli");
@@ -33,6 +51,14 @@ describe("skill autocomplete token extraction", () => {
 		expect(extractSkillToken("invoke skill $use test")).toBeUndefined();
 		expect(extractSkillToken("invoke skill use-gh-cli")).toBeUndefined();
 		expect(extractSkillToken("invoke x$use-gh-cli")).toBeUndefined();
+	});
+
+	it("decides when a printable key should re-open autocomplete live", () => {
+		expect(shouldAutoTriggerSkillAutocomplete("$", "$")).toBe(true);
+		expect(shouldAutoTriggerSkillAutocomplete("u", "$u")).toBe(true);
+		expect(shouldAutoTriggerSkillAutocomplete(" ", "$u ")).toBe(false);
+		expect(shouldAutoTriggerSkillAutocomplete("\n", "$u\n")).toBe(false);
+		expect(shouldAutoTriggerSkillAutocomplete("\u001b", "$u")).toBe(false);
 	});
 });
 
@@ -102,10 +128,30 @@ describe("skill autocomplete provider", () => {
 	});
 });
 
+describe("skill autocomplete editor", () => {
+	it("re-opens autocomplete while typing a skill token", () => {
+		const editor = new SkillAutocompleteEditor(dummyTui, dummyTheme);
+		const triggerSpy = vi.spyOn(editor as unknown as { tryTriggerAutocomplete: () => void }, "tryTriggerAutocomplete");
+
+		editor.setText("try ");
+		editor.handleInput("$");
+		expect(triggerSpy).toHaveBeenCalledTimes(1);
+
+		triggerSpy.mockClear();
+		editor.handleInput("u");
+		expect(triggerSpy).toHaveBeenCalledTimes(1);
+
+		triggerSpy.mockClear();
+		editor.handleInput(" ");
+		expect(triggerSpy).not.toHaveBeenCalled();
+	});
+});
+
 describe("skill autocomplete extension", () => {
-	it("registers a stacked autocomplete provider on session start", async () => {
+	it("registers a stacked autocomplete provider and editor override on session start", async () => {
 		const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void> | void>();
 		const addAutocompleteProvider = vi.fn();
+		const setEditorComponent = vi.fn();
 		const pi = {
 			on: vi.fn((event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void) => {
 				handlers.set(event, handler);
@@ -118,6 +164,7 @@ describe("skill autocomplete extension", () => {
 			cwd: "/tmp/repo",
 			ui: {
 				addAutocompleteProvider,
+				setEditorComponent,
 			},
 		} as unknown as ExtensionContext;
 
@@ -125,5 +172,7 @@ describe("skill autocomplete extension", () => {
 
 		expect(addAutocompleteProvider).toHaveBeenCalledTimes(1);
 		expect(typeof addAutocompleteProvider.mock.calls[0]![0]).toBe("function");
+		expect(setEditorComponent).toHaveBeenCalledTimes(1);
+		expect(typeof setEditorComponent.mock.calls[0]![0]).toBe("function");
 	});
 });

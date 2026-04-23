@@ -4,15 +4,48 @@ import { fileURLToPath } from "node:url";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
+	Editor,
 	type AutocompleteItem,
 	type AutocompleteProvider,
 	type AutocompleteSuggestions,
+	type EditorTheme,
 	fuzzyFilter,
 } from "@mariozechner/pi-tui";
 
 const MAX_SUGGESTIONS = 20;
 const SKILL_TOKEN_RE = /(?:^|[ \t])\$([A-Za-z0-9_-]*)$/;
 const DEFAULT_SKILLS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "skills");
+
+type SkillAutocompleteTrigger = {
+	tryTriggerAutocomplete: (explicitTab?: boolean) => void;
+};
+
+export function extractSkillToken(textBeforeCursor: string): string | undefined {
+	const match = textBeforeCursor.match(SKILL_TOKEN_RE);
+	return match?.[1];
+}
+
+export function shouldAutoTriggerSkillAutocomplete(data: string, textBeforeCursor: string): boolean {
+	return data.length === 1 && data.charCodeAt(0) >= 32 && extractSkillToken(textBeforeCursor) !== undefined;
+}
+
+export class SkillAutocompleteEditor extends Editor {
+	override handleInput(data: string): void {
+		super.handleInput(data);
+		if (this.isShowingAutocomplete()) {
+			return;
+		}
+
+		const cursor = this.getCursor();
+		const currentLine = this.getLines()[cursor.line] ?? "";
+		const textBeforeCursor = currentLine.slice(0, cursor.col);
+		if (!shouldAutoTriggerSkillAutocomplete(data, textBeforeCursor)) {
+			return;
+		}
+
+		(this as unknown as SkillAutocompleteTrigger).tryTriggerAutocomplete();
+	}
+}
 
 function formatError(error: unknown): string {
 	if (error instanceof Error) {
@@ -23,11 +56,6 @@ function formatError(error: unknown): string {
 
 function normalizeSkillNames(skillNames: string[]): string[] {
 	return [...new Set(skillNames)].sort((left, right) => left.localeCompare(right));
-}
-
-export function extractSkillToken(textBeforeCursor: string): string | undefined {
-	const match = textBeforeCursor.match(SKILL_TOKEN_RE);
-	return match?.[1];
 }
 
 export function formatSkillItem(skillName: string): AutocompleteItem {
@@ -117,6 +145,7 @@ export function createSkillAutocompleteExtension(getSkills: () => Promise<string
 			};
 
 			void resolveSkills();
+			ctx.ui.setEditorComponent((tui, theme: EditorTheme) => new SkillAutocompleteEditor(tui, theme));
 			ctx.ui.addAutocompleteProvider((current) => createSkillAutocompleteProvider(current, resolveSkills));
 		});
 	};
