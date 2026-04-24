@@ -24,7 +24,7 @@ Before writing anything, clarify:
 4. **Are there external dependencies?** CLI tools, APIs, packages.
 5. **Does it need `allowed-tools`?** Pre-approved tool patterns for the agent.
 
-If the user gives a vague request, ask **2–3 focused questions** using the `questionnaire` tool. Don't guess at ambiguous requirements.
+If the user gives a vague request, ask **2–3 focused questions** using the `ask_user` tool one at a time. Don't guess at ambiguous requirements.
 
 ## Step 2 — Choose the Skill Name
 

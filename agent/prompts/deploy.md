@@ -20,5 +20,4 @@ Execution rules:
 
 Safety:
 - Do not force-push unless explicitly requested.
-- Stop on merge conflicts or failing checks.
-- Ask a brief clarification if the PR target branch is ambiguous.
+- On merge conflicts or failing checks, proactively address the issues and re-push until you can merge, or the issue is substantial and requires human intervention.

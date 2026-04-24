@@ -9,7 +9,7 @@ Goal: Through iterative, structured Q&A, help the user clarify their idea into a
 
 Execution rules:
 1) If an initial topic was provided, acknowledge it and use it as a starting point. If not, ask the user what they want to build or work on.
-2) Use the `questionnaire` tool to ask structured questions — one or two questions at a time. Prefer single-choice or multi-select formats with an "Other (specify)" option where appropriate. Use free-text fields sparingly and only when structured options don't fit.
+2) Use the `ask_user` tool to ask structured questions — one question at a time. Prefer single-choice or multi-select formats with an "Other (specify)" option where appropriate. Use free-text fields sparingly and only when structured options don't fit.
 3) Start broad, then narrow down progressively:
    - Round 1–2: What kind of work is this? Who is it for? What problem does it solve? What does success look like?
    - Round 3–4: Scope and boundaries. What's in, what's out? Are there existing constraints (tech stack, timeline, compatibility)?
