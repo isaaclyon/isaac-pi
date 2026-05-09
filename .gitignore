@@ -1,42 +1,21 @@
-# Dependencies
-node_modules/
-
-# Runtime / logs
-logs/
-*.log
-
-# Local auth/cache/state
+# Pi local secrets/state
+auth.json
 agent/auth.json
-agent/mcp-cache.json
+memory/
+agent/memory/
 agent/sessions/
-.pi-lens/
-.pi/suggester/
-cache/
+agent/lcm/
+agent/update-cache.json
+agent/run-history.jsonl
 
-# Local conversation memory databases
-agent/lcm/*.db*
-agent/lcm/*.sqlite*
+# Installed package clones/caches; settings.json is the source of truth
+agent/git/**
+!agent/git/
+!agent/git/.gitignore
+agent/npm/
+.pi/
 
-# Repo-local MemPalace memory/state
-.pi/memory/
-mempalace.yaml
-entities.json
-
-# Local extension databases
-agent/extensions/**/tmp/
-agent/extensions/**/*.sqlite
-agent/extensions/**/*.sqlite-*
-.pi/vendor/**/node_modules/
-
-# Env files
-.env
-.env.*
-
-# Python cache
-__pycache__/
-*.pyc
-
-# OS/editor noise
+# Dependencies/build outputs
+node_modules/
+*.log
 .DS_Store
-.vscode/
-.idea/

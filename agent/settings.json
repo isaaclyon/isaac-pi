@@ -1,33 +1,47 @@
 {
-  "lastChangelogVersion": "0.70.0",
+  "lastChangelogVersion": "0.74.0",
+  "packages": [
+    "npm:lsp-pi",
+    "npm:@ogulcancelik/pi-minimal-footer",
+    "npm:pi-schedule-prompt",
+    "npm:@sherif-fanous/pi-rtk",
+    "npm:pi-rtk-optimizer",
+    "npm:pi-updater",
+    "npm:@mjakl/pi-subagent@1.4.1",
+    "npm:pi-model-aware-compaction",
+    "npm:pi-lcm",
+    {
+      "source": "git:github.com/tmustier/pi-extensions",
+      "extensions": [
+        "tab-status/tab-status.ts",
+        "session-recap/index.ts"
+      ]
+    },
+    "npm:@siddr/pi-review",
+    "npm:@samfp/pi-memory"
+  ],
+  "defaultThinkingLevel": "medium",
   "enabledModels": [
-    "openai-codex/gpt-5.4",
+    "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini",
-    "openai-codex/gpt-5.5"
+    "openai-codex/gpt-5.4",
+    "openai-codex/gpt-5.3-codex"
   ],
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.4-mini",
-  "defaultThinkingLevel": "off",
-  "steeringMode": "all",
-  "transport": "websocket",
-  "collapseChangelog": true,
-  "quietStartup": true,
-  "packages": [
-    "npm:pi-caffeinate@2.0.0",
-    "npm:pi-tool-display@0.1.11",
-    "npm:pi-interactive-shell",
-    "npm:pi-ask-user",
-    "npm:pi-mcp-adapter",
-    "npm:pi-web-access",
-    "npm:@aliou/pi-processes",
-    "npm:pi-updater",
-    "../.pi/vendor/pi-lcm",
-    "npm:lsp-pi"
-  ],
-  "hideThinkingBlock": false,
+  "defaultModel": "gpt-5.5",
   "treeFilterMode": "no-tools",
-  "doubleEscapeAction": "tree",
-  "theme": "dark",
+  "steeringMode": "all",
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 9000,
+    "keepRecentTokens": 20000
+  },
+  "lsp": {
+    "hookMode": "edit_write"
+  },
   "lcm": {
     "enabled": true,
     "leafChunkTokens": 4000,
@@ -35,13 +49,13 @@
     "maxDepth": 5,
     "maxSummaryTokens": 8000,
     "minMessagesForCompaction": 10,
-    "leafPassConcurrency": 6,
+    "leafPassConcurrency": 8,
+    "debugMode": true,
     "compactionModels": [
       {
         "provider": "openai-codex",
         "id": "gpt-5.4-mini"
       }
-    ],
-    "debugMode": true
+    ]
   }
 }

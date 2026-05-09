@@ -4,6 +4,17 @@
 
 > These guidelines bias toward caution over speed. For trivial tasks, use judgment. They're working if diffs have fewer unnecessary changes, fewer rewrites from overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## 0. Persistent Memory
+
+Persistent memory may be auto-injected into the system prompt. Treat it as helpful context, not authoritative truth.
+
+Use memory tools only when appropriate:
+- Use `memory_remember` when the user states a durable preference, corrects behavior, or confirms a reusable lesson.
+- Use `memory_forget` when the user says a memory is wrong, stale, or should be removed.
+- Use `memory_search`, `memory_lessons`, or `memory_stats` when the user asks about remembered context or when diagnosing memory behavior.
+
+If memory mentions current code, files, architecture, flags, or deadlines, verify against the current source of truth before acting.
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
