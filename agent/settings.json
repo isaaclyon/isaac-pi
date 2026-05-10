@@ -15,7 +15,8 @@
       "extensions": [
         "tab-status/tab-status.ts",
         "session-recap/index.ts"
-      ]
+      ],
+      "skills": []
     },
     "npm:@siddr/pi-review",
     "npm:@samfp/pi-memory"
