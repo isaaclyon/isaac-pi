@@ -21,7 +21,7 @@
     "npm:@siddr/pi-review",
     "npm:@samfp/pi-memory"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "xhigh",
   "enabledModels": [
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini",
