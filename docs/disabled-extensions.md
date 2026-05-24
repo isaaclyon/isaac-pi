@@ -9,3 +9,11 @@ This file records extensions that were removed or disabled so they can be recall
 - Reason: Replaced with `npm:@sting8k/pi-vcc`
 - Reinstall command: `pi install npm:pi-lcm`
 - Config note: `agent/settings.json` may retain an `lcm` block with `enabled: false` as historical configuration.
+
+## rpiv ask-user-question npm package
+
+- Package: `npm:@juicesharp/rpiv-ask-user-question`
+- Removed: 2026-05-23
+- Reason: Vendored as `agent/extensions/ask-user-question` so local tweaks are tracked in this repo and not overwritten by package updates.
+- Reinstall command: `pi install npm:@juicesharp/rpiv-ask-user-question`
+- Config note: The vendored extension keeps the runtime tool name `ask_user_question` for compatibility.

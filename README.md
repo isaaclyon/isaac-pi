@@ -7,7 +7,7 @@ This repo intentionally tracks the portable parts of `~/.pi/agent`:
 - `agent/settings.json` — installed package sources and model/config defaults
 - `agent/APPEND_SYSTEM.md` — system prompt append
 - `agent/agents/` — subagent definitions
-- `agent/extensions/` — local/self-made extensions and local extension config
+- `agent/extensions/` — local/self-made extensions, vendored tweakable extensions, and local extension config
 - `agent/prompts/` — prompt templates
 - `agent/skills/` — local skills
 - `agent/bin/` — local helper binaries used by the setup

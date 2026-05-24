@@ -19,7 +19,6 @@
     "npm:@siddr/pi-review",
     "npm:@narumitw/pi-goal",
     "npm:pi-codex-fast",
-    "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@sting8k/pi-vcc"
   ],
   "defaultThinkingLevel": "medium",
