@@ -379,8 +379,7 @@ async function detectDefaultBranch(pi: ExtensionAPI, cwd: string, signal: AbortS
 
 async function changedFilesForPr(pi: ExtensionAPI, cwd: string, remote: string, base: string, signal: AbortSignal): Promise<ChangedFile[]> {
 	await execOrFail(pi, "pr", "Fetch PR base", "git", ["fetch", remote, base], cwd, signal, 180_000);
-	const baseRef = `${remote}/${base}`;
-	const diff = await execOrFail(pi, "pr", "Changed files", "git", ["diff", "--name-status", `${baseRef}...HEAD`], cwd, signal, COMMAND_TIMEOUT_MS);
+	const diff = await execOrFail(pi, "pr", "Changed files", "git", ["diff", "--name-status", "FETCH_HEAD...HEAD"], cwd, signal, COMMAND_TIMEOUT_MS);
 	return parseNameStatus(diff.stdout);
 }
 
