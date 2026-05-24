@@ -112,6 +112,30 @@ function buildMultiSelected(state: QuestionnaireState, runtime: QuestionnaireRun
 	return out;
 }
 
+function optionShortcutIndex(data: string, state: QuestionnaireState, runtime: QuestionnaireRuntime): number | null {
+	if (!/^\d$/.test(data)) return null;
+	const index = Number(data) - 1;
+	const q = runtime.questions[state.currentTab];
+	if (!q || index < 0 || index >= q.options.length) return null;
+	return index;
+}
+
+function buildOptionAnswer(
+	optionIndex: number,
+	state: QuestionnaireState,
+	runtime: QuestionnaireRuntime,
+): QuestionAnswer | null {
+	const q = runtime.questions[state.currentTab];
+	const option = q?.options[optionIndex];
+	if (!q || !option) return null;
+	return {
+		questionIndex: state.currentTab,
+		question: q.question,
+		kind: "option",
+		answer: option.label,
+	};
+}
+
 function tabSwitchAction(
 	data: string,
 	state: QuestionnaireState,
@@ -215,6 +239,14 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 
 	const q = runtime.questions[state.currentTab];
 	if (!q) return { kind: "ignore" };
+
+	const shortcutIndex = optionShortcutIndex(data, state, runtime);
+	if (shortcutIndex !== null) {
+		if (q.multiSelect) return { kind: "toggle", index: shortcutIndex };
+		const answer = buildOptionAnswer(shortcutIndex, state, runtime);
+		if (!answer) return { kind: "ignore" };
+		return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
+	}
 
 	if (data === NOTES_ACTIVATE_KEY && !q.multiSelect && state.focusedOptionHasPreview) {
 		return { kind: "notes_enter" };
