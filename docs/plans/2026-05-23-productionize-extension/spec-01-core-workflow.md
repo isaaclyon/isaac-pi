@@ -39,7 +39,7 @@ Create deterministic, unit-tested helper logic for the productionize workflow. A
 
 ## Todo
 
-- [ ] Create `core.ts` with exported helper types and functions.
-- [ ] Create `core.test.ts` with focused helper tests.
-- [ ] Run the focused Node test command.
-- [ ] Record test evidence in `ExecPlan.md`.
+- [x] Create `core.ts` with exported helper types and functions.
+- [x] Create `core.test.ts` with focused helper tests.
+- [x] Run the focused Node test command.
+- [x] Record test evidence in `ExecPlan.md`.

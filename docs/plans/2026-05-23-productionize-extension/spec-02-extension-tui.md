@@ -50,9 +50,9 @@ Create the `/productionize` Pi extension command and a full-screen progress pane
 
 ## Todo
 
-- [ ] Implement the progress component and keyboard handling.
-- [ ] Implement Spark completion helpers.
-- [ ] Implement git branch, commit, and push workflow steps.
-- [ ] Implement PR creation/reuse and deterministic PR body generation.
-- [ ] Implement CI polling and squash merge.
-- [ ] Implement failure preview and editor paste path.
+- [x] Implement the progress component and keyboard handling.
+- [x] Implement Spark completion helpers.
+- [x] Implement git branch, commit, and push workflow steps.
+- [x] Implement PR creation/reuse and deterministic PR body generation.
+- [x] Implement CI polling and squash merge.
+- [x] Implement failure preview and editor paste path.

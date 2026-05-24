@@ -35,8 +35,9 @@ Validate the productionize extension enough for user-level installation and docu
 
 ## Todo
 
-- [ ] Run focused productionize tests.
-- [ ] Optionally rerun CI watch tests.
-- [ ] Update `ExecPlan.md` with validation evidence.
+- [x] Run focused productionize tests.
+- [x] Optionally rerun CI watch tests.
+- [x] Confirm `/productionize` is discovered through Pi RPC `get_commands`.
+- [x] Update `ExecPlan.md` with validation evidence.
 - [ ] Commit implementation files only.
 - [ ] Summarize reload and runtime usage for the user.

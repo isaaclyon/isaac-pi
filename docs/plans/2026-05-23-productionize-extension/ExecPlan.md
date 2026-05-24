@@ -28,9 +28,10 @@ The specs should be implemented in order because the extension UI should call st
 - [x] (2026-05-24T04:35Z) Updated the global `create-specs` skill to include self-contained `PLANS.md` and `SPECS.md` guidance copied from `Developer/lola-data-platform` and committed that guidance change.
 - [x] (2026-05-24T04:35Z) Read Pi extension and TUI documentation plus relevant examples for commands, custom UI components, model calls, editor text insertion, GitHub CLI autocomplete, and existing CI watch behavior.
 - [x] (2026-05-24T04:35Z) Ran a read-only reviewer subagent pressure test and incorporated the accepted findings into this ExecPlan and the atomic specs.
-- [ ] Implement Spec 1 helper logic and tests.
-- [ ] Implement Spec 2 extension command and full-screen TUI.
-- [ ] Implement Spec 3 validation and reload instructions.
+- [x] (2026-05-24T04:35Z) Implemented Spec 1 helper logic and tests in `agent/extensions/productionize/core.ts` and `core.test.ts`.
+- [x] (2026-05-24T04:35Z) Implemented Spec 2 extension command, full-screen TUI, Spark helpers, git/PR/CI/merge workflow, and failure paste path under `agent/extensions/productionize/`.
+- [x] (2026-05-24T04:35Z) Implemented Spec 3 validation: productionize helper tests pass, CI watch regression tests pass, and Pi RPC `get_commands` discovers `/productionize`.
+- [ ] Run a disposable GitHub repository happy-path validation before claiming end-to-end branch/commit/push/PR/check/merge proof.
 
 ## Surprises & Discoveries
 
@@ -60,7 +61,9 @@ The specs should be implemented in order because the extension UI should call st
 
 ## Outcomes & Retrospective
 
-Not completed yet. This section must be updated after the specs are implemented and validation has run.
+The productionize extension is implemented and auto-discovered by Pi. The repository now contains a directory-style extension at `agent/extensions/productionize/` with focused helper tests, a full-screen progress panel, Spark-powered branch/commit/title/fix generation, git branch/commit/push workflow, GitHub CLI PR creation or reuse, GitHub Checks polling, conservative green-check merge gating, automatic squash merge with remote branch deletion, and a failure screen that pastes repair instructions into Pi's editor.
+
+Automated validation passed for helper logic and the existing CI watch regression tests. Pi RPC `get_commands` also found `/productionize`, proving extension discovery/loading works. Full end-to-end validation in a disposable GitHub repository remains manual and intentionally was not run in this `.pi` repository because `/productionize` performs real commits, pushes, PR creation, and merge operations.
 
 ## Context and Orientation
 
@@ -86,7 +89,24 @@ Run from `/Users/isaaclyon/.pi`:
 
     node --test agent/extensions/productionize/core.test.ts
 
-The expected result is all productionize helper tests passing with zero failures.
+The expected result is all productionize helper tests passing with zero failures. Evidence from implementation:
+
+    node --test agent/extensions/productionize/core.test.ts
+    tests 11
+    pass 11
+    fail 0
+
+Regression validation also passed:
+
+    node --test agent/extensions/productionize/core.test.ts agent/extensions/ci-watch/core.test.ts
+    tests 16
+    pass 16
+    fail 0
+
+Extension discovery validation passed:
+
+    printf '{"type":"get_commands"}\n' | pi --mode rpc --no-session | grep '"name":"productionize"'
+    productionize command found: yes
 
 Manual acceptance after implementation is:
 
@@ -161,3 +181,5 @@ The AI model dependency is `openai-codex/gpt-5.3-codex-spark`. The extension sho
 Revision note 2026-05-24T04:35Z: Initial plan created after the 20-question clarification round and after updating the `create-specs` skill to be self-contained.
 
 Revision note 2026-05-24T04:35Z: Incorporated reviewer feedback by adding a disposable-repo end-to-end validation requirement, defining the conservative CI merge rule, requiring Spark output hardening for commit messages and PR titles, spelling out failure modes, and clarifying existing PR reuse.
+
+Revision note 2026-05-24T04:35Z: Completed implementation and recorded validation evidence. End-to-end disposable GitHub validation remains explicitly unrun in this session.
