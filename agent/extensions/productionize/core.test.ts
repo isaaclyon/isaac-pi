@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+	DEFAULT_STEPS,
 	buildFailurePrompt,
 	buildPrBody,
 	classifyCheck,
 	evaluateChecks,
 	formatChangedFilesByDirectory,
 	hasDirtyFiles,
+	isLikelyNoChecks,
 	parseNameStatus,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
@@ -32,6 +34,10 @@ test("AI one-line sanitizers collapse malformed output", () => {
 	assert.equal(sanitizeCommitSubject("repair tests"), "chore: repair tests");
 	assert.equal(sanitizeCommitSubject("\n"), "chore: productionize changes");
 	assert.equal(sanitizePrTitle("PR title: Add productionize flow\nmore"), "Add productionize flow");
+});
+
+test("default workflow includes return step after merge", () => {
+	assert.deepEqual(DEFAULT_STEPS.map((step) => step.id), ["branch", "commit", "push", "pr", "ci", "merge", "return"]);
 });
 
 test("hasDirtyFiles detects porcelain status", () => {
@@ -88,6 +94,15 @@ test("classifyCheck maps GitHub buckets to display status", () => {
 	assert.equal(classifyCheck({ name: "docs", bucket: "skipping", state: "completed" }), "skipped");
 	assert.equal(classifyCheck({ name: "build", bucket: "pending", state: "QUEUED" }), "pending");
 	assert.equal(classifyCheck({ name: "unknown", state: "completed" }), "pending");
+});
+
+test("isLikelyNoChecks detects GitHub no-checks responses", () => {
+	assert.equal(isLikelyNoChecks("", "no checks reported on the 'branch' branch"), true);
+	assert.equal(isLikelyNoChecks("no checks reported on the 'branch' branch", ""), true);
+	assert.equal(isLikelyNoChecks("[]", ""), false);
+	assert.equal(isLikelyNoChecks('[{"description":"no status checks configured"}]', ""), false);
+	assert.equal(isLikelyNoChecks('[{"name":"lint"}]', "no checks reported"), false);
+	assert.equal(isLikelyNoChecks("", "authentication required"), false);
 });
 
 test("evaluateChecks requires at least one non-skipped passing check", () => {

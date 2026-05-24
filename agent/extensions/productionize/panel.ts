@@ -54,6 +54,7 @@ export class ProductionizePanel {
 			outcome: this.state.outcome,
 			status: this.state.status,
 			branch: this.state.branch,
+			returnToBranch: this.state.returnToBranch,
 			pr: this.state.pr?.url,
 			failure: this.state.failure,
 			fix: this.state.fixInstruction,
@@ -68,10 +69,11 @@ export class ProductionizePanel {
 		const border = th.fg("borderMuted", "─".repeat(Math.max(0, width)));
 
 		add(border);
-		add(`${th.fg("accent", th.bold("Productionize"))} ${th.fg("muted", "branch → commit → push → PR → CI → merge")}`);
+		add(`${th.fg("accent", th.bold("Productionize"))} ${th.fg("muted", "branch → commit → push → PR → CI → merge → return")}`);
 		add(this.renderProgress(width));
 		add(th.fg(statusColor(this.state.outcome), this.state.status));
 		if (this.state.branch) add(`${th.fg("muted", "Branch:")} ${this.state.branch}`);
+		if (this.state.returnToBranch) add(`${th.fg("muted", "Will return to:")} ${this.state.returnToBranch}`);
 		if (this.state.pr) add(`${th.fg("muted", "PR:")} #${this.state.pr.number} ${this.state.pr.url}`);
 		add("");
 
