@@ -196,6 +196,10 @@ export function formatChangedFilesByDirectory(files: ChangedFile[]): string {
 	return lines.join("\n").trimEnd();
 }
 
+export function hasPrChanges(files: ChangedFile[], commitCount: number): boolean {
+	return files.length > 0 || commitCount > 0;
+}
+
 export function buildPrBody(files: ChangedFile[], options: { branch: string; base: string; generatedAt?: Date }): string {
 	const generatedAt = options.generatedAt ?? new Date();
 	return [

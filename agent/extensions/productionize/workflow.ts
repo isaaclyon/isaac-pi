@@ -8,6 +8,7 @@ import {
 	evaluateChecks,
 	fallbackFixInstruction,
 	hasDirtyFiles,
+	hasPrChanges,
 	isLikelyNoChecks,
 	isLikelyNoPr,
 	parseNameStatus,
@@ -57,6 +58,16 @@ export async function runWorkflow(
 		await runCommitStep(pi, ctx, state, cwd, signal, render);
 		const remote = await runPushStep(pi, state, cwd, branch, signal, render);
 		const pr = await runPrStep(pi, ctx, state, cwd, branch, remote, signal, render);
+		if (!pr) {
+			await runReturnStep(pi, state, cwd, remote, signal, render);
+			state.outcome = "succeeded";
+			state.status = state.returnToBranch
+				? `Productionize completed: no productionize changes to merge; local checkout returned to ${state.returnToBranch}.`
+				: "Productionize completed: no productionize changes to merge.";
+			log(state, "Workflow completed with no PR because no changes were detected");
+			render();
+			return;
+		}
 		await runCiStep(pi, state, cwd, pr, signal, render);
 		await runMergeStep(pi, state, cwd, pr, signal, render);
 		await runReturnStep(pi, state, cwd, remote, signal, render);
@@ -241,14 +252,24 @@ async function runPrStep(
 	remote: string,
 	signal: AbortSignal,
 	render: () => void,
-): Promise<PrInfo> {
+): Promise<PrInfo | undefined> {
 	setStep(state, "pr", "running", "Preparing PR");
 	state.status = "Opening pull request...";
 	render();
 
 	const base = state.baseBranch ?? (await detectDefaultBranch(pi, cwd, signal));
 	state.baseBranch = base;
-	state.changedFiles = await changedFilesForPr(pi, cwd, remote, base, signal);
+	const prDelta = await inspectPrDelta(pi, cwd, remote, base, signal);
+	state.changedFiles = prDelta.files;
+	if (!prDelta.hasChanges) {
+		setStep(state, "pr", "skipped", "No changes to merge");
+		setStep(state, "ci", "skipped", "No PR: no changes detected");
+		setStep(state, "merge", "skipped", "No PR: no changes detected");
+		state.status = "No productionize changes to merge.";
+		log(state, `Skipped PR creation because ${branch} has no commits or file changes relative to ${base}`);
+		render();
+		return undefined;
+	}
 	const body = buildPrBody(state.changedFiles, { branch, base });
 	const title = sanitizePrTitle(
 		await completeSpark(
@@ -420,10 +441,24 @@ async function detectDefaultBranch(pi: ExtensionAPI, cwd: string, signal: AbortS
 	return data.defaultBranchRef?.name || "main";
 }
 
-async function changedFilesForPr(pi: ExtensionAPI, cwd: string, remote: string, base: string, signal: AbortSignal): Promise<ChangedFile[]> {
+async function inspectPrDelta(
+	pi: ExtensionAPI,
+	cwd: string,
+	remote: string,
+	base: string,
+	signal: AbortSignal,
+): Promise<{ files: ChangedFile[]; commitCount: number; hasChanges: boolean }> {
 	await execOrFail(pi, "pr", "Fetch PR base", "git", ["fetch", remote, base], cwd, signal, 180_000);
 	const diff = await execOrFail(pi, "pr", "Changed files", "git", ["diff", "--name-status", "FETCH_HEAD...HEAD"], cwd, signal, COMMAND_TIMEOUT_MS);
-	return parseNameStatus(diff.stdout);
+	const commits = await execOrFail(pi, "pr", "Changed commit count", "git", ["rev-list", "--count", "FETCH_HEAD..HEAD"], cwd, signal, COMMAND_TIMEOUT_MS);
+	const files = parseNameStatus(diff.stdout);
+	const commitCount = Number.parseInt(commits.stdout.trim(), 10);
+	const safeCommitCount = Number.isFinite(commitCount) ? commitCount : files.length;
+	return {
+		files,
+		commitCount: safeCommitCount,
+		hasChanges: hasPrChanges(files, safeCommitCount),
+	};
 }
 
 async function fetchPrInfo(pi: ExtensionAPI, cwd: string, signal: AbortSignal): Promise<PrInfo> {

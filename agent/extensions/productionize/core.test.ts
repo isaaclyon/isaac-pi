@@ -8,6 +8,7 @@ import {
 	evaluateChecks,
 	formatChangedFilesByDirectory,
 	hasDirtyFiles,
+	hasPrChanges,
 	isLikelyNoChecks,
 	parseNameStatus,
 	sanitizeBranchName,
@@ -73,6 +74,12 @@ test("formatChangedFilesByDirectory groups and sorts deterministically", () => {
 			"- modified: `packages/z.ts`",
 		].join("\n"),
 	);
+});
+
+test("hasPrChanges requires file changes or ahead commits", () => {
+	assert.equal(hasPrChanges([], 0), false);
+	assert.equal(hasPrChanges(parseNameStatus("M\tREADME.md\n"), 0), true);
+	assert.equal(hasPrChanges([], 1), true);
 });
 
 test("buildPrBody is deterministic apart from injected timestamp", () => {
