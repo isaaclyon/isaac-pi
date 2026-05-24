@@ -8,6 +8,7 @@ import {
 	evaluateChecks,
 	formatChangedFilesByDirectory,
 	hasDirtyFiles,
+	isLikelyNoChecks,
 	parseNameStatus,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
@@ -93,6 +94,12 @@ test("classifyCheck maps GitHub buckets to display status", () => {
 	assert.equal(classifyCheck({ name: "docs", bucket: "skipping", state: "completed" }), "skipped");
 	assert.equal(classifyCheck({ name: "build", bucket: "pending", state: "QUEUED" }), "pending");
 	assert.equal(classifyCheck({ name: "unknown", state: "completed" }), "pending");
+});
+
+test("isLikelyNoChecks detects GitHub no-checks responses", () => {
+	assert.equal(isLikelyNoChecks("", "no checks reported on the 'branch' branch"), true);
+	assert.equal(isLikelyNoChecks("[]", ""), false);
+	assert.equal(isLikelyNoChecks("", "authentication required"), false);
 });
 
 test("evaluateChecks requires at least one non-skipped passing check", () => {

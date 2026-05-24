@@ -321,6 +321,11 @@ export function isLikelyNoPr(stdout: string, stderr: string): boolean {
 	return text.includes("no pull requests") || text.includes("no open pull requests") || text.includes("not found");
 }
 
+export function isLikelyNoChecks(stdout: string, stderr: string): boolean {
+	const text = `${stdout}\n${stderr}`.toLowerCase();
+	return text.includes("no checks reported") || text.includes("no check runs") || text.includes("no status checks");
+}
+
 function sanitizeOneLine(raw: string, fallback: string, maxLength: number): string {
 	const line = firstMeaningfulLine(raw)
 		.replace(/[\u0000-\u001f\u007f]/g, " ")

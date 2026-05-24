@@ -8,6 +8,7 @@ import {
 	evaluateChecks,
 	fallbackFixInstruction,
 	hasDirtyFiles,
+	isLikelyNoChecks,
 	isLikelyNoPr,
 	parseNameStatus,
 	sanitizeBranchName,
@@ -27,6 +28,7 @@ const PROTECTED_BRANCHES = new Set(["main", "master"]);
 const COMMAND_TIMEOUT_MS = 120_000;
 const CHECK_POLL_INTERVAL_MS = 15_000;
 const CHECK_TIMEOUT_MS = 30 * 60_000;
+const NO_CHECKS_GRACE_MS = 60_000;
 const CHECK_FIELDS = "name,workflow,bucket,state,link,description,startedAt,completedAt";
 const PR_FIELDS = "number,title,url,headRefName,headRefOid";
 
@@ -326,6 +328,12 @@ async function runCiStep(
 		}
 		const pendingCount = evaluation.pending.length;
 		const discovered = checks.length;
+		if (discovered === 0 && Date.now() - started >= NO_CHECKS_GRACE_MS) {
+			setStep(state, "ci", "skipped", "No checks reported");
+			log(state, `No GitHub checks were reported after ${Math.round(NO_CHECKS_GRACE_MS / 1000)} seconds; continuing without CI`);
+			render();
+			return;
+		}
 		setStep(state, "ci", "running", discovered === 0 ? "No checks discovered yet" : `${pendingCount} pending`);
 		log(state, discovered === 0 ? "No GitHub checks discovered yet" : `Waiting for ${pendingCount} pending check(s)`);
 		render();
@@ -426,6 +434,7 @@ async function fetchPrInfo(pi: ExtensionAPI, cwd: string, signal: AbortSignal): 
 async function fetchChecks(pi: ExtensionAPI, cwd: string, prNumber: number, signal: AbortSignal): Promise<GitHubCheck[]> {
 	const args = ["pr", "checks", String(prNumber), "--json", CHECK_FIELDS];
 	const result = await execCommand(pi, "gh", args, cwd, signal, COMMAND_TIMEOUT_MS);
+	if (isLikelyNoChecks(result.stdout, result.stderr)) return [];
 	if (result.stdout.trim()) {
 		return parseJson<GitHubCheck[]>(result.stdout, "checks", "ci", "CI Checks", "gh", args, cwd);
 	}
