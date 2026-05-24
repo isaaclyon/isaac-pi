@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
 import { LABELS_BY_KIND, ROW_INTENT_META } from "../state/row-intent.js";
 
-export const MAX_QUESTIONS = 4;
+export const MAX_QUESTIONS = 10;
 export const MIN_OPTIONS = 2;
 export const MAX_OPTIONS = 4;
 export const MAX_HEADER_LENGTH = 16;
@@ -86,7 +86,7 @@ export const QuestionSchema = Type.Object({
 export const QuestionsSchema = Type.Array(QuestionSchema, {
 	minItems: 1,
 	maxItems: MAX_QUESTIONS,
-	description: "Questions to ask the user (1-4 questions)",
+	description: `Questions to ask the user (1-${MAX_QUESTIONS} questions)`,
 });
 
 export const QuestionParamsSchema = Type.Object({
