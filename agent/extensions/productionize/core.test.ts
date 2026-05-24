@@ -83,10 +83,11 @@ test("buildPrBody is deterministic apart from injected timestamp", () => {
 
 test("classifyCheck maps GitHub buckets to display status", () => {
 	assert.equal(classifyCheck({ name: "lint", bucket: "pass", state: "SUCCESS" }), "passed");
-	assert.equal(classifyCheck({ name: "test", bucket: "fail", state: "FAILURE" }), "failed");
-	assert.equal(classifyCheck({ name: "deploy", bucket: "cancel", state: "CANCELLED" }), "failed");
-	assert.equal(classifyCheck({ name: "docs", bucket: "skipping", state: "SKIPPED" }), "skipped");
+	assert.equal(classifyCheck({ name: "test", bucket: "fail", state: "completed" }), "failed");
+	assert.equal(classifyCheck({ name: "deploy", bucket: "cancel", state: "completed" }), "failed");
+	assert.equal(classifyCheck({ name: "docs", bucket: "skipping", state: "completed" }), "skipped");
 	assert.equal(classifyCheck({ name: "build", bucket: "pending", state: "QUEUED" }), "pending");
+	assert.equal(classifyCheck({ name: "unknown", state: "completed" }), "pending");
 });
 
 test("evaluateChecks requires at least one non-skipped passing check", () => {

@@ -31,6 +31,7 @@ The specs should be implemented in order because the extension UI should call st
 - [x] (2026-05-24T04:35Z) Implemented Spec 1 helper logic and tests in `agent/extensions/productionize/core.ts` and `core.test.ts`.
 - [x] (2026-05-24T04:35Z) Implemented Spec 2 extension command, full-screen TUI, Spark helpers, git/PR/CI/merge workflow, and failure paste path under `agent/extensions/productionize/`.
 - [x] (2026-05-24T04:35Z) Implemented Spec 3 validation: productionize helper tests pass, CI watch regression tests pass, and Pi RPC `get_commands` discovers `/productionize`.
+- [x] (2026-05-24T04:35Z) Addressed code review findings: merge now uses `--match-head-commit`, check classification prioritizes GitHub `bucket`, protected-branch reruns reuse existing local generated branches, and PR file-list generation fails on base fetch/diff errors instead of using stale refs.
 - [ ] Run a disposable GitHub repository happy-path validation before claiming end-to-end branch/commit/push/PR/check/merge proof.
 
 ## Surprises & Discoveries
@@ -183,3 +184,5 @@ Revision note 2026-05-24T04:35Z: Initial plan created after the 20-question clar
 Revision note 2026-05-24T04:35Z: Incorporated reviewer feedback by adding a disposable-repo end-to-end validation requirement, defining the conservative CI merge rule, requiring Spark output hardening for commit messages and PR titles, spelling out failure modes, and clarifying existing PR reuse.
 
 Revision note 2026-05-24T04:35Z: Completed implementation and recorded validation evidence. End-to-end disposable GitHub validation remains explicitly unrun in this session.
+
+Revision note 2026-05-24T04:35Z: Addressed code review by hardening merge-head matching, check classification, branch reruns from protected branches, and PR base fetch handling. Re-ran focused tests and command discovery successfully.

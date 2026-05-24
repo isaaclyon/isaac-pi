@@ -218,14 +218,21 @@ export function buildPrBody(files: ChangedFile[], options: { branch: string; bas
 }
 
 export function classifyCheck(check: GitHubCheck): CheckStatus {
-	const bucket = (check.bucket ?? "").toLowerCase();
-	const state = (check.state ?? "").toLowerCase();
-	const text = `${bucket} ${state}`;
+	const bucketStatus = classifyCheckToken(check.bucket, "bucket");
+	if (bucketStatus) return bucketStatus;
 
-	if (/\b(pass|success|successful|completed)\b/.test(text)) return "passed";
-	if (/\b(fail|failure|error|cancel|cancelled|timed_out|action_required)\b/.test(text)) return "failed";
-	if (/\b(skip|skipped|skipping|neutral)\b/.test(text)) return "skipped";
-	return "pending";
+	return classifyCheckToken(check.state, "state") ?? "pending";
+}
+
+function classifyCheckToken(value: string | undefined, source: "bucket" | "state"): CheckStatus | undefined {
+	const token = (value ?? "").toLowerCase();
+	if (!token) return undefined;
+
+	if (/\b(fail|failure|error|cancel|cancelled|timed_out|action_required)\b/.test(token)) return "failed";
+	if (/\b(skip|skipped|skipping|neutral)\b/.test(token)) return "skipped";
+	if (/\b(pass|success|successful)\b/.test(token)) return "passed";
+	if (source === "bucket" && /\bpending\b/.test(token)) return "pending";
+	return undefined;
 }
 
 export function evaluateChecks(checks: GitHubCheck[]): CheckEvaluation {

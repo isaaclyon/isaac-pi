@@ -126,12 +126,24 @@ async function runBranchStep(
 		),
 	);
 
+	state.baseBranch = currentBranch;
+	if (await localBranchExists(pi, cwd, branchName, signal)) {
+		setStep(state, "branch", "running", `Switching to existing ${branchName}`);
+		state.status = `Switching to existing branch ${branchName}...`;
+		render();
+		await execOrFail(pi, "branch", "Switch branch", "git", ["checkout", branchName], cwd, signal);
+		state.branch = branchName;
+		setStep(state, "branch", "done", `Reused ${branchName}`);
+		log(state, `Switched to existing branch ${branchName}`);
+		render();
+		return branchName;
+	}
+
 	setStep(state, "branch", "running", `Creating ${branchName}`);
 	state.status = `Creating branch ${branchName}...`;
 	render();
 	await execOrFail(pi, "branch", "Create branch", "git", ["checkout", "-b", branchName], cwd, signal);
 	state.branch = branchName;
-	state.baseBranch = currentBranch;
 	setStep(state, "branch", "done", `Created ${branchName}`);
 	log(state, `Created branch ${branchName}`);
 	render();
@@ -337,10 +349,15 @@ async function runMergeStep(
 	state.status = "Squash merging PR and deleting remote branch...";
 	render();
 
-	await execOrFail(pi, "merge", "Squash merge", "gh", ["pr", "merge", String(pr.number), "--squash", "--delete-branch", "--subject", pr.title, "--body", ""], cwd, signal, 180_000);
+	await execOrFail(pi, "merge", "Squash merge", "gh", ["pr", "merge", String(pr.number), "--squash", "--delete-branch", "--match-head-commit", pr.headRefOid, "--subject", pr.title, "--body", ""], cwd, signal, 180_000);
 	setStep(state, "merge", "done", "Squash merged; delete branch requested");
 	log(state, `Merged PR #${pr.number}`);
 	render();
+}
+
+async function localBranchExists(pi: ExtensionAPI, cwd: string, branch: string, signal: AbortSignal): Promise<boolean> {
+	const result = await execCommand(pi, "git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], cwd, signal, 30_000);
+	return result.code === 0;
 }
 
 async function choosePushRemote(pi: ExtensionAPI, cwd: string, branch: string, signal: AbortSignal): Promise<string> {
@@ -361,12 +378,10 @@ async function detectDefaultBranch(pi: ExtensionAPI, cwd: string, signal: AbortS
 }
 
 async function changedFilesForPr(pi: ExtensionAPI, cwd: string, remote: string, base: string, signal: AbortSignal): Promise<ChangedFile[]> {
-	await execCommand(pi, "git", ["fetch", remote, base], cwd, signal, 180_000);
+	await execOrFail(pi, "pr", "Fetch PR base", "git", ["fetch", remote, base], cwd, signal, 180_000);
 	const baseRef = `${remote}/${base}`;
-	const diff = await execCommand(pi, "git", ["diff", "--name-status", `${baseRef}...HEAD`], cwd, signal, COMMAND_TIMEOUT_MS);
-	if (diff.code === 0) return parseNameStatus(diff.stdout);
-	const lastCommit = await execOrFail(pi, "pr", "Changed files", "git", ["diff", "--name-status", "HEAD~1..HEAD"], cwd, signal);
-	return parseNameStatus(lastCommit.stdout);
+	const diff = await execOrFail(pi, "pr", "Changed files", "git", ["diff", "--name-status", `${baseRef}...HEAD`], cwd, signal, COMMAND_TIMEOUT_MS);
+	return parseNameStatus(diff.stdout);
 }
 
 async function fetchPrInfo(pi: ExtensionAPI, cwd: string, signal: AbortSignal): Promise<PrInfo> {

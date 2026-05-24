@@ -20,7 +20,7 @@
     "npm:pi-codex-fast",
     "npm:@sting8k/pi-vcc"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "enabledModels": [
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini",
