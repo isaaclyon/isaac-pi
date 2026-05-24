@@ -4,7 +4,6 @@
     "npm:lsp-pi",
     "npm:@ogulcancelik/pi-minimal-footer",
     "npm:pi-schedule-prompt",
-    "npm:@sherif-fanous/pi-rtk",
     "npm:pi-rtk-optimizer@0.7.1",
     "npm:pi-updater",
     "npm:@mjakl/pi-subagent@1.4.1",
