@@ -55,13 +55,24 @@ Do **not** simplify in ways that:
 - Favor fewer lines at the cost of comprehension.
 - Introduce subtle control-flow or state-coupling risks.
 
+## Read-Only Reviewer Pass
+
+For non-trivial diffs, or whenever the user asks for simplification review, invoke these read-only subagents before editing:
+
+- `complexity-reviewer`: finds cognitive/structural complexity and unclear control flow.
+- `duplication-reviewer`: finds DRY violations, repeated concepts, and drift risks across related code.
+- `yagni-reviewer`: finds KISS/YAGNI violations, speculative abstractions, and unnecessary configurability.
+
+Synthesize their findings before making changes. Apply only recommendations that are local, behavior-preserving, and aligned with the current task. Ignore suggestions that broaden scope or add abstraction without clear current value.
+
 ## Workflow
 
 1. Identify recently modified code.
-2. Spot readability and consistency improvements.
-3. Apply minimal, behavior-preserving refinements.
-4. Re-check for parity and convention alignment.
-5. Summarize only meaningful changes that impact understanding.
+2. For non-trivial diffs, run the simplification reviewer pass.
+3. Spot readability and consistency improvements.
+4. Apply minimal, behavior-preserving refinements.
+5. Re-check for parity and convention alignment.
+6. Summarize only meaningful changes that impact understanding.
 
 ## Done Criteria
 
