@@ -26,9 +26,9 @@ const SPARK_PROVIDER = "openai-codex";
 const SPARK_MODEL = "gpt-5.3-codex-spark";
 const PROTECTED_BRANCHES = new Set(["main", "master"]);
 const COMMAND_TIMEOUT_MS = 120_000;
-const CHECK_POLL_INTERVAL_MS = 15_000;
+const CHECK_POLL_INTERVAL_MS = 5_000;
 const CHECK_TIMEOUT_MS = 30 * 60_000;
-const NO_CHECKS_GRACE_MS = 60_000;
+const NO_CHECKS_GRACE_MS = 20_000;
 const CHECK_FIELDS = "name,workflow,bucket,state,link,description,startedAt,completedAt";
 const PR_FIELDS = "number,title,url,headRefName,headRefOid";
 
