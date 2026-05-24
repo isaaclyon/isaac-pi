@@ -9,9 +9,12 @@ Use this skill when the user asks to create, refine, or convert feature work int
 
 ## Source of Truth
 
-Before writing specs, read the repository-root guidance in `.agent/SPECS.md`. The `ExecPlan.md` you create must also follow `.agent/PLANS.md`.
+This skill is self-contained. Before writing specs, read the guidance files that live beside this `SKILL.md`:
 
-If `.agent/SPECS.md` is missing in a project, ask whether to create it before proceeding. Do not silently invent a different structure.
+- `SPECS.md` for plan-folder and atomic-spec structure.
+- `PLANS.md` for ExecPlan requirements.
+
+Resolve these paths relative to the skill directory, not the target repository. If the target repository also has `.agent/SPECS.md` or `.agent/PLANS.md`, read those too and treat them as project-specific overrides. If they conflict with the self-contained guidance, prefer the project-specific files and record the decision in `ExecPlan.md`.
 
 ## Required Output
 
