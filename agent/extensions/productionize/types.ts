@@ -26,6 +26,7 @@ export interface ProductionizeState {
 	status: string;
 	branch?: string;
 	baseBranch?: string;
+	returnToBranch?: string;
 	remote?: string;
 	pr?: PrInfo;
 	changedFiles: ChangedFile[];

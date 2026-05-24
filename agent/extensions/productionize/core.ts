@@ -1,4 +1,4 @@
-export type StepId = "branch" | "commit" | "push" | "pr" | "ci" | "merge";
+export type StepId = "branch" | "commit" | "push" | "pr" | "ci" | "merge" | "return";
 export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped" | "cancelled";
 export type CheckStatus = "pending" | "passed" | "failed" | "skipped";
 
@@ -93,6 +93,7 @@ export const DEFAULT_STEPS: WorkflowStep[] = [
 	{ id: "pr", label: "Pull Request", status: "pending" },
 	{ id: "ci", label: "CI Checks", status: "pending" },
 	{ id: "merge", label: "Merge", status: "pending" },
+	{ id: "return", label: "Return", status: "pending" },
 ];
 
 export function cloneDefaultSteps(): WorkflowStep[] {

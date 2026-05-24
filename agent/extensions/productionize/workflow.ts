@@ -57,8 +57,11 @@ export async function runWorkflow(
 		const pr = await runPrStep(pi, ctx, state, cwd, branch, remote, signal, render);
 		await runCiStep(pi, state, cwd, pr, signal, render);
 		await runMergeStep(pi, state, cwd, pr, signal, render);
+		await runReturnStep(pi, state, cwd, remote, signal, render);
 		state.outcome = "succeeded";
-		state.status = "Productionize completed: PR merged and remote branch deletion requested.";
+		state.status = state.returnToBranch
+			? `Productionize completed: PR merged and local checkout returned to ${state.returnToBranch}.`
+			: "Productionize completed: PR merged and remote branch deletion requested.";
 		log(state, "Workflow completed successfully");
 		render();
 	} catch (error) {
@@ -127,6 +130,7 @@ async function runBranchStep(
 	);
 
 	state.baseBranch = currentBranch;
+	state.returnToBranch = currentBranch;
 	if (await localBranchExists(pi, cwd, branchName, signal)) {
 		setStep(state, "branch", "running", `Switching to existing ${branchName}`);
 		state.status = `Switching to existing branch ${branchName}...`;
@@ -352,6 +356,37 @@ async function runMergeStep(
 	await execOrFail(pi, "merge", "Squash merge", "gh", ["pr", "merge", String(pr.number), "--squash", "--delete-branch", "--match-head-commit", pr.headRefOid, "--subject", pr.title, "--body", ""], cwd, signal, 180_000);
 	setStep(state, "merge", "done", "Squash merged; delete branch requested");
 	log(state, `Merged PR #${pr.number}`);
+	render();
+}
+
+async function runReturnStep(
+	pi: ExtensionAPI,
+	state: ProductionizeState,
+	cwd: string,
+	remote: string,
+	signal: AbortSignal,
+	render: () => void,
+): Promise<void> {
+	const branch = state.returnToBranch;
+	if (!branch) {
+		setStep(state, "return", "skipped", "Started on existing branch");
+		render();
+		return;
+	}
+
+	setStep(state, "return", "running", `Switching to ${branch}`);
+	state.status = `Switching back to ${branch}...`;
+	render();
+	await execOrFail(pi, "return", "Return to base branch", "git", ["switch", branch], cwd, signal);
+	state.branch = branch;
+
+	setStep(state, "return", "running", `Pulling ${remote}/${branch}`);
+	state.status = `Pulling latest ${branch} from ${remote}...`;
+	render();
+	await execOrFail(pi, "return", "Pull base branch", "git", ["pull", "--ff-only", remote, branch], cwd, signal, 180_000);
+
+	setStep(state, "return", "done", `Updated ${branch}`);
+	log(state, `Returned to ${branch} and pulled ${remote}/${branch}`);
 	render();
 }
 

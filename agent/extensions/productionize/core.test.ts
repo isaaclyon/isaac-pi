@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+	DEFAULT_STEPS,
 	buildFailurePrompt,
 	buildPrBody,
 	classifyCheck,
@@ -32,6 +33,10 @@ test("AI one-line sanitizers collapse malformed output", () => {
 	assert.equal(sanitizeCommitSubject("repair tests"), "chore: repair tests");
 	assert.equal(sanitizeCommitSubject("\n"), "chore: productionize changes");
 	assert.equal(sanitizePrTitle("PR title: Add productionize flow\nmore"), "Add productionize flow");
+});
+
+test("default workflow includes return step after merge", () => {
+	assert.deepEqual(DEFAULT_STEPS.map((step) => step.id), ["branch", "commit", "push", "pr", "ci", "merge", "return"]);
 });
 
 test("hasDirtyFiles detects porcelain status", () => {
