@@ -6,7 +6,7 @@ This document defines how to create and maintain plan folders that combine one h
 
 Use this method when a feature is too large or nuanced for one flat plan, especially when several independently testable slices must still add up to one real user-facing capability. The ExecPlan keeps the forest visible: why the feature matters, how specs sequence together, and what definition of done proves the integrated feature works. Atomic specs keep the trees small: each spec states one goal, concrete constraints, hard tests, and a todo list.
 
-A plan folder prevents the common failure mode where every narrow ticket passes but the final feature is not useful. Completing all specs is necessary but not sufficient; the ExecPlan's definition of done must also be satisfied.
+A plan folder prevents the common failure mode where every narrow ticket passes but the final feature is not useful. Completing all specs is necessary but not sufficient; the ExecPlan's definition of done must also be satisfied. The plan must always include an explicit integration proof showing that the feature works across the real boundary a user or downstream system depends on.
 
 ## Required Location and Naming
 
@@ -34,7 +34,7 @@ Existing single-file plans in `docs/plans/*.md` do not need to be migrated just 
 
     ## Spec Sequence
 
-`Definition of Done` describes the integrated behavior that proves the whole feature is real. It must not merely say that every spec is complete. It should answer: what can a user do after this ships, what command or UI confirms it, what data ties out, and what remaining risks are acceptable?
+`Definition of Done` describes the integrated behavior that proves the whole feature is real. It must not merely say that every spec is complete. It should answer: what can a user do after this ships, what command or UI confirms it, what data ties out, what integration test or end-to-end scenario proves the whole path works, and what remaining risks are acceptable?
 
 `Spec Sequence` lists each spec file in the intended implementation order and explains why that order matters. If specs can run in parallel, say so and explain the boundaries. If later specs depend on validation from earlier specs, state that dependency plainly.
 
@@ -102,7 +102,7 @@ Every spec must use exactly these top-level sections:
 
 `Acceptance Criteria` describes qualitative and quantitative outcomes a human can verify. This is broader than tests. Include row counts, tie-outs, visible UI labels, documented behavior, or expected output shapes where relevant.
 
-`Tests` lists hard pass/fail checks. Include unit tests, dbt tests, data tests, parse checks, type checks, or command lines. State the expected result, such as zero rows from a singular dbt test or `PASS=... ERROR=0` from a focused build.
+`Tests` lists hard pass/fail checks. Include unit tests, dbt tests, data tests, parse checks, type checks, command lines, and—where this spec is responsible for end-to-end proof—integration tests. State the expected result, such as zero rows from a singular dbt test or `PASS=... ERROR=0` from a focused build.
 
 `Todo` is a checkbox list for implementation. Keep it concrete enough that a future agent can resume work without guessing.
 
@@ -148,7 +148,7 @@ Acceptance criteria and tests are intentionally different.
 
 Acceptance criteria are about user-visible or stakeholder-visible truth. They may include examples like: Finance can build a cohort curve by period number; a new Lightdash explore has unambiguous labels; a prod tie-out matches direct Snowflake aggregation; or a model exposes a cost breakdown that explains a margin change.
 
-Tests are hard gates that automation can pass or fail. They include dbt unique/not-null tests, singular data tests, unit tests, type checks, parse checks, or exact commands. A spec should have both. If a behavior cannot be fully automated, include the closest automated test and a manual acceptance check.
+Tests are hard gates that automation can pass or fail. They include dbt unique/not-null tests, singular data tests, unit tests, type checks, parse checks, exact commands, and integration scenarios. A spec should have both. For every feature-sized plan, at least one spec must define an integration or end-to-end test that proves the full intended workflow across real components, not just mocked or isolated units. If the work is small enough that one atomic spec already provides that proof, call that out explicitly. If a behavior cannot be fully automated, include the closest automated integration test plus a manual acceptance check.
 
 ## Writing Good Atomic Specs
 
@@ -167,10 +167,11 @@ When asked to create specs for a feature:
 3. Create `docs/plans/YYYY-MM-DD-slug/ExecPlan.md` first. Include purpose, definition of done, spec sequence, global decisions, and validation approach.
 4. Create one `spec-NN-slug.md` file per atomic slice.
 5. Cross-check that each spec has hard tests and acceptance criteria.
-6. Cross-check that the ExecPlan's definition of done proves the integrated feature, not just the specs.
-7. Ask a `reviewer` subagent to pressure-test the completed plan folder before calling it ready. The reviewer should be read-only and should check for unclear terms, missing implementation context, missing tests, weak acceptance criteria, sequencing gaps, and cases where completing specs would not actually ship the intended feature. Incorporate the review feedback or explicitly record why it was not adopted.
-8. Commit the completed plan folder and any planning-guidance changes before implementation begins. This creates a safe checkpoint that can be reverted if implementation goes in the wrong direction. Use a focused commit message such as `spec contribution profit ltv` or `add create-specs planning guidance`.
-9. Keep `ExecPlan.md` updated during implementation. Record discoveries and decisions there. Update spec todo lists as each atomic spec progresses.
+6. Cross-check that the plan includes explicit integration coverage. Prefer a dedicated integration-validation spec when the feature spans multiple layers or contracts; otherwise, explicitly identify the atomic spec that provides the end-to-end proof.
+7. Cross-check that the ExecPlan's definition of done proves the integrated feature, not just the specs.
+8. Ask a `reviewer` subagent to pressure-test the completed plan folder before calling it ready. The reviewer should be read-only and should check for unclear terms, missing implementation context, missing tests, missing integration coverage, weak acceptance criteria, sequencing gaps, and cases where completing specs would not actually ship the intended feature. Incorporate the review feedback or explicitly record why it was not adopted.
+9. Commit the completed plan folder and any planning-guidance changes before implementation begins. This creates a safe checkpoint that can be reverted if implementation goes in the wrong direction. Use a focused commit message such as `spec contribution profit ltv` or `add create-specs planning guidance`.
+10. Keep `ExecPlan.md` updated during implementation. Record discoveries and decisions there. Update spec todo lists as each atomic spec progresses.
 
 ## Completion Checklist
 
@@ -180,8 +181,9 @@ Before calling a plan folder ready for implementation, verify:
 - Every spec has the six required sections.
 - Every spec names concrete files or models to create or edit.
 - Every spec includes hard pass/fail tests.
+- The plan includes explicit integration-test coverage, either as a dedicated spec or a clearly identified atomic spec that proves the real end-to-end flow.
 - The specs are sequenced or explicitly marked parallel-safe.
-- The ExecPlan explains how all specs combine into a real user-facing outcome.
+- The ExecPlan explains how all specs combine into a real user-facing outcome and names the final integration proof.
 - The plan folder lives under `docs/plans/YYYY-MM-DD-slug/`.
 - A read-only `reviewer` subagent has pressure-tested the plan folder, and its feedback has been incorporated or consciously rejected with rationale.
 - The plan folder has been committed as a checkpoint before implementation begins.
@@ -190,6 +192,7 @@ Before calling the feature complete, verify:
 
 - All spec todos are complete or explicitly deferred with rationale.
 - All spec tests pass in the required environment.
+- The required integration or end-to-end proof has been executed successfully and captured as evidence.
 - The ExecPlan definition of done is satisfied.
 - `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` are current.
 - Evidence is recorded in `ExecPlan.md` or the relevant spec files.

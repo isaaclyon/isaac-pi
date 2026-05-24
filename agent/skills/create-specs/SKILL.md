@@ -25,7 +25,7 @@ Create this shape:
       spec-01-short-slice.md
       spec-02-next-slice.md
 
-`ExecPlan.md` is the forest. It explains the user-visible purpose, definition of done, spec sequence, global context, decisions, and end-to-end validation.
+`ExecPlan.md` is the forest. It explains the user-visible purpose, definition of done, spec sequence, global context, decisions, and end-to-end validation. It must also name the concrete integration proof that demonstrates the full feature works in a realistic end-to-end flow, not merely that isolated components pass.
 
 Each `spec-*.md` file is a tree. It must be short and include exactly these top-level sections:
 
@@ -49,10 +49,11 @@ Each `spec-*.md` file is a tree. It must be short and include exactly these top-
 2. Identify the integrated feature outcome. Write it as the ExecPlan definition of done before splitting specs.
 3. Split work into atomic, independently testable specs. Each spec should change one layer or contract at a time.
 4. For every spec, include hard pass/fail tests and qualitative/quantitative acceptance criteria.
-5. Ensure completing all specs is not the only definition of done. The ExecPlan must state how to prove the real feature works end to end.
-6. If converting an existing single-file plan, migrate it into the folder format and preserve important decisions, discoveries, and evidence in `ExecPlan.md`.
-7. Before calling the spec folder ready, invoke a read-only `reviewer` subagent to pressure-test `ExecPlan.md` and the spec files. Ask it to look for missing context, weak acceptance criteria, missing tests, sequencing problems, and cases where the specs could pass without shipping the real feature. Incorporate the feedback or record why you are not taking it.
-8. Commit the completed plan/spec folder and any planning-guidance changes before implementation begins. This checkpoint should be easy to revert to if implementation goes off track.
+5. Require at least one explicit integration-test spec unless the work is so small that a single atomic spec already contains a genuine end-to-end proof. This integration coverage must exercise the real feature boundary across components, layers, or interfaces and must state the exact command, scenario, or fixture that proves the feature works as intended.
+6. Ensure completing all specs is not the only definition of done. The ExecPlan must state how to prove the real feature works end to end, and that proof must be stronger than a collection of unit tests.
+7. If converting an existing single-file plan, migrate it into the folder format and preserve important decisions, discoveries, and evidence in `ExecPlan.md`.
+8. Before calling the spec folder ready, invoke a read-only `reviewer` subagent to pressure-test `ExecPlan.md` and the spec files. Ask it to look for missing context, weak acceptance criteria, missing tests, missing integration coverage, sequencing problems, and cases where the specs could pass without shipping the real feature. Incorporate the feedback or record why you are not taking it.
+9. Commit the completed plan/spec folder and any planning-guidance changes before implementation begins. This checkpoint should be easy to revert to if implementation goes off track.
 
 ## Quality Bar
 
@@ -63,7 +64,8 @@ A spec folder is ready only when:
 - every spec has the six required sections;
 - every spec names concrete files, models, commands, or interfaces;
 - every spec has hard tests with expected pass/fail outcomes;
-- the ExecPlan explains how the specs combine into a useful shipped feature;
+- the plan includes explicit integration-test coverage that proves the feature across real boundaries, either in a dedicated integration spec or in a clearly identified atomic spec that performs true end-to-end validation;
+- the ExecPlan explains how the specs combine into a useful shipped feature and names the final integrated proof;
 - a `reviewer` subagent has pressure-tested the plan folder, with feedback incorporated or explicitly declined;
 - the completed plan/spec folder has been committed as a checkpoint.
 
