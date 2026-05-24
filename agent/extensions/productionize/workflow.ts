@@ -434,8 +434,12 @@ async function fetchPrInfo(pi: ExtensionAPI, cwd: string, signal: AbortSignal): 
 async function fetchChecks(pi: ExtensionAPI, cwd: string, prNumber: number, signal: AbortSignal): Promise<GitHubCheck[]> {
 	const args = ["pr", "checks", String(prNumber), "--json", CHECK_FIELDS];
 	const result = await execCommand(pi, "gh", args, cwd, signal, COMMAND_TIMEOUT_MS);
+	const stdout = result.stdout.trim();
+	if (stdout.startsWith("[") || stdout.startsWith("{")) {
+		return parseJson<GitHubCheck[]>(result.stdout, "checks", "ci", "CI Checks", "gh", args, cwd);
+	}
 	if (isLikelyNoChecks(result.stdout, result.stderr)) return [];
-	if (result.stdout.trim()) {
+	if (stdout) {
 		return parseJson<GitHubCheck[]>(result.stdout, "checks", "ci", "CI Checks", "gh", args, cwd);
 	}
 	if (result.code === 0) return [];

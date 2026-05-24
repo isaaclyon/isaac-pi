@@ -322,6 +322,9 @@ export function isLikelyNoPr(stdout: string, stderr: string): boolean {
 }
 
 export function isLikelyNoChecks(stdout: string, stderr: string): boolean {
+	const trimmedStdout = stdout.trim();
+	const stdoutIsJson = trimmedStdout.startsWith("[") || trimmedStdout.startsWith("{");
+	if (stdoutIsJson) return false;
 	const text = `${stdout}\n${stderr}`.toLowerCase();
 	return text.includes("no checks reported") || text.includes("no check runs") || text.includes("no status checks");
 }
