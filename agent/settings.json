@@ -18,7 +18,8 @@
     "npm:@siddr/pi-review",
     "npm:@narumitw/pi-goal",
     "npm:pi-codex-fast",
-    "npm:@sting8k/pi-vcc"
+    "npm:@sting8k/pi-vcc",
+    "npm:pi-web-access"
   ],
   "defaultThinkingLevel": "medium",
   "enabledModels": [
