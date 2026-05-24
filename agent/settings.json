@@ -1,11 +1,11 @@
 {
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.75.4",
   "packages": [
     "npm:lsp-pi",
     "npm:@ogulcancelik/pi-minimal-footer",
     "npm:pi-schedule-prompt",
     "npm:@sherif-fanous/pi-rtk",
-    "npm:pi-rtk-optimizer",
+    "npm:pi-rtk-optimizer@0.7.1",
     "npm:pi-updater",
     "npm:@mjakl/pi-subagent@1.4.1",
     "npm:pi-model-aware-compaction",
@@ -19,9 +19,11 @@
       "skills": []
     },
     "npm:@siddr/pi-review",
-    "npm:@samfp/pi-memory"
+    "npm:@narumitw/pi-goal",
+    "npm:pi-codex-fast",
+    "npm:@juicesharp/rpiv-ask-user-question"
   ],
-  "defaultThinkingLevel": "xhigh",
+  "defaultThinkingLevel": "high",
   "enabledModels": [
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini",
