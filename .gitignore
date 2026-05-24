@@ -7,6 +7,9 @@ agent/sessions/
 agent/lcm/
 agent/update-cache.json
 agent/run-history.jsonl
+agent/backups/
+agent.backup.*/
+automations/
 
 # Installed package clones/caches; settings.json is the source of truth
 agent/git/**
