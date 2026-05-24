@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.75.4",
+  "lastChangelogVersion": "0.75.5",
   "packages": [
     "npm:lsp-pi",
     "npm:@ogulcancelik/pi-minimal-footer",
@@ -9,7 +9,6 @@
     "npm:pi-updater",
     "npm:@mjakl/pi-subagent@1.4.1",
     "npm:pi-model-aware-compaction",
-    "npm:pi-lcm",
     {
       "source": "git:github.com/tmustier/pi-extensions",
       "extensions": [
@@ -21,9 +20,10 @@
     "npm:@siddr/pi-review",
     "npm:@narumitw/pi-goal",
     "npm:pi-codex-fast",
-    "npm:@juicesharp/rpiv-ask-user-question"
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:@sting8k/pi-vcc"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "enabledModels": [
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini",
@@ -46,7 +46,7 @@
     "hookMode": "edit_write"
   },
   "lcm": {
-    "enabled": true,
+    "enabled": false,
     "leafChunkTokens": 4000,
     "condensationThreshold": 6,
     "maxDepth": 5,
