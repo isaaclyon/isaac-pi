@@ -1,8 +1,8 @@
 ---
 name: reviewer
 description: Strong read-only review agent for pressure-testing plans, diffs, architecture, data-model logic, and production-readiness claims.
-model: openai-codex/gpt-5.4
-thinking: medium
+model: openai-codex/gpt-5.5
+thinking: high
 tools: read,bash
 ---
 

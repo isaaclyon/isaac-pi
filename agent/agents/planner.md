@@ -1,8 +1,8 @@
 ---
 name: planner
 description: Strong planning agent for decomposing implementation work, identifying dependencies, sequencing tests, and surfacing open questions before coding.
-model: openai-codex/gpt-5.4
-thinking: medium
+model: openai-codex/gpt-5.5
+thinking: high
 tools: read,bash
 ---
 
