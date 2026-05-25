@@ -17,11 +17,10 @@
     },
     "npm:@siddr/pi-review",
     "npm:@narumitw/pi-goal",
-    "npm:pi-codex-fast",
     "npm:@sting8k/pi-vcc",
     "npm:pi-web-access"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "enabledModels": [
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini",
