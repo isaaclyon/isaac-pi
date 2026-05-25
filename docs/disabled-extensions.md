@@ -25,3 +25,11 @@ This file records extensions that were removed or disabled so they can be recall
 - Reason: Redundant with `npm:pi-rtk-optimizer@0.7.1`, which provides RTK command rewriting plus output compaction and `/rtk` settings. Keeping both created overlapping RTK behavior and duplicate `/rtk` commands.
 - Reinstall command: `pi install npm:@sherif-fanous/pi-rtk`
 - Config note: Keep `agent/extensions/pi-rtk-optimizer/config.json` as the active RTK configuration.
+
+## Codex fast mode extension
+
+- Package: `npm:pi-codex-fast`
+- Removed: 2026-05-24
+- Reason: Removed on request.
+- Reinstall command: `pi install npm:pi-codex-fast`
+- Config note: `agent/extensions/pi-codex-fast.json` was deleted.

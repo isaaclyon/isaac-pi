@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-import { spawn, execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { spawn, execFileSync, execSync } from "node:child_process";
+import os from "node:os";
 import puppeteer from "puppeteer-core";
 
 const useProfile = process.argv[2] === "--profile";
@@ -33,34 +35,56 @@ try {
 	execSync(`rm -f "${SCRAPING_DIR}/SingletonLock" "${SCRAPING_DIR}/SingletonSocket" "${SCRAPING_DIR}/SingletonCookie"`, { stdio: "ignore" });
 } catch {}
 
+const platform = os.platform();
+const chromePath = findChromePath();
+const sourceProfileDir = defaultProfileDir(platform);
+
 if (useProfile) {
-	console.log("Syncing profile...");
-	execSync(
-		`rsync -a --delete \
-			--exclude='SingletonLock' \
-			--exclude='SingletonSocket' \
-			--exclude='SingletonCookie' \
-			--exclude='*/Sessions/*' \
-			--exclude='*/Current Session' \
-			--exclude='*/Current Tabs' \
-			--exclude='*/Last Session' \
-			--exclude='*/Last Tabs' \
-			"${process.env.HOME}/Library/Application Support/Google/Chrome/" "${SCRAPING_DIR}/"`,
+	if (sourceProfileDir === undefined || !existsSync(sourceProfileDir)) {
+		console.error(`✗ Could not find a default Chrome profile for ${platform}`);
+		process.exit(1);
+	}
+	console.log(`Syncing profile from ${sourceProfileDir}...`);
+	execFileSync(
+		"rsync",
+		[
+			"-a",
+			"--delete",
+			"--exclude=SingletonLock",
+			"--exclude=SingletonSocket",
+			"--exclude=SingletonCookie",
+			"--exclude=*/Sessions/*",
+			"--exclude=*/Current Session",
+			"--exclude=*/Current Tabs",
+			"--exclude=*/Last Session",
+			"--exclude=*/Last Tabs",
+			`${sourceProfileDir}/`,
+			`${SCRAPING_DIR}/`,
+		],
 		{ stdio: "pipe" },
 	);
 }
 
-// Start Chrome with flags to force new instance
-spawn(
-	"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-	[
-		"--remote-debugging-port=9222",
-		`--user-data-dir=${SCRAPING_DIR}`,
-		"--no-first-run",
-		"--no-default-browser-check",
-	],
-	{ detached: true, stdio: "ignore" },
-).unref();
+const args = [
+	"--remote-debugging-port=9222",
+	`--user-data-dir=${SCRAPING_DIR}`,
+	"--no-first-run",
+	"--no-default-browser-check",
+];
+
+if (platform === "linux") {
+	args.push("--no-sandbox");
+	if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+		args.push("--headless=new");
+	}
+}
+
+const child = spawn(chromePath, args, { detached: true, stdio: "ignore" });
+child.on("error", (error) => {
+	console.error(`✗ Failed to start Chrome at ${chromePath}: ${error.message}`);
+	process.exit(1);
+});
+child.unref();
 
 // Wait for Chrome to be ready
 let connected = false;
@@ -83,4 +107,58 @@ if (!connected) {
 	process.exit(1);
 }
 
-console.log(`✓ Chrome started on :9222${useProfile ? " with your profile" : ""}`);
+console.log(`✓ Chrome started on :9222 using ${chromePath}${useProfile ? " with your profile" : ""}`);
+
+function findChromePath() {
+	if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) {
+		return process.env.CHROME_PATH;
+	}
+
+	const candidatesByPlatform = {
+		darwin: [
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Chromium.app/Contents/MacOS/Chromium",
+		],
+		linux: [
+			"/usr/bin/google-chrome",
+			"/usr/bin/google-chrome-stable",
+			"/usr/bin/chromium",
+			"/usr/bin/chromium-browser",
+		],
+		win32: [
+			`${process.env.PROGRAMFILES ?? "C:/Program Files"}/Google/Chrome/Application/chrome.exe`,
+			`${process.env["PROGRAMFILES(X86)"] ?? "C:/Program Files (x86)"}/Google/Chrome/Application/chrome.exe`,
+		],
+	};
+
+	for (const candidate of candidatesByPlatform[platform] ?? []) {
+		if (existsSync(candidate)) return candidate;
+	}
+
+	for (const command of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"]) {
+		try {
+			return execFileSync("which", [command], { encoding: "utf8" }).trim();
+		} catch {}
+	}
+
+	console.error("✗ Could not find Chrome/Chromium. Set CHROME_PATH to the browser executable.");
+	process.exit(1);
+}
+
+function defaultProfileDir(currentPlatform) {
+	if (currentPlatform === "darwin") {
+		return `${process.env.HOME}/Library/Application Support/Google/Chrome`;
+	}
+	if (currentPlatform === "linux") {
+		for (const candidate of [
+			`${process.env.HOME}/.config/google-chrome`,
+			`${process.env.HOME}/.config/chromium`,
+		]) {
+			if (existsSync(candidate)) return candidate;
+		}
+	}
+	if (currentPlatform === "win32") {
+		return `${process.env.LOCALAPPDATA}/Google/Chrome/User Data`;
+	}
+	return undefined;
+}
