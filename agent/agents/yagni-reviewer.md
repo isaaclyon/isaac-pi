@@ -1,8 +1,8 @@
 ---
 name: yagni-reviewer
 description: Read-only simplification reviewer for KISS/YAGNI violations, speculative abstractions, and unnecessary configurability.
-model: openai-codex/gpt-5.4
-thinking: medium
+model: openai-codex/gpt-5.4-mini
+thinking: high
 tools: read,bash
 ---
 

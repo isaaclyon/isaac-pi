@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.76.0",
+  "lastChangelogVersion": "0.78.0",
   "packages": [
     "npm:lsp-pi",
     "npm:@ogulcancelik/pi-minimal-footer",
@@ -18,9 +18,11 @@
     "npm:@siddr/pi-review",
     "npm:@narumitw/pi-goal",
     "npm:@sting8k/pi-vcc",
-    "npm:pi-web-access"
+    "npm:pi-web-access",
+    "npm:pi-codex-fast",
+    "npm:pi-review-loop"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "enabledModels": [
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini",

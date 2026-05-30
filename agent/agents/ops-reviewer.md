@@ -1,8 +1,8 @@
 ---
 name: ops-reviewer
 description: Read-only quality reviewer for production readiness, configuration, observability, migrations, rollout, and operational risk.
-model: openai-codex/gpt-5.4
-thinking: medium
+model: openai-codex/gpt-5.4-mini
+thinking: high
 tools: read,bash
 ---
 
