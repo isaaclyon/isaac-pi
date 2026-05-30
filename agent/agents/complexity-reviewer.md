@@ -1,8 +1,8 @@
 ---
 name: complexity-reviewer
 description: Read-only simplification reviewer for cognitive and structural complexity in recently changed code.
-model: openai-codex/gpt-5.4
-thinking: medium
+model: openai-codex/gpt-5.4-mini
+thinking: high
 tools: read,bash
 ---
 
