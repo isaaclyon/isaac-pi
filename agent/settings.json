@@ -30,7 +30,10 @@
     "openai-codex/gpt-5.3-codex"
   ],
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.4",
+  "defaultModel": "gpt-5.5",
+  "reviewerLoop": {
+    "freshContext": true
+  },
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
