@@ -10,6 +10,7 @@ import {
 	hasDirtyFiles,
 	hasPrChanges,
 	isLikelyNoChecks,
+	parseBranchUsedByWorktreeError,
 	parseNameStatus,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
@@ -110,6 +111,17 @@ test("isLikelyNoChecks detects GitHub no-checks responses", () => {
 	assert.equal(isLikelyNoChecks('[{"description":"no status checks configured"}]', ""), false);
 	assert.equal(isLikelyNoChecks('[{"name":"lint"}]', "no checks reported"), false);
 	assert.equal(isLikelyNoChecks("", "authentication required"), false);
+});
+
+test("parseBranchUsedByWorktreeError extracts retry target", () => {
+	assert.deepEqual(
+		parseBranchUsedByWorktreeError(
+			"",
+			"fatal: 'main' is already used by worktree at\n '/Users/isaaclyon/Developer/lola-data-platform'",
+		),
+		{ branch: "main", path: "/Users/isaaclyon/Developer/lola-data-platform" },
+	);
+	assert.equal(parseBranchUsedByWorktreeError("", "authentication required"), undefined);
 });
 
 test("evaluateChecks requires at least one non-skipped passing check", () => {

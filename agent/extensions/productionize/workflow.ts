@@ -11,6 +11,7 @@ import {
 	hasPrChanges,
 	isLikelyNoChecks,
 	isLikelyNoPr,
+	parseBranchUsedByWorktreeError,
 	parseNameStatus,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
@@ -382,7 +383,22 @@ async function runMergeStep(
 	state.status = "Squash merging PR and deleting remote branch...";
 	render();
 
-	await execOrFail(pi, "merge", "Squash merge", "gh", ["pr", "merge", String(pr.number), "--squash", "--delete-branch", "--match-head-commit", pr.headRefOid, "--subject", pr.title, "--body", ""], cwd, signal, 180_000);
+	const mergeArgs = ["pr", "merge", String(pr.number), "--squash", "--delete-branch", "--match-head-commit", pr.headRefOid, "--subject", pr.title, "--body", ""];
+	const result = await execCommand(pi, "gh", mergeArgs, cwd, signal, 180_000);
+	if (result.code !== 0) {
+		const usedWorktree = parseBranchUsedByWorktreeError(result.stdout, result.stderr);
+		if (!usedWorktree || (usedWorktree.branch !== state.baseBranch && !PROTECTED_BRANCHES.has(usedWorktree.branch))) {
+			throw commandFailure("merge", "Squash merge", "gh", mergeArgs, cwd, result);
+		}
+
+		setStep(state, "merge", "running", `Retrying from ${usedWorktree.branch} worktree`);
+		log(state, `Retrying merge from worktree ${usedWorktree.path}`);
+		render();
+		const retry = await execCommand(pi, "gh", mergeArgs, usedWorktree.path, signal, 180_000);
+		if (retry.code !== 0) {
+			throw commandFailure("merge", "Squash merge", "gh", mergeArgs, usedWorktree.path, retry);
+		}
+	}
 	setStep(state, "merge", "done", "Squash merged; delete branch requested");
 	log(state, `Merged PR #${pr.number}`);
 	render();
@@ -559,19 +575,21 @@ async function execOrFail(
 	timeout = COMMAND_TIMEOUT_MS,
 ): Promise<ExecResult> {
 	const result = await execCommand(pi, command, args, cwd, signal, timeout);
-	if (result.code !== 0) {
-		throw new WorkflowFailure(stepId, {
-			step,
-			command,
-			args,
-			cwd,
-			code: result.code,
-			stdout: result.stdout,
-			stderr: result.stderr,
-			message: `${command} ${args.join(" ")} exited ${result.code}`,
-		});
-	}
+	if (result.code !== 0) throw commandFailure(stepId, step, command, args, cwd, result);
 	return result;
+}
+
+function commandFailure(stepId: StepId, step: string, command: string, args: string[], cwd: string, result: ExecResult): WorkflowFailure {
+	return new WorkflowFailure(stepId, {
+		step,
+		command,
+		args,
+		cwd,
+		code: result.code,
+		stdout: result.stdout,
+		stderr: result.stderr,
+		message: `${command} ${args.join(" ")} exited ${result.code}`,
+	});
 }
 
 async function execCommand(

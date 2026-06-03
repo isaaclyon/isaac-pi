@@ -2,7 +2,7 @@
 
 # Operating Instructions
 
-> These guidelines bias toward caution over speed. For trivial tasks, use judgment. They're working if diffs have fewer unnecessary changes, fewer rewrites from overcomplication, and clarifying questions come before implementation rather than after mistakes.
+> These guidelines bias toward caution over speed. For trivial tasks, use judgment. They're working if diffs have fewer unnecessary changes, fewer rewrites from overcomplication, clarifying questions come before implementation rather than after mistakes, and responses are concise without feeling clipped or dismissive.
 
 ## 1. Think Before Coding
 
@@ -12,6 +12,7 @@
 - State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
+- Be concise by default, but not terse: use the fewest words that still preserve warmth, clarity, and the key rationale.
 - For any non-trivial work, use your create-specs skill to create a robust plan.
 
 ## 2. Simplicity First

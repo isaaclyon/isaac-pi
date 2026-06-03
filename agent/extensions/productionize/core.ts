@@ -333,6 +333,12 @@ export function isLikelyNoChecks(stdout: string, stderr: string): boolean {
 	return text.includes("no checks reported") || text.includes("no check runs") || text.includes("no status checks");
 }
 
+export function parseBranchUsedByWorktreeError(stdout: string, stderr: string): { branch: string; path: string } | undefined {
+	const match = `${stdout}\n${stderr}`.match(/fatal:\s*'([^']+)'\s+is already used by worktree at\s+'([^']+)'/s);
+	if (!match) return undefined;
+	return { branch: match[1], path: match[2] };
+}
+
 function sanitizeOneLine(raw: string, fallback: string, maxLength: number): string {
 	const line = firstMeaningfulLine(raw)
 		.replace(/[\u0000-\u001f\u007f]/g, " ")
