@@ -10,6 +10,7 @@ import {
 	hasDirtyFiles,
 	hasPrChanges,
 	isLikelyNoChecks,
+	isLikelyNonFastForwardPull,
 	parseBranchUsedByWorktreeError,
 	parseNameStatus,
 	sanitizeBranchName,
@@ -122,6 +123,12 @@ test("parseBranchUsedByWorktreeError extracts retry target", () => {
 		{ branch: "main", path: "/Users/isaaclyon/Developer/lola-data-platform" },
 	);
 	assert.equal(parseBranchUsedByWorktreeError("", "authentication required"), undefined);
+});
+
+test("isLikelyNonFastForwardPull detects only git pull divergence", () => {
+	assert.equal(isLikelyNonFastForwardPull("", "fatal: Not possible to fast-forward, aborting."), true);
+	assert.equal(isLikelyNonFastForwardPull("", "error: Your local changes would be overwritten by merge"), false);
+	assert.equal(isLikelyNonFastForwardPull("", "rejected because remote contains non-fast-forward updates"), false);
 });
 
 test("evaluateChecks requires at least one non-skipped passing check", () => {

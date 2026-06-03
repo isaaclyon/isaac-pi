@@ -339,6 +339,11 @@ export function parseBranchUsedByWorktreeError(stdout: string, stderr: string): 
 	return { branch: match[1], path: match[2] };
 }
 
+export function isLikelyNonFastForwardPull(stdout: string, stderr: string): boolean {
+	const text = `${stdout}\n${stderr}`;
+	return /^fatal: Not possible to fast-forward, aborting\.$/m.test(text);
+}
+
 function sanitizeOneLine(raw: string, fallback: string, maxLength: number): string {
 	const line = firstMeaningfulLine(raw)
 		.replace(/[\u0000-\u001f\u007f]/g, " ")

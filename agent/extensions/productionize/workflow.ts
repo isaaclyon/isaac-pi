@@ -11,6 +11,7 @@ import {
 	hasPrChanges,
 	isLikelyNoChecks,
 	isLikelyNoPr,
+	isLikelyNonFastForwardPull,
 	parseBranchUsedByWorktreeError,
 	parseNameStatus,
 	sanitizeBranchName,
@@ -62,9 +63,11 @@ export async function runWorkflow(
 		if (!pr) {
 			await runReturnStep(pi, state, cwd, remote, signal, render);
 			state.outcome = "succeeded";
-			state.status = state.returnToBranch
-				? `Productionize completed: no productionize changes to merge; local checkout returned to ${state.returnToBranch}.`
-				: "Productionize completed: no productionize changes to merge.";
+			state.status = state.returnWarning
+				? `Productionize completed: no productionize changes to merge. ${state.returnWarning}`
+				: state.returnToBranch
+					? `Productionize completed: no productionize changes to merge; local checkout returned to ${state.returnToBranch}.`
+					: "Productionize completed: no productionize changes to merge.";
 			log(state, "Workflow completed with no PR because no changes were detected");
 			render();
 			return;
@@ -73,9 +76,11 @@ export async function runWorkflow(
 		await runMergeStep(pi, state, cwd, pr, signal, render);
 		await runReturnStep(pi, state, cwd, remote, signal, render);
 		state.outcome = "succeeded";
-		state.status = state.returnToBranch
-			? `Productionize completed: PR merged and local checkout returned to ${state.returnToBranch}.`
-			: "Productionize completed: PR merged and remote branch deletion requested.";
+		state.status = state.returnWarning
+			? `Productionize completed: PR merged. ${state.returnWarning}`
+			: state.returnToBranch
+				? `Productionize completed: PR merged and local checkout returned to ${state.returnToBranch}.`
+				: "Productionize completed: PR merged and remote branch deletion requested.";
 		log(state, "Workflow completed successfully");
 		render();
 	} catch (error) {
@@ -428,7 +433,18 @@ async function runReturnStep(
 	setStep(state, "return", "running", `Pulling ${remote}/${branch}`);
 	state.status = `Pulling latest ${branch} from ${remote}...`;
 	render();
-	await execOrFail(pi, "return", "Pull base branch", "git", ["pull", "--ff-only", remote, branch], cwd, signal, 180_000);
+	const pullArgs = ["pull", "--ff-only", remote, branch];
+	const pull = await execCommand(pi, "git", pullArgs, cwd, signal, 180_000);
+	if (pull.code !== 0) {
+		if (!isLikelyNonFastForwardPull(pull.stdout, pull.stderr)) {
+			throw commandFailure("return", "Pull base branch", "git", pullArgs, cwd, pull);
+		}
+		state.returnWarning = `Local ${branch} diverged from ${remote}/${branch}; skipped fast-forward pull.`;
+		setStep(state, "return", "done", `Returned to ${branch}; pull skipped`);
+		log(state, state.returnWarning);
+		render();
+		return;
+	}
 
 	setStep(state, "return", "done", `Updated ${branch}`);
 	log(state, `Returned to ${branch} and pulled ${remote}/${branch}`);
