@@ -1,6 +1,7 @@
 import type { QuestionAnswer, QuestionData, QuestionnaireResult } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import type { QuestionnaireAction } from "./key-router.js";
+import { recordTimedOutQuestion } from "./questionnaire-timeout.js";
 import { ROW_INTENT_META } from "./row-intent.js";
 import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
 import type { QuestionnaireState } from "./state.js";
@@ -33,10 +34,25 @@ export interface ApplyResult {
 function orderedAnswers(state: QuestionnaireState, questions: readonly QuestionData[]): QuestionAnswer[] {
 	const out: QuestionAnswer[] = [];
 	for (let i = 0; i < questions.length; i++) {
-		const a = state.answers.get(i);
-		if (a) out.push(a);
+		const answer = state.answers.get(i);
+		if (answer) out.push(answer);
 	}
 	return out;
+}
+
+function resultTimeout(state: QuestionnaireState): QuestionnaireResult["timeout"] | undefined {
+	if (state.timeout.timedOutQuestions.length === 0 && !state.timeout.completedByTimeout) return undefined;
+	return {
+		completedByTimeout: state.timeout.completedByTimeout,
+		timedOutQuestions: [...state.timeout.timedOutQuestions],
+	};
+}
+
+function clearTimedOutQuestion(state: QuestionnaireState, questionIndex: number): QuestionnaireState["timeout"] {
+	return {
+		...state.timeout,
+		timedOutQuestions: state.timeout.timedOutQuestions.filter((entry) => entry.questionIndex !== questionIndex),
+	};
 }
 
 function withFocusedOptionHasPreview(
@@ -112,7 +128,12 @@ function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyC
 }
 
 function doneFor(state: QuestionnaireState, ctx: ApplyContext, cancelled: boolean): ApplyResult {
-	const result: QuestionnaireResult = { answers: orderedAnswers(state, ctx.questions), cancelled };
+	const timeout = resultTimeout(state);
+	const result: QuestionnaireResult = {
+		answers: orderedAnswers(state, ctx.questions),
+		cancelled,
+		...(timeout ? { timeout } : {}),
+	};
 	return { state, effects: [{ kind: "done", result }] };
 }
 
@@ -147,7 +168,7 @@ const confirmHandler: Handler<"confirm"> = (state, action, ctx) => {
 	let answer = action.answer;
 	if (answer.kind === "option" && answer.answer) {
 		const q = ctx.questions[answer.questionIndex];
-		const matched = q?.options.find((o) => o.label === answer.answer);
+		const matched = q?.options.find((option) => option.label === answer.answer);
 		if (matched?.preview && matched.preview.length > 0) {
 			answer = { ...answer, preview: matched.preview };
 		}
@@ -158,7 +179,11 @@ const confirmHandler: Handler<"confirm"> = (state, action, ctx) => {
 	}
 	const answers = new Map(state.answers);
 	answers.set(answer.questionIndex, answer);
-	const next: QuestionnaireState = { ...state, answers };
+	const next: QuestionnaireState = {
+		...state,
+		answers,
+		timeout: clearTimedOutQuestion(state, answer.questionIndex),
+	};
 	if (answer.kind === "chat") return doneFor(next, ctx, false);
 	if (action.autoAdvanceTab !== undefined) return switchTabResult(next, action.autoAdvanceTab, ctx);
 	return doneFor(next, ctx, false);
@@ -190,13 +215,14 @@ const multiConfirmHandler: Handler<"multi_confirm"> = (state, action, ctx) => {
 		...state,
 		answers,
 		multiSelectChecked: syncMultiSelectFromAnswers(answers, ctx.questions, state.currentTab),
+		timeout: clearTimedOutQuestion(state, state.currentTab),
 	};
 	if (action.autoAdvanceTab !== undefined) return switchTabResult(synced, action.autoAdvanceTab, ctx);
 	return doneFor(synced, ctx, false);
 };
 
 const notesEnterHandler: Handler<"notes_enter"> = (state, _action, _ctx) => {
-	const value = state.answers.get(state.currentTab)?.notes ?? "";
+	const value = state.notesByTab.get(state.currentTab) ?? state.answers.get(state.currentTab)?.notes ?? "";
 	return {
 		state: { ...state, notesVisible: true, notesDraft: value },
 		effects: [
@@ -240,21 +266,41 @@ const focusOptionsHandler: Handler<"focus_options"> = (state, action, ctx) => {
 	return { state: next, effects: inputMode ? [] : [{ kind: "clear_input_buffer" }] };
 };
 
-const cancelHandler: Handler<"cancel"> = (s, _a, c) => doneFor(s, c, true);
-const submitHandler: Handler<"submit"> = (s, _a, c) => doneFor(s, c, false);
-const submitNavHandler: Handler<"submit_nav"> = (s, a, _c) => ({
-	state: { ...s, submitChoiceIndex: a.nextIndex },
+const questionTimeoutHandler: Handler<"question_timeout"> = (state, _action, ctx) => {
+	const question = ctx.questions[state.currentTab];
+	if (!question) return { state, effects: [] };
+	const unanswered = !state.answers.has(state.currentTab);
+	const timeout = {
+		...state.timeout,
+		remainingSeconds: null,
+		timedOutQuestions: recordTimedOutQuestion(
+			state.timeout.timedOutQuestions,
+			state.currentTab,
+			question.question,
+			unanswered,
+		),
+		completedByTimeout: unanswered && state.currentTab === ctx.questions.length - 1,
+	};
+	const nextState: QuestionnaireState = { ...state, timeout };
+	if (state.currentTab < ctx.questions.length - 1) return switchTabResult(nextState, state.currentTab + 1, ctx);
+	return doneFor(nextState, ctx, false);
+};
+
+const cancelHandler: Handler<"cancel"> = (state, _action, ctx) => doneFor(state, ctx, true);
+const submitHandler: Handler<"submit"> = (state, _action, ctx) => doneFor(state, ctx, false);
+const submitNavHandler: Handler<"submit_nav"> = (state, action, _ctx) => ({
+	state: { ...state, submitChoiceIndex: action.nextIndex },
 	effects: [],
 });
-const focusChatHandler: Handler<"focus_chat"> = (s, _a, _c) => ({
-	state: { ...s, chatFocused: true },
+const focusChatHandler: Handler<"focus_chat"> = (state, _action, _ctx) => ({
+	state: { ...state, chatFocused: true },
 	effects: [],
 });
-const notesForwardHandler: Handler<"notes_forward"> = (s, a, _c) => ({
-	state: s,
-	effects: [{ kind: "forward_notes_keystroke", data: a.data }],
+const notesForwardHandler: Handler<"notes_forward"> = (state, action, _ctx) => ({
+	state,
+	effects: [{ kind: "forward_notes_keystroke", data: action.data }],
 });
-const ignoreHandler: Handler<"ignore"> = (s, _a, _c) => ({ state: s, effects: [] });
+const ignoreHandler: Handler<"ignore"> = (state, _action, _ctx) => ({ state, effects: [] });
 
 /**
  * Compile-time-exhaustive dispatch table. `{ [K in Kind]: Handler<K> }` requires
@@ -272,6 +318,7 @@ const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
 	notes_enter: notesEnterHandler,
 	notes_exit: notesExitHandler,
 	notes_forward: notesForwardHandler,
+	question_timeout: questionTimeoutHandler,
 	submit: submitHandler,
 	submit_nav: submitNavHandler,
 	focus_chat: focusChatHandler,

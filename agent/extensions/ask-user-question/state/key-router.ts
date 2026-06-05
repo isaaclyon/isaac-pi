@@ -29,6 +29,7 @@ export type QuestionnaireAction =
 	 */
 	| { kind: "focus_options"; optionIndex: number }
 	| { kind: "notes_forward"; data: string }
+	| { kind: "question_timeout" }
 	| { kind: "ignore" };
 
 export interface QuestionnaireKeybindings {

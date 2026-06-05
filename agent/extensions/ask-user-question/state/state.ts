@@ -1,5 +1,10 @@
-import type { QuestionAnswer, QuestionData } from "../tool/types.js";
+import type { QuestionAnswer, QuestionData, QuestionnaireTimeoutDetails } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
+
+export interface QuestionnaireTimeoutState extends QuestionnaireTimeoutDetails {
+	enabled: boolean;
+	remainingSeconds: number | null;
+}
 
 /**
  * Canonical state for the questionnaire dialog. Single source of truth — both the
@@ -25,6 +30,7 @@ export interface QuestionnaireState {
 	submitChoiceIndex: number;
 	/** Canonical mirror of the in-flight notes editor; runtime mirrors after `forward_notes_keystroke`. */
 	notesDraft: string;
+	timeout: QuestionnaireTimeoutState;
 }
 
 /**

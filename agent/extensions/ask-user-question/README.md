@@ -44,6 +44,23 @@ pi install npm:@juicesharp/rpiv-ask-user-question
 
 Then restart your Pi session.
 
+### Optional: question timeouts
+
+Timeouts are configured globally for this vendored extension in `agent/extensions/ask-user-question/config.json`:
+
+```json
+{
+  "timeout": {
+    "initialQuestionSeconds": 0,
+    "questionSeconds": 0
+  }
+}
+```
+
+Timeouts stay disabled unless **both** values are positive integers. Missing, malformed, partial, or non-positive timeout config falls back to today's no-timeout behavior.
+
+To enable the feature, set both values to positive integers, then reload or restart Pi so the vendored extension is re-registered. The first question uses `initialQuestionSeconds`; every later question uses `questionSeconds`.
+
 ### Optional: localization
 
 `rpiv-ask-user-question` works standalone - install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip sentinel labels, dialog hints, review-tab heading, and chat-summary lines to your active locale:
@@ -87,7 +104,7 @@ Returns:
 
 ```ts
 {
-  content: [{ type: "text", text: string }], // human-readable envelope or DECLINE_MESSAGE
+  content: [{ type: "text", text: string }], // human-readable envelope, timeout guidance, or DECLINE_MESSAGE
   details: {
     answers: Array<{
       questionIndex: number,
@@ -101,9 +118,18 @@ Returns:
     cancelled: boolean,
     error?: "no_ui" | "no_questions" | "empty_options" | "too_many_questions"
           | "duplicate_question" | "duplicate_option_label" | "reserved_label",
+    timeout?: {
+      completedByTimeout: boolean,
+      timedOutQuestions: Array<{
+        questionIndex: number,
+        question: string,
+      }>,
+    },
   }
 }
 ```
+
+If timeouts are enabled, unanswered timed-out questions auto-advance instead of creating synthetic answers. The final tool response keeps any real answers that were collected and appends timeout guidance for the unanswered timed-out questions.
 
 ## License
 

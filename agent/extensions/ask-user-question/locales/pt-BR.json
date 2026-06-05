@@ -21,6 +21,7 @@
 
   "preview.no_preview": "Pré-visualização indisponível",
   "preview.notes_affordance": "Notas: pressione n para adicionar notas",
+  "timeout.remaining": "Tempo restante: {seconds}s",
 
   "chat.summary": "O usuário quer conversar sobre isso",
   "notes.header": "Notas:"

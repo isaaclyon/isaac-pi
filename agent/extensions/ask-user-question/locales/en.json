@@ -19,6 +19,7 @@
 
   "preview.no_preview": "No preview available",
   "preview.notes_affordance": "Notes: press n to add notes",
+  "timeout.remaining": "Time left: {seconds}s",
 
   "chat.summary": "User wants to chat about this",
   "notes.header": "Notes:"

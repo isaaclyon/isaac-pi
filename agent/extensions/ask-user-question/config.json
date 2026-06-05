@@ -1,0 +1,6 @@
+{
+	"timeout": {
+		"initialQuestionSeconds": 120,
+		"questionSeconds": 30
+	}
+}

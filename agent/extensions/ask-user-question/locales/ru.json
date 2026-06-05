@@ -21,6 +21,7 @@
 
   "preview.no_preview": "Предпросмотр недоступен",
   "preview.notes_affordance": "Заметки: нажмите n, чтобы добавить заметки",
+  "timeout.remaining": "Осталось времени: {seconds}с",
 
   "chat.summary": "Пользователь хочет обсудить это",
   "notes.header": "Заметки:"
