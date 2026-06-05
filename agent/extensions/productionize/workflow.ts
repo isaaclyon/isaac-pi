@@ -503,6 +503,7 @@ async function runReturnStep(runtime: WorkflowRuntime): Promise<void> {
 	await update(runtime);
 	await execOrFail(runtime, "return", "Return to base branch", "git", ["switch", branch], cwd);
 	state.branch = branch;
+	state.returnWarning = undefined;
 
 	setStep(state, "return", "running", `Pulling ${remote}/${branch}`);
 	state.status = `Pulling latest ${branch} from ${remote}...`;
@@ -513,9 +514,9 @@ async function runReturnStep(runtime: WorkflowRuntime): Promise<void> {
 		if (!isLikelyNonFastForwardPull(pull.stdout, pull.stderr)) {
 			throw commandFailure("return", "Pull base branch", "git", pullArgs, cwd, pull);
 		}
-		state.returnWarning = `Local ${branch} diverged from ${remote}/${branch}; skipped fast-forward pull.`;
-		setStep(state, "return", "done", `Returned to ${branch}; pull skipped`);
-		log(state, state.returnWarning);
+		await reconcileReturnBranch(runtime, remote, branch);
+		setStep(state, "return", "done", `Rebased onto ${remote}/${branch}`);
+		log(state, `Returned to ${branch} and rebased onto ${remote}/${branch}`);
 		await update(runtime);
 		return;
 	}
@@ -523,6 +524,51 @@ async function runReturnStep(runtime: WorkflowRuntime): Promise<void> {
 	setStep(state, "return", "done", `Updated ${branch}`);
 	log(state, `Returned to ${branch} and pulled ${remote}/${branch}`);
 	await update(runtime);
+}
+
+async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, branch: string): Promise<void> {
+	const { state, ctx } = runtime;
+	const cwd = ctx.cwd;
+	setStep(state, "return", "running", `Reconciling ${branch}`);
+	state.status = `Rebasing local ${branch} onto ${remote}/${branch}...`;
+	await update(runtime);
+
+	const status = await execOrFail(runtime, "return", "Check return branch status", "git", ["status", "--porcelain"], cwd);
+	if (hasDirtyFiles(status.stdout)) {
+		throw new WorkflowFailure("return", {
+			step: "Pull base branch",
+			command: "git",
+			args: ["status", "--porcelain"],
+			cwd,
+			stdout: status.stdout,
+			stderr: status.stderr,
+			message: `Cannot automatically reconcile diverged ${branch} because the working tree is dirty.`,
+		});
+	}
+
+	const backupBranch = buildReturnBackupBranch(branch, runtime.hooks);
+	await execOrFail(runtime, "return", "Create return backup branch", "git", ["branch", "--force", backupBranch, "HEAD"], cwd);
+	await execOrFail(runtime, "return", "Fetch return branch", "git", ["fetch", remote, branch], cwd, 180_000);
+
+	const rebaseArgs = ["rebase", "FETCH_HEAD"];
+	const rebase = await execCommand(runtime, "git", rebaseArgs, cwd, runtime.signal, 180_000);
+	if (rebase.code === 0) return;
+	void execCommand(runtime, "git", ["rebase", "--abort"], cwd, runtime.signal, 30_000).catch(() => undefined);
+	throw new WorkflowFailure("return", {
+		step: "Pull base branch",
+		command: "git",
+		args: rebaseArgs,
+		cwd,
+		code: rebase.code,
+		stdout: rebase.stdout,
+		stderr: rebase.stderr,
+		message: `Automatic rebase of ${branch} onto ${remote}/${branch} failed. Backup branch created: ${backupBranch}. Resolve manually.`,
+	});
+}
+
+function buildReturnBackupBranch(branch: string, hooks: WorkflowHooks): string {
+	const stamp = timestamp(hooks).replace(/[:.]/g, "-");
+	return `productionize-backup/${branch}-${stamp}`;
 }
 
 async function attemptAutoRepair(runtime: WorkflowRuntime, failure: WorkflowFailure): Promise<boolean> {
