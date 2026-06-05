@@ -16,6 +16,7 @@ import {
 	type RepairSummaryEntry,
 } from "./auto.ts";
 import {
+	buildFailureContext,
 	buildFailurePrompt,
 	buildPrBody,
 	checkLabel,
@@ -750,8 +751,8 @@ function classifyFailure(failure: CommandFailure): "recoverable" | "unrecoverabl
 	return failure.step !== "Branch" ? "recoverable" : "unrecoverable";
 }
 
-function buildRepairPrompt(state: ProductionizeState, failure: CommandFailure, stepId: StepId, headShaBefore: string, attempt: number): string {
-	const context = buildFailurePrompt(failure, {
+export function buildRepairPrompt(state: ProductionizeState, failure: CommandFailure, stepId: StepId, headShaBefore: string, attempt: number): string {
+	const context = buildFailureContext(failure, {
 		branch: state.branch,
 		remote: state.remote,
 		prUrl: state.pr?.url,

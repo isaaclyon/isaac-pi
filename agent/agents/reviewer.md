@@ -3,7 +3,7 @@ name: reviewer
 description: Code review agent - reviews changes for quality, security, and correctness
 disable-model-invocation: true
 tools: read, bash
-model: anthropic/claude-opus-4-6
+model: openai-codex/gpt-5.4
 thinking: medium
 spawning: false
 auto-exit: true

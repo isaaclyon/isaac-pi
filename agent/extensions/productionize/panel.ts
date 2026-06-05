@@ -154,6 +154,7 @@ export class ProductionizePanel {
 		lines.push(`${prefix}${this.theme.fg("warning", `repair attempt ${repair.attempt}/${repair.maxAttempts}`)}`);
 		lines.push(`${prefix}${this.theme.fg("dim", `status: ${repair.status}`)}`);
 		if (repair.sessionFile) lines.push(`${prefix}${this.theme.fg("dim", `side session: ${repair.sessionFile}`)}`);
+		if (repair.lastSeenEventType) lines.push(`${prefix}${this.theme.fg("dim", `last event: ${repair.lastSeenEventType}`)}`);
 		if (repair.resumeCheckpoint) lines.push(`${prefix}${this.theme.fg("dim", `resuming from ${repair.resumeCheckpoint}`)}`);
 		if (repair.lastSummarizedText) lines.push(`${prefix}${this.theme.fg("dim", repair.lastSummarizedText)}`);
 		return lines;
