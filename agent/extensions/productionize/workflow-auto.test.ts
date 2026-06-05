@@ -204,6 +204,89 @@ test("reconcile clears a persisted repair without lastPrompt and resumes from th
 	]);
 });
 
+test("return step rebases a diverged branch after creating a backup branch", async () => {
+	const state = createReturnState();
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			now: () => new Date("2026-06-05T22:00:00.000Z"),
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "switch main") return ok();
+				if (joined === "pull --ff-only origin main") return fail("", "fatal: Not possible to fast-forward, aborting.");
+				if (joined === "status --porcelain") return ok();
+				if (joined === "branch --force productionize-backup/main-2026-06-05T22-00-00-000Z HEAD") return ok();
+				if (joined === "fetch origin main") return ok();
+				if (joined === "rebase FETCH_HEAD") return ok();
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.returnWarning, undefined);
+	assert.match(state.status, /returned to main/i);
+	assert.deepEqual(seen, [
+		{ command: "git", args: ["switch", "main"] },
+		{ command: "git", args: ["pull", "--ff-only", "origin", "main"] },
+		{ command: "git", args: ["status", "--porcelain"] },
+		{ command: "git", args: ["branch", "--force", "productionize-backup/main-2026-06-05T22-00-00-000Z", "HEAD"] },
+		{ command: "git", args: ["fetch", "origin", "main"] },
+		{ command: "git", args: ["rebase", "FETCH_HEAD"] },
+	]);
+	assert.equal(state.steps.find((step) => step.id === "return")?.detail, "Rebased onto origin/main");
+});
+
+test("return step aborts and fails safely when automatic rebase conflicts", async () => {
+	const state = createReturnState();
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			now: () => new Date("2026-06-05T22:00:00.000Z"),
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "switch main") return ok();
+				if (joined === "pull --ff-only origin main") return fail("", "fatal: Not possible to fast-forward, aborting.");
+				if (joined === "status --porcelain") return ok();
+				if (joined === "branch --force productionize-backup/main-2026-06-05T22-00-00-000Z HEAD") return ok();
+				if (joined === "fetch origin main") return ok();
+				if (joined === "rebase FETCH_HEAD") return fail("", "CONFLICT (content): merge conflict in README.md");
+				if (joined === "rebase --abort") return ok();
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "failed");
+	assert.match(state.failure?.message ?? "", /Backup branch created: productionize-backup\/main-2026-06-05T22-00-00-000Z/);
+	assert.equal(state.steps.find((step) => step.id === "return")?.status, "failed");
+	assert.deepEqual(seen, [
+		{ command: "git", args: ["switch", "main"] },
+		{ command: "git", args: ["pull", "--ff-only", "origin", "main"] },
+		{ command: "git", args: ["status", "--porcelain"] },
+		{ command: "git", args: ["branch", "--force", "productionize-backup/main-2026-06-05T22-00-00-000Z", "HEAD"] },
+		{ command: "git", args: ["fetch", "origin", "main"] },
+		{ command: "git", args: ["rebase", "FETCH_HEAD"] },
+		{ command: "git", args: ["rebase", "--abort"] },
+	]);
+});
+
 function createFakePi(): any {
 	return {
 		appendEntry() {},
@@ -224,6 +307,22 @@ function createFakeContext(): any {
 
 function ok(stdout = "", stderr = ""): ExecResult {
 	return { code: 0, stdout, stderr };
+}
+
+function fail(stdout = "", stderr = ""): ExecResult {
+	return { code: 1, stdout, stderr };
+}
+
+function createReturnState() {
+	const state = createDefaultSnapshot();
+	state.remote = "origin";
+	state.branch = "feat/test";
+	state.returnToBranch = "main";
+	state.pr = { number: 15, title: "PR", url: "https://example.test/pr/15", headRefName: "feat/test", headRefOid: "abc" };
+	for (const step of state.steps) {
+		step.status = step.id === "return" ? "pending" : "done";
+	}
+	return state;
 }
 
 function makeSummary(overrides: Partial<RepairAttemptSummary> = {}): RepairAttemptSummary {
