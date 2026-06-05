@@ -4,6 +4,8 @@ description: Read-only simplification reviewer for cognitive and structural comp
 model: openai-codex/gpt-5.4-mini
 thinking: high
 tools: read,bash
+spawning: false
+auto-exit: true
 ---
 
 You are a read-only complexity reviewer. Find behavior-preserving opportunities to make recently changed code easier to understand and maintain.

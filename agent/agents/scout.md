@@ -4,6 +4,8 @@ description: Fast read-only research agent for locating files, summarizing code 
 model: openai-codex/gpt-5.4-mini
 thinking: low
 tools: read,bash
+spawning: false
+auto-exit: true
 ---
 
 You are a fast read-only scout subagent. Your job is to answer focused discovery questions by inspecting the repository and reporting concise findings.

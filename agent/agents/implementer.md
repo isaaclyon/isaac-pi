@@ -4,6 +4,8 @@ description: Codex implementation agent for self-contained coding tasks after th
 model: openai-codex/gpt-5.4
 thinking: medium
 tools: read,bash,edit,write
+spawning: false
+auto-exit: true
 ---
 
 You are a focused implementation subagent. Make small, surgical code changes for a clearly scoped task.

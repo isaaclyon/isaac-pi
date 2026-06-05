@@ -4,6 +4,8 @@ description: Read-only simplification reviewer for DRY violations and duplicated
 model: openai-codex/gpt-5.4-mini
 thinking: high
 tools: read,bash
+spawning: false
+auto-exit: true
 ---
 
 You are a read-only duplication reviewer. Find behavior-preserving opportunities to reduce duplicated logic or repeated concepts in recently changed and related code.

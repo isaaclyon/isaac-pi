@@ -1,12 +1,15 @@
 {
-  "lastChangelogVersion": "0.78.0",
+  "lastChangelogVersion": "0.78.1",
   "packages": [
     "npm:lsp-pi",
     "npm:@ogulcancelik/pi-minimal-footer",
     "npm:pi-schedule-prompt",
     "npm:pi-rtk-optimizer@0.7.1",
     "npm:pi-updater",
-    "npm:@mjakl/pi-subagent@1.4.1",
+    {
+      "source": "npm:@mjakl/pi-subagent@1.4.1",
+      "extensions": []
+    },
     {
       "source": "git:github.com/tmustier/pi-extensions",
       "extensions": [
@@ -20,17 +23,13 @@
     "npm:@sting8k/pi-vcc",
     "npm:pi-web-access",
     "npm:pi-codex-fast",
-    "npm:pi-review-loop"
+    "npm:pi-review-loop",
+    "git:github.com/HazAT/pi-interactive-subagents",
+    "git:github.com/sasha-computer/pi-cmux"
   ],
   "defaultThinkingLevel": "medium",
-  "enabledModels": [
-    "openai-codex/gpt-5.5",
-    "openai-codex/gpt-5.4-mini",
-    "openai-codex/gpt-5.4",
-    "openai-codex/gpt-5.3-codex"
-  ],
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-5.4",
   "reviewerLoop": {
     "freshContext": true
   },
