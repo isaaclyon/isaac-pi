@@ -107,6 +107,24 @@ test("verified orphan detection kills only a matching child process", async () =
 	}
 });
 
+test("repair runner times out a stuck subprocess instead of hanging forever", async () => {
+	const { dir: repo, branch } = await initRepo();
+	const runner = createRepairRunner({
+		repairTimeoutMs: 50,
+		spawnProcess: (() => spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "pipe", "pipe"] })) as any,
+	});
+	const summary = await runner.start({
+		cwd: repo,
+		stepId: "ci",
+		branch: "feat/test",
+		baseBranch: branch,
+		prompt: "ignored",
+	});
+	assert.equal(summary.outcome, "failed");
+	assert.match(summary.summary, /timed out/i);
+	assert.match(summary.errorMessage ?? "", /timed out/i);
+});
+
 test("repair runner smoke test records a session file and terminal outcome", async (t) => {
 	const { dir: repo, branch } = await initRepo();
 	const runner = createRepairRunner();

@@ -9,6 +9,7 @@ import type { StepId } from "./core.ts";
 const SESSION_DIR = path.join(os.tmpdir(), "productionize-auto-sessions");
 const GITHUB_ENV_KEYS = ["GH_TOKEN", "GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_AUTH_TOKEN"];
 const ALLOWED_TOOLS = ["read", "edit", "write"] as const;
+const DEFAULT_REPAIR_TIMEOUT_MS = 5 * 60_000;
 
 export interface RepairRunnerInput {
 	cwd: string;
@@ -83,12 +84,14 @@ interface RunnerDeps {
 	spawnProcess?: typeof spawn;
 	randomToken?: () => string;
 	now?: () => Date;
+	repairTimeoutMs?: number;
 }
 
 export function createRepairRunner(deps: RunnerDeps = {}): RepairRunner {
 	const spawnProcess = deps.spawnProcess ?? spawn;
 	const randomToken = deps.randomToken ?? (() => randomUUID());
 	const now = deps.now ?? (() => new Date());
+	const repairTimeoutMs = deps.repairTimeoutMs ?? DEFAULT_REPAIR_TIMEOUT_MS;
 	let activeProc: ChildProcessWithoutNullStreams | undefined;
 
 	return {
@@ -138,6 +141,7 @@ export function createRepairRunner(deps: RunnerDeps = {}): RepairRunner {
 			let lastSummarizedText: string | undefined;
 			let stderr = "";
 			let cancelled = false;
+			let timedOut = false;
 			let exitCode = 0;
 
 			await fs.mkdir(path.dirname(sessionFile), { recursive: true });
@@ -153,6 +157,13 @@ export function createRepairRunner(deps: RunnerDeps = {}): RepairRunner {
 				cancelled = true;
 				if (activeProc) terminateProcess(activeProc);
 			};
+			const timeoutHandler = () => {
+				timedOut = true;
+				stderr += `\n[productionize-auto] Repair timed out after ${repairTimeoutMs}ms.`;
+				if (activeProc) terminateProcess(activeProc);
+			};
+			const timeoutId = setTimeout(timeoutHandler, repairTimeoutMs);
+			timeoutId.unref?.();
 			input.abortSignal?.addEventListener("abort", abortHandler, { once: true });
 
 			try {
@@ -207,12 +218,13 @@ export function createRepairRunner(deps: RunnerDeps = {}): RepairRunner {
 					activeProc.on("error", (error) => reject(error));
 				});
 			} finally {
+				clearTimeout(timeoutId);
 				input.abortSignal?.removeEventListener("abort", abortHandler);
 				activeProc = undefined;
 			}
 
 			const patch = await exportPatchArtifact(tempWorktree, patchFile);
-			const outcome: RepairAttemptOutcome = cancelled ? "cancelled" : exitCode === 0 ? "succeeded" : "failed";
+			const outcome: RepairAttemptOutcome = cancelled ? "cancelled" : timedOut || exitCode !== 0 ? "failed" : "succeeded";
 			protocol.terminalState = outcome === "succeeded" ? "completed" : outcome;
 			const summary = buildSummary(input.stepId, outcome, lastSummarizedText, stderr, patch);
 
@@ -235,7 +247,7 @@ export function createRepairRunner(deps: RunnerDeps = {}): RepairRunner {
 				lastSummarizedText,
 				verifiedCommand,
 				protocol,
-				errorMessage: outcome === "failed" ? stderr.trim() || lastSummarizedText : undefined,
+				errorMessage: outcome === "failed" ? stderr.trim() || lastSummarizedText || `Repair timed out after ${repairTimeoutMs}ms.` : undefined,
 			};
 		},
 	};

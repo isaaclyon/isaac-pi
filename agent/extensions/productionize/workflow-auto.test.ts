@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createDefaultSnapshot, decideResumePlan, invalidateForResume } from "./auto.ts";
 import { runWorkflow } from "./workflow.ts";
@@ -25,6 +26,16 @@ test("return changed head resumes at push and clears PR plus checks", () => {
 	assert.deepEqual(resumed.checks, []);
 	assert.equal(resumed.steps.find((step) => step.id === "push")?.status, "pending");
 	assert.equal(resumed.steps.find((step) => step.id === "return")?.status, "pending");
+});
+
+test("auto repair prompt is wired to raw failure context, not the manual handoff prompt", () => {
+	const source = readFileSync(new URL("./workflow.ts", import.meta.url), "utf8");
+	const blockMatch = source.match(/export function buildRepairPrompt[\s\S]*?\n}\n\nasync function appendRepairSummary/);
+	assert.ok(blockMatch, "buildRepairPrompt block should exist");
+	const block = blockMatch[0];
+	assert.match(block, /const context = buildFailureContext\(/);
+	assert.doesNotMatch(block, /const context = buildFailurePrompt\(/);
+	assert.match(block, /Make the smallest code or file changes needed to address the failure\./);
 });
 
 test("pr resume always clears downstream state", () => {

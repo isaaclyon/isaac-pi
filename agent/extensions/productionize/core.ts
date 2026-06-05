@@ -255,7 +255,7 @@ export function evaluateChecks(checks: GitHubCheck[]): CheckEvaluation {
 	return { status: "pending", hasNonSkipped, passed, failed, pending, skipped };
 }
 
-export function buildFailurePrompt(failure: CommandFailure, context: FailurePromptContext = {}): string {
+export function buildFailureContext(failure: CommandFailure, context: FailurePromptContext = {}): string {
 	const commandText = failure.command ? [failure.command, ...(failure.args ?? [])].join(" ") : "(no command)";
 	const checkLines = (context.checks ?? []).map((check) => {
 		const label = checkLabel(check);
@@ -263,10 +263,6 @@ export function buildFailurePrompt(failure: CommandFailure, context: FailureProm
 	});
 
 	return [
-		"Write a concise instruction for Pi to fix a failed `/productionize` workflow.",
-		"The instruction will be pasted into Pi's user message box. It must tell Pi what failed, what evidence to inspect, and the smallest safe next action.",
-		"Do not include a preamble. Do not ask the user to paste logs manually unless required.",
-		"",
 		"## Workflow context",
 		`- Step: ${failure.step}`,
 		context.branch ? `- Branch: ${context.branch}` : undefined,
@@ -293,6 +289,16 @@ export function buildFailurePrompt(failure: CommandFailure, context: FailureProm
 	]
 		.filter((line): line is string => line !== undefined)
 		.join("\n");
+}
+
+export function buildFailurePrompt(failure: CommandFailure, context: FailurePromptContext = {}): string {
+	return [
+		"Write a concise instruction for Pi to fix a failed `/productionize` workflow.",
+		"The instruction will be pasted into Pi's user message box. It must tell Pi what failed, what evidence to inspect, and the smallest safe next action.",
+		"Do not include a preamble. Do not ask the user to paste logs manually unless required.",
+		"",
+		buildFailureContext(failure, context),
+	].join("\n");
 }
 
 export function fallbackFixInstruction(failure: CommandFailure): string {
