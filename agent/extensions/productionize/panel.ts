@@ -35,7 +35,7 @@ export class ProductionizePanel {
 			return;
 		}
 
-		if (this.state.outcome === "failed" && (data === "f" || data === "F" || matchesKey(data, "enter"))) {
+		if (!this.state.auto.enabled && this.state.outcome === "failed" && (data === "f" || data === "F" || matchesKey(data, "enter"))) {
 			if (this.state.fixInstruction) {
 				this.done({ action: "fix", instruction: this.state.fixInstruction });
 			}
@@ -59,6 +59,7 @@ export class ProductionizePanel {
 			failure: this.state.failure,
 			fix: this.state.fixInstruction,
 			cancel: this.state.cancelRequested,
+			auto: this.state.auto,
 			log: this.state.log.slice(-8),
 		});
 		if (this.cachedLines && this.cachedWidth === width && this.cachedSignature === signature) return this.cachedLines;
@@ -69,7 +70,7 @@ export class ProductionizePanel {
 		const border = th.fg("borderMuted", "─".repeat(Math.max(0, width)));
 
 		add(border);
-		add(`${th.fg("accent", th.bold("Productionize"))} ${th.fg("muted", "branch → commit → push → PR → CI → merge → return")}`);
+		add(`${th.fg("accent", th.bold("Productionize"))} ${th.fg("muted", "branch → commit → push → PR → CI → merge → return")}${this.state.auto.enabled ? th.fg("warning", "  [auto]") : ""}`);
 		add(this.renderProgress(width));
 		add(th.fg(statusColor(this.state.outcome), this.state.status));
 		if (this.state.branch) add(`${th.fg("muted", "Branch:")} ${this.state.branch}`);
@@ -77,7 +78,10 @@ export class ProductionizePanel {
 		if (this.state.pr) add(`${th.fg("muted", "PR:")} #${this.state.pr.number} ${this.state.pr.url}`);
 		add("");
 
-		for (const step of this.state.steps) add(this.renderStep(step));
+		for (const step of this.state.steps) {
+			add(this.renderStep(step));
+			for (const detail of this.renderAutoStepDetails(step.id)) add(detail);
+		}
 		add("");
 
 		if (this.state.checks.length > 0) {
@@ -141,6 +145,20 @@ export class ProductionizePanel {
 		return `${this.theme.fg(color, `${icon} ${label}`)}${link}`;
 	}
 
+	private renderAutoStepDetails(stepId: string): string[] {
+		if (!this.state.auto.enabled) return [];
+		const repair = this.state.auto.currentRepair;
+		if (!repair || repair.stepId !== stepId) return [];
+		const lines: string[] = [];
+		const prefix = this.theme.fg("dim", "   ↳ ");
+		lines.push(`${prefix}${this.theme.fg("warning", `repair attempt ${repair.attempt}/${repair.maxAttempts}`)}`);
+		lines.push(`${prefix}${this.theme.fg("dim", `status: ${repair.status}`)}`);
+		if (repair.sessionFile) lines.push(`${prefix}${this.theme.fg("dim", `side session: ${repair.sessionFile}`)}`);
+		if (repair.resumeCheckpoint) lines.push(`${prefix}${this.theme.fg("dim", `resuming from ${repair.resumeCheckpoint}`)}`);
+		if (repair.lastSummarizedText) lines.push(`${prefix}${this.theme.fg("dim", repair.lastSummarizedText)}`);
+		return lines;
+	}
+
 	private renderFailure(add: (line?: string) => void): void {
 		const failure = this.state.failure;
 		if (!failure) return;
@@ -150,6 +168,12 @@ export class ProductionizePanel {
 		if (failure.code !== undefined) add(`Exit code: ${failure.code}`);
 		if (failure.message) add(`Error: ${failure.message}`);
 		add("");
+		if (this.state.auto.enabled) {
+			const summary = this.state.auto.lastRepairSummary;
+			if (summary) add(`Latest repair: ${summary.outcome} attempt ${summary.attempt} (${summary.stepId})`);
+			add(this.theme.fg("dim", "Esc closes the panel after the run stops."));
+			return;
+		}
 		add(this.theme.fg("accent", this.theme.bold("Fix instruction preview")));
 		for (const line of (this.state.fixInstruction ?? "Generating fix instructions...").split("\n").slice(0, 12)) {
 			add(`  ${line}`);

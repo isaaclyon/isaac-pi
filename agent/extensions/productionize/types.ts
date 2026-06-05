@@ -1,7 +1,8 @@
-import type { ChangedFile, CommandFailure, DisplayCheck, WorkflowStep, StepId } from "./core.ts";
+import type { CommandFailure, StepId } from "./core.ts";
+import type { PersistedPrInfo, ProductionizeStateSnapshot, WorkflowOutcomeValue } from "./auto.ts";
 
 export type PanelResult = { action: "close" } | { action: "fix"; instruction: string };
-export type WorkflowOutcome = "running" | "succeeded" | "failed" | "cancelled";
+export type WorkflowOutcome = WorkflowOutcomeValue;
 
 export interface ExecResult {
 	code: number;
@@ -10,31 +11,9 @@ export interface ExecResult {
 	killed?: boolean;
 }
 
-export interface PrInfo {
-	number: number;
-	title: string;
-	url: string;
-	headRefName: string;
-	headRefOid: string;
-}
+export interface PrInfo extends PersistedPrInfo {}
 
-export interface ProductionizeState {
-	steps: WorkflowStep[];
-	checks: DisplayCheck[];
-	log: string[];
-	outcome: WorkflowOutcome;
-	status: string;
-	branch?: string;
-	baseBranch?: string;
-	returnToBranch?: string;
-	returnWarning?: string;
-	remote?: string;
-	pr?: PrInfo;
-	changedFiles: ChangedFile[];
-	failure?: CommandFailure;
-	fixInstruction?: string;
-	cancelRequested: boolean;
-}
+export interface ProductionizeState extends ProductionizeStateSnapshot {}
 
 export class WorkflowFailure extends Error {
 	readonly stepId: StepId;
