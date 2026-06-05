@@ -35,7 +35,10 @@ This order matters because the current `agent/extensions/productionize/workflow.
 - [x] (2026-06-04T21:07Z) Read the self-contained `create-specs` guidance plus Pi extension and TUI documentation relevant to commands, session replacement, custom UI, session persistence, and JSON subprocess execution.
 - [x] (2026-06-04T21:07Z) Completed the mandatory five-batch discovery interview with 20 questions and captured the resulting product decisions in this plan.
 - [x] (2026-06-04T21:07Z) Pressure-tested this plan folder with a read-only reviewer subagent and incorporated the resulting findings around resume semantics, child safety boundaries, path confinement, and deterministic patch import.
-- [ ] Commit `docs/plans/2026-06-04-productionize-auto-mode/` as the pre-implementation checkpoint.
+- [x] (2026-06-04T23:25Z) Committed the spec folder as pre-implementation checkpoints: `54f9f21 spec productionize auto mode` and `fb8cfc6 tighten productionize auto spec`.
+- [x] (2026-06-05T01:25Z) Implemented `/productionize auto` command parsing, persisted auto-run state, inline repair status rendering, guarded side-agent subprocess execution, patch export/import helpers, and resumable workflow integration under `agent/extensions/productionize/`.
+- [x] (2026-06-05T01:25Z) Added focused auto-mode tests covering contracts, guard behavior, patch export, orphan-kill verification, resume invalidation, and local git integration flows.
+- [~] (2026-06-05T01:25Z) Verified the implementation with focused automated tests plus Pi extension load smoke. Real interactive disposable-GitHub proof remains manual-only because `/productionize` requires a live TUI panel and could not be driven end-to-end from this non-interactive tool harness.
 
 ## Surprises & Discoveries
 
@@ -80,9 +83,16 @@ This order matters because the current `agent/extensions/productionize/workflow.
 
 ## Outcomes & Retrospective
 
-Planning is complete enough to start implementation once the reviewer pass and checkpoint commit are done. The major design risk is not user intent but API shape: background repair work cannot use the foreground session-replacement helpers. The plan resolves that by using a persisted side-session subprocess while preserving the requested user-facing behavior.
+Implementation is now in place under `agent/extensions/productionize/`.
 
-Implementation is expected to add new productionize helper modules, new tests, and session-persistence behavior, but should not require changes outside `agent/extensions/productionize/` and this plan folder.
+Delivered pieces:
+
+- `auto.ts` now owns serializable auto-mode contracts, retry keys, resume invalidation, persisted-entry reconstruction, and default snapshot helpers.
+- `repair-runner.ts` plus `repair-guard.ts` now launch a side Pi JSON subprocess in a temporary worktree, restrict it to `read`/`edit`/`write`, remove GitHub auth from the child environment, export a deterministic staged patch artifact, and support orphan verification plus kill-before-relaunch.
+- `index.ts`, `panel.ts`, `types.ts`, and `workflow.ts` now accept `/productionize auto`, persist and restore auto-run state, reopen the panel after reload when an auto run is still active, show inline repair-loop status, and route recoverable failures through the side repair flow while preserving the old manual path for plain `/productionize`.
+- Focused tests now cover the pure auto helpers, guard confinement, patch export, orphan verification, resume invalidation, and semi-real local git repair-import flows.
+
+The largest remaining gap is validation scope, not implementation scope: I could verify the feature through local automated and subprocess proofs, but not perform the fully interactive disposable-GitHub `/productionize auto` panel run from this API-only harness. That final proof still requires a human-operated Pi TUI session.
 
 ## Context and Orientation
 
@@ -145,11 +155,16 @@ Expected automated proof:
 - unrecoverable prerequisites do not launch a repair subprocess;
 - cancellation aborts both the foreground workflow and child repair process.
 
+Observed automated proof on 2026-06-05:
+
+- `node --test agent/extensions/productionize/core.test.ts agent/extensions/productionize/auto.test.ts agent/extensions/productionize/repair-runner.test.ts agent/extensions/productionize/workflow-auto.test.ts agent/extensions/productionize/workflow-auto.integration.test.ts agent/extensions/productionize/workflow-auto.semi-real.test.ts` passed with `30` passing tests and `1` skipped subprocess-smoke assertion where the child model did not actually choose a tool call during the run.
+- `pi --mode json --no-session --no-tools -e agent/extensions/productionize/index.ts -p "hello"` successfully loaded the extension and completed a basic runtime smoke without syntax or startup failures.
+
 Required manual integrated proof after `/reload`:
 
     /productionize auto
 
-In a disposable GitHub repository that has at least one real failing check, the panel should stay visible, show an inline repair attempt, launch a side repair agent automatically, log a compact repair summary in the main session, rerun the nearest safe checkpoint, observe green CI on the new head SHA, and squash-merge the PR. This manual run is the acceptance proof named in `Definition of Done`.
+In a disposable GitHub repository that has at least one real failing check, the panel should stay visible, show an inline repair attempt, launch a side repair agent automatically, log a compact repair summary in the main session, rerun the nearest safe checkpoint, observe green CI on the new head SHA, and squash-merge the PR. This manual run is still required for final operator confidence; it was not executed from this non-interactive harness.
 
 ## Idempotence and Recovery
 
