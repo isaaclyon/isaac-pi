@@ -21,6 +21,7 @@
 
   "preview.no_preview": "Keine Vorschau verfügbar",
   "preview.notes_affordance": "Notizen: drücke n, um Notizen hinzuzufügen",
+  "timeout.remaining": "Verbleibende Zeit: {seconds}s",
 
   "chat.summary": "Benutzer möchte darüber chatten",
   "notes.header": "Notizen:"

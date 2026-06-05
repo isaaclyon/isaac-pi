@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type Input, Spacer, Text } from "@earendil-works/pi-tui";
-import { t } from "../state/i18n-bridge.js";
+import { formatTimeoutCountdown, t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
@@ -84,8 +84,8 @@ export class QuestionTabStrategy implements TabContentStrategy {
 
 	bodyComponent(state: DialogState): Component {
 		const question = this.config.questions[state.currentTab];
-		const mso = this.config.tabsByIndex[state.currentTab]?.multiSelect;
-		if (question?.multiSelect === true && mso) return mso;
+		const multiSelect = this.config.tabsByIndex[state.currentTab]?.multiSelect;
+		if (question?.multiSelect === true && multiSelect) return multiSelect;
 		return this.config.getPreviewPane();
 	}
 
@@ -114,8 +114,8 @@ export class QuestionTabStrategy implements TabContentStrategy {
 
 	focusedItemRowRange(width: number, state: DialogState): [number, number] | undefined {
 		const question = this.config.questions[state.currentTab];
-		const mso = this.config.tabsByIndex[state.currentTab]?.multiSelect;
-		if (question?.multiSelect === true && mso) return mso.focusedItemRowRange(width);
+		const multiSelect = this.config.tabsByIndex[state.currentTab]?.multiSelect;
+		if (question?.multiSelect === true && multiSelect) return multiSelect.focusedItemRowRange(width);
 		return (this.config.getPreviewPane() as unknown as PreviewPane).focusedItemRowRange(width);
 	}
 }
@@ -140,22 +140,22 @@ export class SubmitTabStrategy implements TabContentStrategy {
 	}
 
 	bodyComponent(state: DialogState): Component {
-		const c = new Container();
+		const container = new Container();
 		for (let i = 0; i < this.config.questions.length; i++) {
 			const q = this.config.questions[i];
-			const a = state.answers.get(i);
-			if (!a) continue;
+			const answer = state.answers.get(i);
+			if (!answer) continue;
 			const label = q.header && q.header.length > 0 ? q.header : `Q${i + 1}`;
-			const answerText = formatAnswerScalar(a, "summary");
-			c.addChild(new Text(this.config.theme.fg("muted", ` ● ${label}`), 1, 0));
-			c.addChild(
+			const answerText = formatAnswerScalar(answer, "summary");
+			container.addChild(new Text(this.config.theme.fg("muted", ` ● ${label}`), 1, 0));
+			container.addChild(
 				new Text(`   ${this.config.theme.fg("muted", "→")} ${this.config.theme.fg("text", answerText)}`, 1, 0),
 			);
-			if (a.notes && a.notes.length > 0) {
-				c.addChild(new Text(this.config.theme.fg("dim", `     notes: ${a.notes}`), 1, 0));
+			if (answer.notes && answer.notes.length > 0) {
+				container.addChild(new Text(this.config.theme.fg("dim", `     notes: ${answer.notes}`), 1, 0));
 			}
 		}
-		return c;
+		return container;
 	}
 
 	bodyHeight(width: number, state: DialogState): number {
@@ -203,7 +203,11 @@ export class SubmitTabStrategy implements TabContentStrategy {
  *   Enter · ↑/↓ [· Space toggle] [· n notes] [· Tab switch] · Esc
  */
 export function buildHintText(question: QuestionData | undefined, isMulti: boolean, state: DialogState): string {
-	const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
+	const parts: string[] = [];
+	if (state.timeout.enabled && typeof state.timeout.remainingSeconds === "number") {
+		parts.push(formatTimeoutCountdown(state.timeout.remainingSeconds));
+	}
+	parts.push(t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV));
 	if (question?.multiSelect === true) parts.push(t("hint.toggle", HINT_PART_TOGGLE));
 	if (question && question.multiSelect !== true && state.focusedOptionHasPreview && !state.notesVisible) {
 		parts.push(t("hint.notes", HINT_PART_NOTES));

@@ -1,10 +1,16 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type Input } from "@earendil-works/pi-tui";
+import type { TimeoutFields } from "../config.js";
 import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import { buildQuestionnaire } from "./build-questionnaire.js";
 import { displayLabel } from "./i18n-bridge.js";
+import {
+	QuestionTimeoutController,
+	questionTimeoutSecondsFor,
+	type TimeoutScheduler,
+} from "./questionnaire-timeout.js";
 import { type QuestionnaireAction, routeKey } from "./key-router.js";
 import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
 import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
@@ -20,6 +26,8 @@ export interface QuestionnaireSessionConfig {
 	params: QuestionParams;
 	itemsByTab: WrappingSelectItem[][];
 	done: (result: QuestionnaireResult) => void;
+	timeout?: TimeoutFields;
+	timerScheduler?: TimeoutScheduler;
 }
 
 export interface QuestionnaireSessionComponent {
@@ -28,7 +36,7 @@ export interface QuestionnaireSessionComponent {
 	handleInput(data: string): void;
 }
 
-function initialState(): QuestionnaireState {
+function initialState(timeoutEnabled: boolean): QuestionnaireState {
 	return {
 		currentTab: 0,
 		optionIndex: 0,
@@ -41,6 +49,12 @@ function initialState(): QuestionnaireState {
 		focusedOptionHasPreview: false,
 		submitChoiceIndex: 0,
 		notesDraft: "",
+		timeout: {
+			enabled: timeoutEnabled,
+			remainingSeconds: null,
+			timedOutQuestions: [],
+			completedByTimeout: false,
+		},
 	};
 }
 
@@ -51,7 +65,8 @@ function initialState(): QuestionnaireState {
  * the `QuestionnairePropsAdapter` produced by `buildQuestionnaire`.
  */
 export class QuestionnaireSession {
-	private state: QuestionnaireState = initialState();
+	private state: QuestionnaireState;
+	private completed = false;
 
 	private readonly questions: readonly QuestionData[];
 	private readonly isMulti: boolean;
@@ -60,6 +75,8 @@ export class QuestionnaireSession {
 	private readonly notesInput: Input;
 	private readonly inlineInput: Input;
 	private readonly viewAdapter: QuestionnairePropsAdapter;
+	private readonly timeoutController?: QuestionTimeoutController;
+	private readonly timeoutConfig?: TimeoutFields;
 
 	private readonly tui: QuestionnaireSessionConfig["tui"];
 	private readonly done: QuestionnaireSessionConfig["done"];
@@ -72,6 +89,9 @@ export class QuestionnaireSession {
 		this.questions = config.params.questions;
 		this.isMulti = this.questions.length > 1;
 		this.itemsByTab = config.itemsByTab;
+		this.timeoutConfig = config.timeout;
+		this.timeoutController = config.timeout ? new QuestionTimeoutController(config.timerScheduler) : undefined;
+		this.state = initialState(config.timeout !== undefined);
 		// Seed from the focused option at start; the reducer keeps it in sync via withFocusedOptionHasPreview.
 		this.state = { ...this.state, focusedOptionHasPreview: computeFocusedOptionHasPreview(this.questions, 0, 0) };
 
@@ -95,10 +115,12 @@ export class QuestionnaireSession {
 			handleInput: (data) => this.dispatch(data),
 		};
 
+		this.syncTimeoutForCurrentState();
 		this.viewAdapter.apply(this.state);
 	}
 
 	dispatch(data: string): void {
+		if (this.completed) return;
 		const action = routeKey(data, this.state, this.runtime());
 		if (action.kind === "ignore") {
 			this.handleIgnoreInline(data);
@@ -108,16 +130,19 @@ export class QuestionnaireSession {
 	}
 
 	private commit(action: QuestionnaireAction): void {
+		if (this.completed) return;
 		const result = reduce(this.state, action, this.applyContext());
 		this.state = result.state;
 		for (const effect of result.effects) this.runEffect(effect);
+		if (this.completed) return;
 		this.state = this.mirrorNotesDraft(this.state);
+		this.syncTimeoutForCurrentState();
 		this.viewAdapter.apply(this.state);
 	}
 
-	private mirrorNotesDraft(s: QuestionnaireState): QuestionnaireState {
+	private mirrorNotesDraft(state: QuestionnaireState): QuestionnaireState {
 		const draft = this.notesInput.getValue();
-		return s.notesDraft === draft ? s : { ...s, notesDraft: draft };
+		return state.notesDraft === draft ? state : { ...state, notesDraft: draft };
 	}
 
 	private runEffect(effect: Effect): void {
@@ -139,9 +164,16 @@ export class QuestionnaireSession {
 				this.notesInput.handleInput(effect.data);
 				return;
 			case "done":
-				this.done(effect.result);
+				this.complete(effect.result);
 				return;
 		}
+	}
+
+	private complete(result: QuestionnaireResult): void {
+		if (this.completed) return;
+		this.completed = true;
+		this.timeoutController?.clear();
+		this.done(result);
 	}
 
 	/**
@@ -158,9 +190,45 @@ export class QuestionnaireSession {
 	 * latency profile from Phase 11.
 	 */
 	private handleIgnoreInline(data: string): void {
-		if (!this.state.inputMode) return;
+		if (!this.state.inputMode || this.completed) return;
 		this.inlineInput.handleInput(data);
+		this.syncTimeoutForCurrentState();
 		this.viewAdapter.apply(this.state);
+	}
+
+	private syncTimeoutForCurrentState(): void {
+		if (!this.timeoutController || !this.timeoutConfig || this.completed) return;
+		const durationSeconds = this.activeQuestionTimeoutSeconds();
+		if (durationSeconds === undefined) {
+			this.timeoutController.clear();
+			this.setRemainingSeconds(null);
+			return;
+		}
+		this.setRemainingSeconds(durationSeconds);
+		this.timeoutController.arm(durationSeconds, {
+			onTick: (remainingSeconds) => {
+				if (this.completed) return;
+				this.setRemainingSeconds(remainingSeconds);
+				this.viewAdapter.apply(this.state);
+			},
+			onExpire: () => {
+				if (this.completed) return;
+				this.commit({ kind: "question_timeout" });
+			},
+		});
+	}
+
+	private activeQuestionTimeoutSeconds(): number | undefined {
+		if (this.state.currentTab >= this.questions.length) return undefined;
+		return questionTimeoutSecondsFor(this.timeoutConfig, this.state.currentTab);
+	}
+
+	private setRemainingSeconds(remainingSeconds: number | null): void {
+		if (this.state.timeout.remainingSeconds === remainingSeconds) return;
+		this.state = {
+			...this.state,
+			timeout: { ...this.state.timeout, remainingSeconds },
+		};
 	}
 
 	private runtime(): QuestionnaireRuntime {
@@ -183,8 +251,8 @@ export class QuestionnaireSession {
 
 	private currentItem(): WrappingSelectItem | undefined {
 		if (this.state.chatFocused) return { kind: "chat", label: displayLabel("chat") };
-		const arr = this.itemsByTab[this.state.currentTab] ?? [];
-		if (this.state.optionIndex < arr.length) return arr[this.state.optionIndex];
+		const items = this.itemsByTab[this.state.currentTab] ?? [];
+		if (this.state.optionIndex < items.length) return items[this.state.optionIndex];
 		return { kind: "chat", label: displayLabel("chat") };
 	}
 }

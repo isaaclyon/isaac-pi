@@ -24,6 +24,8 @@ import { ROW_INTENT_META, type SentinelKind } from "./row-intent.js";
 
 export const I18N_NAMESPACE = "@juicesharp/rpiv-ask-user-question";
 
+const TIMEOUT_COUNTDOWN_FALLBACK = "Time left: {seconds}s";
+
 type ScopeFn = (key: string, fallback: string) => string;
 type I18nSDK = { scope: (namespace: string) => ScopeFn };
 
@@ -48,4 +50,8 @@ export const t: ScopeFn = scopeImpl;
 
 export function displayLabel(kind: SentinelKind): string {
 	return t(`sentinel.${kind}`, ROW_INTENT_META[kind].label);
+}
+
+export function formatTimeoutCountdown(seconds: number): string {
+	return t("timeout.remaining", TIMEOUT_COUNTDOWN_FALLBACK).replace("{seconds}", String(seconds));
 }

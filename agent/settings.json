@@ -2,7 +2,6 @@
   "lastChangelogVersion": "0.78.1",
   "packages": [
     "npm:lsp-pi",
-    "npm:@ogulcancelik/pi-minimal-footer",
     "npm:pi-schedule-prompt",
     "npm:pi-rtk-optimizer@0.7.1",
     "npm:pi-updater",
@@ -18,21 +17,16 @@
       ],
       "skills": []
     },
-    "npm:@siddr/pi-review",
     "npm:@narumitw/pi-goal",
     "npm:@sting8k/pi-vcc",
     "npm:pi-web-access",
     "npm:pi-codex-fast",
-    "npm:pi-review-loop",
     "git:github.com/HazAT/pi-interactive-subagents",
     "git:github.com/sasha-computer/pi-cmux"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
-  "reviewerLoop": {
-    "freshContext": true
-  },
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {

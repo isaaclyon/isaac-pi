@@ -126,6 +126,16 @@ export interface QuestionAnswer {
 	preview?: string;
 }
 
+export interface TimedOutQuestion {
+	questionIndex: number;
+	question: string;
+}
+
+export interface QuestionnaireTimeoutDetails {
+	completedByTimeout: boolean;
+	timedOutQuestions: TimedOutQuestion[];
+}
+
 export type QuestionnaireError =
 	| "no_ui"
 	| "no_questions"
@@ -139,10 +149,15 @@ export interface QuestionnaireResult {
 	answers: QuestionAnswer[];
 	cancelled: boolean;
 	error?: QuestionnaireError;
+	timeout?: QuestionnaireTimeoutDetails;
 }
 
 export function isQuestionnaireResult(value: unknown): value is QuestionnaireResult {
 	if (!value || typeof value !== "object") return false;
 	const v = value as Record<string, unknown>;
-	return Array.isArray(v.answers) && typeof v.cancelled === "boolean";
+	if (!Array.isArray(v.answers) || typeof v.cancelled !== "boolean") return false;
+	if (v.timeout === undefined) return true;
+	if (!v.timeout || typeof v.timeout !== "object") return false;
+	const timeout = v.timeout as Record<string, unknown>;
+	return Array.isArray(timeout.timedOutQuestions) && typeof timeout.completedByTimeout === "boolean";
 }

@@ -21,6 +21,7 @@
 
   "preview.no_preview": "Попередній перегляд недоступний",
   "preview.notes_affordance": "Нотатки: натисніть n, щоб додати нотатки",
+  "timeout.remaining": "Залишилось часу: {seconds}с",
 
   "chat.summary": "Користувач хоче обговорити це",
   "notes.header": "Нотатки:"
