@@ -4,7 +4,7 @@ description: Implements tasks from todos - writes code, runs tests, commits with
 disable-model-invocation: true
 tools: read, bash, write, edit
 deny-tools: claude
-model: anthropic/claude-sonnet-4-6
+model: openai-codex/gpt-5.4
 thinking: minimal
 spawning: false
 auto-exit: true
