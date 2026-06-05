@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
-import { createRepairRunner, exportPatchArtifact, killVerifiedOrphan, verifyRunningChild } from "./repair-runner.ts";
+import { createRepairRunner, exportPatchArtifact, killVerifiedOrphan, syncWorkingTree, verifyRunningChild } from "./repair-runner.ts";
 import { guardInput, guardToolCall, resolveConfinedPath } from "./repair-guard.ts";
 
 async function initRepo(): Promise<{ dir: string; branch: string }> {
@@ -58,6 +58,33 @@ test("patch export preserves creates and deletes and includes binary-safe header
 	assert.match(patch, /diff --git a\/created.txt b\/created.txt/);
 	assert.match(patch, /deleted file mode/);
 	assert.equal(await fs.readFile(patchFile, "utf8"), patch);
+});
+
+test("syncWorkingTree replaces file, directory, and symlink node types", async () => {
+	const source = await fs.mkdtemp(path.join(os.tmpdir(), "productionize-auto-source-"));
+	const target = await fs.mkdtemp(path.join(os.tmpdir(), "productionize-auto-target-"));
+
+	await fs.mkdir(path.join(source, "becomes-dir"));
+	await fs.writeFile(path.join(source, "becomes-dir", "nested.txt"), "dir\n", "utf8");
+	await fs.writeFile(path.join(target, "becomes-dir"), "file\n", "utf8");
+
+	await fs.writeFile(path.join(source, "becomes-file"), "file\n", "utf8");
+	await fs.mkdir(path.join(target, "becomes-file"));
+	await fs.writeFile(path.join(target, "becomes-file", "old.txt"), "old\n", "utf8");
+
+	await fs.writeFile(path.join(source, "link-target.txt"), "target\n", "utf8");
+	await fs.symlink("link-target.txt", path.join(source, "becomes-link"));
+	await fs.mkdir(path.join(target, "becomes-link"));
+	await fs.writeFile(path.join(target, "becomes-link", "old.txt"), "old\n", "utf8");
+
+	await syncWorkingTree(source, target);
+
+	assert.equal((await fs.lstat(path.join(target, "becomes-dir"))).isDirectory(), true);
+	assert.equal(await fs.readFile(path.join(target, "becomes-dir", "nested.txt"), "utf8"), "dir\n");
+	assert.equal((await fs.lstat(path.join(target, "becomes-file"))).isFile(), true);
+	assert.equal(await fs.readFile(path.join(target, "becomes-file"), "utf8"), "file\n");
+	assert.equal((await fs.lstat(path.join(target, "becomes-link"))).isSymbolicLink(), true);
+	assert.equal(await fs.readlink(path.join(target, "becomes-link")), "link-target.txt");
 });
 
 test("verified orphan detection kills only a matching child process", async () => {

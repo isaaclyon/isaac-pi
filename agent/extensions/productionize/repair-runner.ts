@@ -320,8 +320,12 @@ export async function syncWorkingTree(sourceDir: string, targetDir: string): Pro
 		if (entry.name === ".git") continue;
 		const sourcePath = path.join(sourceDir, entry.name);
 		const targetPath = path.join(targetDir, entry.name);
+		const targetEntry = targetEntries.get(entry.name);
 		targetEntries.delete(entry.name);
 		if (entry.isDirectory()) {
+			if (targetEntry && !targetEntry.isDirectory()) {
+				await fs.rm(targetPath, { recursive: true, force: true });
+			}
 			await fs.mkdir(targetPath, { recursive: true });
 			await syncWorkingTree(sourcePath, targetPath);
 			continue;
@@ -331,6 +335,9 @@ export async function syncWorkingTree(sourceDir: string, targetDir: string): Pro
 			await fs.rm(targetPath, { recursive: true, force: true });
 			await fs.symlink(linkTarget, targetPath);
 			continue;
+		}
+		if (targetEntry && (targetEntry.isDirectory() || targetEntry.isSymbolicLink())) {
+			await fs.rm(targetPath, { recursive: true, force: true });
 		}
 		await fs.mkdir(path.dirname(targetPath), { recursive: true });
 		await fs.copyFile(sourcePath, targetPath);
