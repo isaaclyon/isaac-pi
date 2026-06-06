@@ -204,6 +204,137 @@ test("reconcile clears a persisted repair without lastPrompt and resumes from th
 	]);
 });
 
+test("protected branches with local-only commits fail before productionize branches off", async () => {
+	const state = createDefaultSnapshot();
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "rev-parse --is-inside-work-tree") return ok("true\n");
+				if (joined === "branch --show-current") return ok("main\n");
+				if (["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
+				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
+				if (joined === "ls-files --stage -- agent/settings.json") return ok("100644 abc 0\tagent/settings.json\n");
+				if (joined === "rev-parse --abbrev-ref --symbolic-full-name @{u}") return ok("origin/main\n");
+				if (joined === "rev-list --count origin/main..HEAD") return ok("1\n");
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "failed");
+	assert.match(state.failure?.message ?? "", /Protected branch main has 1 local commit\(s\) not on origin\/main/i);
+	assert.equal(state.steps.find((step) => step.id === "branch")?.status, "failed");
+	assert.deepEqual(seen, [
+		{ command: "git", args: ["rev-parse", "--is-inside-work-tree"] },
+		{ command: "git", args: ["branch", "--show-current"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "MERGE_HEAD"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "REBASE_HEAD"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "REVERT_HEAD"] },
+		{ command: "git", args: ["status", "--porcelain"] },
+		{ command: "git", args: ["ls-files", "--stage", "--", "agent/settings.json"] },
+		{ command: "git", args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"] },
+		{ command: "git", args: ["rev-list", "--count", "origin/main..HEAD"] },
+	]);
+});
+
+test("dirty gitlinks block productionize before commit or branch creation", async () => {
+	const state = createDefaultSnapshot();
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "rev-parse --is-inside-work-tree") return ok("true\n");
+				if (joined === "branch --show-current") return ok("main\n");
+				if (["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
+				if (joined === "status --porcelain") return ok(" M .worktrees/vendor-ask-questions\n");
+				if (joined === "ls-files --stage -- .worktrees/vendor-ask-questions") return ok("160000 abc 0\t.worktrees/vendor-ask-questions\n");
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "failed");
+	assert.match(state.failure?.message ?? "", /dirty gitlinks or nested worktrees/i);
+	assert.match(state.failure?.message ?? "", /vendor-ask-questions/);
+	assert.deepEqual(seen, [
+		{ command: "git", args: ["rev-parse", "--is-inside-work-tree"] },
+		{ command: "git", args: ["branch", "--show-current"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "MERGE_HEAD"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "REBASE_HEAD"] },
+		{ command: "git", args: ["rev-parse", "-q", "--verify", "REVERT_HEAD"] },
+		{ command: "git", args: ["status", "--porcelain"] },
+		{ command: "git", args: ["ls-files", "--stage", "--", ".worktrees/vendor-ask-questions"] },
+	]);
+});
+
+test("starting on main branches to a timestamped productionize branch before pushing", async () => {
+	const state = createDefaultSnapshot();
+	const branchName = "productionize/2026-06-05T22-00-00-000Z-safe-return-rebase";
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			now: () => new Date("2026-06-05T22:00:00.000Z"),
+			completeSpark: async () => "fix/safe-return-rebase",
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "rev-parse --is-inside-work-tree") return ok("true\n");
+				if (joined === "branch --show-current") return ok("main\n");
+				if (["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
+				if (joined === "status --porcelain") return ok();
+				if (joined === "rev-parse --abbrev-ref --symbolic-full-name @{u}") return state.branch === branchName ? fail() : ok("origin/main\n");
+				if (joined === "rev-list --count origin/main..HEAD") return ok("0\n");
+				if (joined === `show-ref --verify --quiet refs/heads/${branchName}`) return fail();
+				if (joined === `checkout -b ${branchName}`) return ok();
+				if (joined === `config branch.${branchName}.remote`) return fail();
+				if (joined === "remote") return ok("origin\n");
+				if (joined === `push -u origin ${branchName}`) return ok();
+				if (joined === "fetch origin main") return ok();
+				if (joined === "diff --name-status FETCH_HEAD...HEAD") return ok();
+				if (joined === "rev-list --count FETCH_HEAD..HEAD") return ok("0\n");
+				if (joined === "switch main") return ok();
+				if (joined === "pull --ff-only origin main") return ok();
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.returnToBranch, "main");
+	assert.equal(state.steps.find((step) => step.id === "branch")?.detail, `Created ${branchName}`);
+	assert.match(state.status, /local checkout returned to main/i);
+	assert.ok(seen.some((entry) => entry.args.join(" ") === `checkout -b ${branchName}`));
+	assert.ok(seen.some((entry) => entry.args.join(" ") === `push -u origin ${branchName}`));
+});
+
 test("return step rebases a diverged branch after creating a backup branch", async () => {
 	const state = createReturnState();
 	const seen: Array<{ command: string; args: string[] }> = [];
@@ -287,6 +418,33 @@ test("return step aborts and fails safely when automatic rebase conflicts", asyn
 	]);
 });
 
+test("return step reports remote merge success separately when local cleanup is blocked", async () => {
+	const state = createReturnState();
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			execCommand: async (command, args) => {
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "switch main") return ok();
+				if (joined === "pull --ff-only origin main") return fail("", "fatal: Not possible to fast-forward, aborting.");
+				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "failed");
+	assert.match(state.failure?.message ?? "", /working tree is dirty/i);
+	assert.match(state.status, /merged remotely, but local branch cleanup failed/i);
+	assert.equal(state.steps.find((step) => step.id === "return")?.status, "failed");
+});
+
 function createFakePi(): any {
 	return {
 		appendEntry() {},
@@ -318,10 +476,8 @@ function createReturnState() {
 	state.remote = "origin";
 	state.branch = "feat/test";
 	state.returnToBranch = "main";
-	state.pr = { number: 15, title: "PR", url: "https://example.test/pr/15", headRefName: "feat/test", headRefOid: "abc" };
-	for (const step of state.steps) {
-		step.status = step.id === "return" ? "pending" : "done";
-	}
+	state.pr = { number: 16, title: "PR", url: "https://example.test/pr/16", headRefName: "feat/test", headRefOid: "abc" };
+	for (const step of state.steps) step.status = step.id === "return" ? "pending" : "done";
 	return state;
 }
 

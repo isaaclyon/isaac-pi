@@ -164,10 +164,7 @@ export async function runWorkflow(
 		}
 
 		const failure = error instanceof WorkflowFailure ? error : unknownFailure(state.auto.activeCheckpoint ?? "branch", "Workflow", error);
-		state.outcome = "failed";
-		state.status = `Productionize failed during ${failure.failure.step}.`;
-		state.failure = failure.failure;
-		setStep(state, failure.stepId, "failed", failure.failure.message ?? "failed");
+		stateForFailure(runtime, failure);
 		state.auto.currentRepair = undefined;
 		if (state.auto.enabled) {
 			await persistState(runtime);
@@ -234,6 +231,7 @@ async function runBranchStep(runtime: WorkflowRuntime): Promise<void> {
 		});
 	}
 
+	await ensureSafeStartState(runtime, currentBranch);
 	if (!PROTECTED_BRANCHES.has(currentBranch)) {
 		state.branch = currentBranch;
 		setStep(state, "branch", "done", `Reusing ${currentBranch}`);
@@ -242,13 +240,14 @@ async function runBranchStep(runtime: WorkflowRuntime): Promise<void> {
 		return;
 	}
 
-	const branchName = sanitizeBranchName(
+	const branchName = buildProductionizeBranchName(
 		await completeSparkWithHooks(
 			runtime,
 			"Generate one git branch name. Output only the branch name.",
 			`Use a conventional prefix such as feat/, fix/, chore/, docs/, test/, or refactor/. Use lowercase kebab-case. Base it on these recent Pi user/assistant messages:\n\n${recentConversationText(ctx, 10)}`,
 			"chore/productionize",
 		),
+		runtime.hooks,
 	);
 
 	state.baseBranch = currentBranch;
@@ -542,7 +541,7 @@ async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, b
 			cwd,
 			stdout: status.stdout,
 			stderr: status.stderr,
-			message: `Cannot automatically reconcile diverged ${branch} because the working tree is dirty.`,
+			message: `Cannot automatically reconcile diverged ${branch} because the working tree is dirty. Restore or stash local changes and rerun /productionize.`,
 		});
 	}
 
@@ -564,11 +563,6 @@ async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, b
 		stderr: rebase.stderr,
 		message: `Automatic rebase of ${branch} onto ${remote}/${branch} failed. Backup branch created: ${backupBranch}. Resolve manually.`,
 	});
-}
-
-function buildReturnBackupBranch(branch: string, hooks: WorkflowHooks): string {
-	const stamp = timestamp(hooks).replace(/[:.]/g, "-");
-	return `productionize-backup/${branch}-${stamp}`;
 }
 
 async function attemptAutoRepair(runtime: WorkflowRuntime, failure: WorkflowFailure): Promise<boolean> {
@@ -959,6 +953,87 @@ async function repoHasDirtyFiles(runtime: WorkflowRuntime, cwd: string): Promise
 	return hasDirtyFiles(status.stdout);
 }
 
+async function ensureSafeStartState(runtime: WorkflowRuntime, currentBranch: string): Promise<void> {
+	const cwd = runtime.ctx.cwd;
+	await assertNoGitOperationInProgress(runtime, cwd);
+	const dirtyGitlinks = await listDirtyGitlinks(runtime, cwd);
+	if (dirtyGitlinks.length > 0) {
+		throw new WorkflowFailure("branch", {
+			step: "Branch",
+			command: "git",
+			args: ["status", "--porcelain"],
+			cwd,
+			message: `Cannot run /productionize with dirty gitlinks or nested worktrees: ${dirtyGitlinks.join(", ")}. Restore or commit them first.`,
+		});
+	}
+	if (!PROTECTED_BRANCHES.has(currentBranch)) return;
+
+	const upstream = await branchUpstreamRef(runtime, cwd);
+	if (!upstream) {
+		throw new WorkflowFailure("branch", {
+			step: "Branch",
+			command: "git",
+			args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+			cwd,
+			message: `Protected branch ${currentBranch} must track a remote branch before /productionize can branch from it safely.`,
+		});
+	}
+	const ahead = await countCommits(runtime, cwd, `${upstream}..HEAD`);
+	if (ahead > 0) {
+		throw new WorkflowFailure("branch", {
+			step: "Branch",
+			command: "git",
+			args: ["rev-list", "--count", `${upstream}..HEAD`],
+			cwd,
+			message: `Protected branch ${currentBranch} has ${ahead} local commit(s) not on ${upstream}. Move them to a feature branch before running /productionize.`,
+		});
+	}
+}
+
+async function assertNoGitOperationInProgress(runtime: WorkflowRuntime, cwd: string): Promise<void> {
+	for (const [ref, label] of [
+		["MERGE_HEAD", "merge"],
+		["CHERRY_PICK_HEAD", "cherry-pick"],
+		["REBASE_HEAD", "rebase"],
+		["REVERT_HEAD", "revert"],
+	] as const) {
+		const result = await execCommand(runtime, "git", ["rev-parse", "-q", "--verify", ref], cwd, runtime.signal, 30_000);
+		if (result.code !== 0) continue;
+		throw new WorkflowFailure("branch", {
+			step: "Branch",
+			command: "git",
+			args: ["rev-parse", "-q", "--verify", ref],
+			cwd,
+			stdout: result.stdout,
+			stderr: result.stderr,
+			message: `Cannot run /productionize while a ${label} is in progress.`,
+		});
+	}
+}
+
+async function listDirtyGitlinks(runtime: WorkflowRuntime, cwd: string): Promise<string[]> {
+	const status = await execOrFail(runtime, "branch", "Git status", "git", ["status", "--porcelain"], cwd);
+	const dirtyPaths = parsePorcelainPaths(status.stdout);
+	const dirtyGitlinks: string[] = [];
+	for (const path of dirtyPaths) {
+		const result = await execCommand(runtime, "git", ["ls-files", "--stage", "--", path], cwd, runtime.signal, 30_000);
+		if (result.code === 0 && result.stdout.startsWith("160000 ")) dirtyGitlinks.push(path);
+	}
+	return dirtyGitlinks;
+}
+
+async function branchUpstreamRef(runtime: WorkflowRuntime, cwd: string): Promise<string | undefined> {
+	const result = await execCommand(runtime, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd, runtime.signal, 30_000);
+	const upstream = result.stdout.trim();
+	return result.code === 0 && upstream ? upstream : undefined;
+}
+
+async function countCommits(runtime: WorkflowRuntime, cwd: string, range: string): Promise<number> {
+	const result = await execOrFail(runtime, "branch", "Count commits", "git", ["rev-list", "--count", range], cwd, 30_000);
+	const count = Number.parseInt(result.stdout.trim(), 10);
+	return Number.isFinite(count) ? count : 0;
+}
+
 async function revParse(runtime: WorkflowRuntime, cwd: string, rev: string): Promise<string> {
 	const result = await execOrFail(runtime, "branch", "Resolve revision", "git", ["rev-parse", rev], cwd);
 	return result.stdout.trim();
@@ -1110,6 +1185,34 @@ function labelForStep(stepId: StepId): string {
 	}
 }
 
+function buildProductionizeBranchName(raw: string, hooks: WorkflowHooks): string {
+	const sanitized = sanitizeBranchName(raw, "chore/productionize");
+	const slug = sanitized.split("/").slice(1).join("-") || "productionize";
+	const stamp = timestamp(hooks).replace(/[:.]/g, "-");
+	return `productionize/${stamp}-${slug}`.replace(/[/-]+$/g, "");
+}
+
+function buildReturnBackupBranch(branch: string, hooks: WorkflowHooks): string {
+	const stamp = timestamp(hooks).replace(/[:.]/g, "-");
+	return `productionize-backup/${branch}-${stamp}`;
+}
+
+function parsePorcelainPaths(statusPorcelain: string): string[] {
+	return statusPorcelain
+		.split("\n")
+		.map((line) => line.trimEnd())
+		.filter((line) => line.length >= 4)
+		.map((line) => line.slice(3).split(" -> ").at(-1)?.trim())
+		.filter((path): path is string => Boolean(path));
+}
+
+function failureStatus(state: ProductionizeState, failure: WorkflowFailure): string {
+	if (failure.stepId === "return" && state.pr && state.steps.find((step) => step.id === "merge")?.status === "done") {
+		return `Productionize merged remotely, but local branch cleanup failed during ${failure.failure.step}.`;
+	}
+	return `Productionize failed during ${failure.failure.step}.`;
+}
+
 function modelSpecifier(ctx: ExtensionContext): string | undefined {
 	return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 }
@@ -1139,9 +1242,10 @@ function markSuccess(state: ProductionizeState): void {
 
 function stateForFailure(runtime: WorkflowRuntime, failure: WorkflowFailure): void {
 	runtime.state.outcome = "failed";
-	runtime.state.status = `Productionize failed during ${failure.failure.step}.`;
+	runtime.state.status = failureStatus(runtime.state, failure);
 	runtime.state.failure = failure.failure;
 	setStep(runtime.state, failure.stepId, "failed", failure.failure.message ?? "failed");
+	log(runtime.state, runtime.state.status);
 }
 
 async function persistState(runtime: WorkflowRuntime): Promise<void> {
