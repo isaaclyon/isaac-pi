@@ -3,6 +3,7 @@
  *
  * Local customizations:
  * - show git lines added/removed in the branch segment
+ * - show usage pace deltas and pace-based usage bar colors when available
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -19,6 +20,8 @@ interface RateWindow {
   label: string;
   usedPercent: number;
   resetsIn?: string; // human readable "2h38m"
+  resetAtMs?: number;
+  durationMs?: number;
 }
 
 interface UsageSnapshot {
@@ -337,6 +340,10 @@ function getKimiToken(): string | undefined {
 
 // ============ Time Formatting ============
 
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const WEEK_MS = 7 * DAY_MS;
+
 function formatResetTime(date: Date): string {
   const diffMs = date.getTime() - Date.now();
   if (diffMs < 0) return "now";
@@ -369,29 +376,53 @@ function normalizePercent(value: number): number {
 function getWindowLabel(durationMs: number | undefined, fallback: string): string {
   if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) return fallback;
 
-  const hourMs = 60 * 60 * 1000;
-  const dayMs = 24 * hourMs;
-  const weekMs = 7 * dayMs;
-
   // Check if duration is close to a standard window and use the fallback label.
   // This preserves "5h" / "Week" / "Day" labels even when the actual
   // rolling window start/end times don't align perfectly.
-  const isCloseToWeek = Math.abs(durationMs - weekMs) <= hourMs * 2;
-  const isCloseToDay = Math.abs(durationMs - dayMs) <= hourMs * 2;
-  const isCloseTo5h = Math.abs(durationMs - 5 * hourMs) <= hourMs * 2;
+  const isCloseToWeek = Math.abs(durationMs - WEEK_MS) <= HOUR_MS * 2;
+  const isCloseToDay = Math.abs(durationMs - DAY_MS) <= HOUR_MS * 2;
+  const isCloseTo5h = Math.abs(durationMs - 5 * HOUR_MS) <= HOUR_MS * 2;
 
   if (isCloseToWeek || fallback === "Week") return "Week";
   if (isCloseToDay || fallback === "Day") return "Day";
   if (isCloseTo5h || fallback === "5h") return fallback;
 
-  const hours = Math.round(durationMs / hourMs);
+  const hours = Math.round(durationMs / HOUR_MS);
   if (hours >= 1 && hours < 48) return `${hours}h`;
 
-  const days = Math.round(durationMs / dayMs);
+  const days = Math.round(durationMs / DAY_MS);
   if (days >= 1) return `${days}d`;
 
   const mins = Math.max(1, Math.round(durationMs / 60000));
   return `${mins}m`;
+}
+
+function inferWindowDurationMs(label: string): number | undefined {
+  const normalized = label.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "5h") return 5 * HOUR_MS;
+  if (normalized === "day") return DAY_MS;
+  if (normalized === "week" || normalized === "weekly") return WEEK_MS;
+
+  const hoursMatch = normalized.match(/^(\d+)h$/);
+  if (hoursMatch) return Number(hoursMatch[1]) * HOUR_MS;
+
+  const daysMatch = normalized.match(/^(\d+)d$/);
+  if (daysMatch) return Number(daysMatch[1]) * DAY_MS;
+
+  const minsMatch = normalized.match(/^(\d+)m$/);
+  if (minsMatch) return Number(minsMatch[1]) * 60 * 1000;
+
+  return undefined;
+}
+
+function getPaceDelta(window: RateWindow, nowMs = Date.now()): number | null {
+  const durationMs = window.durationMs ?? inferWindowDurationMs(window.label);
+  const resetAtMs = window.resetAtMs;
+  if (!durationMs || !resetAtMs || durationMs <= 0) return null;
+
+  const elapsedPercent = clampPercent((1 - (resetAtMs - nowMs) / durationMs) * 100);
+  return clampPercent(window.usedPercent) - elapsedPercent;
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 5000): Promise<Response> {
@@ -429,18 +460,24 @@ async function fetchClaudeUsage(): Promise<UsageSnapshot> {
     const windows: RateWindow[] = [];
 
     if (data.five_hour?.utilization !== undefined) {
+      const resetDate = data.five_hour.resets_at ? new Date(data.five_hour.resets_at) : undefined;
       windows.push({
         label: "5h",
         usedPercent: normalizePercent(data.five_hour.utilization),
-        resetsIn: data.five_hour.resets_at ? formatResetTime(new Date(data.five_hour.resets_at)) : undefined,
+        resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+        resetAtMs: resetDate?.getTime(),
+        durationMs: 5 * HOUR_MS,
       });
     }
 
     if (data.seven_day?.utilization !== undefined) {
+      const resetDate = data.seven_day.resets_at ? new Date(data.seven_day.resets_at) : undefined;
       windows.push({
         label: "Week",
         usedPercent: normalizePercent(data.seven_day.utilization),
-        resetsIn: data.seven_day.resets_at ? formatResetTime(new Date(data.seven_day.resets_at)) : undefined,
+        resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+        resetAtMs: resetDate?.getTime(),
+        durationMs: WEEK_MS,
       });
     }
 
@@ -480,7 +517,7 @@ async function fetchCopilotUsage(): Promise<UsageSnapshot> {
     if (data.quota_snapshots?.premium_interactions) {
       const pi = data.quota_snapshots.premium_interactions;
       const usedPercent = clampPercent(100 - (pi.percent_remaining || 0));
-      windows.push({ label: "Premium", usedPercent, resetsIn });
+      windows.push({ label: "Premium", usedPercent, resetsIn, resetAtMs: resetDate?.getTime() });
     }
 
     if (data.quota_snapshots?.chat && !data.quota_snapshots.chat.unlimited) {
@@ -489,6 +526,7 @@ async function fetchCopilotUsage(): Promise<UsageSnapshot> {
         label: "Chat",
         usedPercent: clampPercent(100 - (chat.percent_remaining || 0)),
         resetsIn,
+        resetAtMs: resetDate?.getTime(),
       });
     }
 
@@ -537,6 +575,8 @@ async function fetchCodexUsage(): Promise<UsageSnapshot> {
         label: getWindowLabel(durationMs, "5h"),
         usedPercent: clampPercent(pw.used_percent || 0),
         resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+        resetAtMs: resetDate?.getTime(),
+        durationMs,
       });
     }
 
@@ -548,6 +588,8 @@ async function fetchCodexUsage(): Promise<UsageSnapshot> {
         label: getWindowLabel(durationMs, "Week"),
         usedPercent: clampPercent(sw.used_percent || 0),
         resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+        resetAtMs: resetDate?.getTime(),
+        durationMs,
       });
     }
 
@@ -681,6 +723,8 @@ async function fetchMinimaxUsage(provider: "minimax" | "minimax-cn"): Promise<Us
         label: getWindowLabel(durationMs, "5h"),
         usedPercent,
         resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+        resetAtMs: resetDate?.getTime(),
+        durationMs,
       });
     }
 
@@ -698,6 +742,8 @@ async function fetchMinimaxUsage(provider: "minimax" | "minimax-cn"): Promise<Us
         label: getWindowLabel(durationMs, "Week"),
         usedPercent,
         resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+        resetAtMs: resetDate?.getTime(),
+        durationMs,
       });
     }
 
@@ -750,6 +796,8 @@ async function fetchKimiUsage(): Promise<UsageSnapshot> {
           label: getWindowLabel(durationMs, "5h"),
           usedPercent,
           resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+          resetAtMs: resetDate?.getTime(),
+          durationMs,
         });
       }
     }
@@ -761,10 +809,13 @@ async function fetchKimiUsage(): Promise<UsageSnapshot> {
     if (weeklyLimit > 0) {
       const used = weeklyLimit - weeklyRemaining;
       const usedPercent = clampPercent((used / weeklyLimit) * 100);
+      const weeklyResetDate = weeklyResetTime ? new Date(weeklyResetTime) : undefined;
       windows.push({
         label: "Weekly",
         usedPercent,
-        resetsIn: weeklyResetTime ? formatResetTime(new Date(weeklyResetTime)) : undefined,
+        resetsIn: weeklyResetDate ? formatResetTime(weeklyResetDate) : undefined,
+        resetAtMs: weeklyResetDate?.getTime(),
+        durationMs: WEEK_MS,
       });
     }
 
@@ -901,29 +952,48 @@ export default function (pi: ExtensionAPI) {
     return theme.fg("dim", "ctx ") + bar + " " + theme.fg("dim", pct + counts);
   }
 
-  function renderUsageBar(usedPercent: number, barWidth: number, theme: any): string {
-    const clamped = Math.max(0, Math.min(100, usedPercent));
+  function getUsageBarColor(window: RateWindow): string {
+    const paceDelta = getPaceDelta(window);
+    if (paceDelta !== null) return paceDelta <= 0 ? "success" : "error";
+
+    const clamped = Math.max(0, Math.min(100, window.usedPercent));
+    if (clamped >= 92) return "error";
+    if (clamped >= 85) return "warning";
+    return "success";
+  }
+
+  function renderUsageBar(window: RateWindow, barWidth: number, theme: any): string {
+    const clamped = Math.max(0, Math.min(100, window.usedPercent));
     const filled = Math.round((clamped / 100) * barWidth);
     const empty = barWidth - filled;
-
-    let color: string;
-    if (clamped >= 92) color = "error";
-    else if (clamped >= 85) color = "warning";
-    else color = "success";
+    const color = getUsageBarColor(window);
 
     return theme.fg(color, BAR_FILLED.repeat(filled)) + theme.fg("dim", BAR_EMPTY.repeat(empty));
+  }
+
+  function renderPaceDelta(window: RateWindow, theme: any, mode: "full" | "short" | "compact" = "full"): string {
+    const paceDelta = getPaceDelta(window);
+    if (paceDelta === null) return "";
+
+    const rounded = Math.round(paceDelta);
+    const label = `${rounded > 0 ? "+" : ""}${rounded}%`;
+    const color = rounded <= 0 ? "success" : "error";
+    if (mode === "compact") return theme.fg(color, label);
+    if (mode === "short") return theme.fg(color, `${label} pace`);
+    return theme.fg(color, `${label} vs pace`);
   }
 
   function renderUsageWindow(
     window: RateWindow,
     theme: any,
-    options?: { barWidth?: number; includeReset?: boolean }
+    options?: { barWidth?: number; includeReset?: boolean; paceMode?: "full" | "short" | "compact" | false }
   ): string {
     const dim = (s: string) => theme.fg("dim", s);
-    const bar = renderUsageBar(window.usedPercent, Math.max(4, options?.barWidth ?? 10), theme);
+    const bar = renderUsageBar(window, Math.max(4, options?.barWidth ?? 10), theme);
     const pct = dim(`${Math.round(window.usedPercent)}%`);
+    const paceStr = options?.paceMode === false ? "" : renderPaceDelta(window, theme, options?.paceMode ?? "full");
     const timeStr = options?.includeReset === false || !window.resetsIn ? "" : " " + dim(window.resetsIn);
-    return `${dim(window.label)} ${bar} ${pct}${timeStr}`;
+    return `${dim(window.label)} ${bar} ${pct}${paceStr ? ` ${paceStr}` : ""}${timeStr}`;
   }
 
   function renderUsageLine(usage: UsageSnapshot, width: number, theme: any): string[] {
@@ -936,11 +1006,11 @@ export default function (pi: ExtensionAPI) {
     for (const w of usage.windows) {
       segments.push(
         fitFooterSegment(width, [
-          renderUsageWindow(w, theme, { barWidth: 10, includeReset: true }),
-          renderUsageWindow(w, theme, { barWidth: 8, includeReset: true }),
-          renderUsageWindow(w, theme, { barWidth: 8, includeReset: false }),
-          renderUsageWindow(w, theme, { barWidth: 6, includeReset: false }),
-          renderUsageWindow(w, theme, { barWidth: 4, includeReset: false }),
+          renderUsageWindow(w, theme, { barWidth: 10, includeReset: true, paceMode: "full" }),
+          renderUsageWindow(w, theme, { barWidth: 8, includeReset: true, paceMode: "short" }),
+          renderUsageWindow(w, theme, { barWidth: 8, includeReset: false, paceMode: "short" }),
+          renderUsageWindow(w, theme, { barWidth: 6, includeReset: false, paceMode: "compact" }),
+          renderUsageWindow(w, theme, { barWidth: 4, includeReset: false, paceMode: false }),
         ])
       );
     }
