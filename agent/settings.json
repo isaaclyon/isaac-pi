@@ -22,11 +22,17 @@
     "npm:pi-web-access",
     "npm:pi-codex-fast",
     "git:github.com/HazAT/pi-interactive-subagents",
-    "git:github.com/sasha-computer/pi-cmux"
+    {
+      "source": "git:github.com/sasha-computer/pi-cmux",
+      "extensions": [],
+      "skills": [],
+      "prompts": [],
+      "themes": []
+    }
   ],
   "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-5.4",
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
