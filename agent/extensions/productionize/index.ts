@@ -80,10 +80,10 @@ export default function productionizeExtension(pi: ExtensionAPI): void {
 			}
 
 			await ctx.waitForIdle();
-			const scoped = parsed.targetStep ? { startFrom: parsed.targetStep, stopAfter: parsed.targetStep } : {};
+			const scoped = parsed.targetStep ? { startFrom: "branch" as const, stopAfter: parsed.targetStep } : {};
 			const state = createInitialState({ auto: parsed.auto, ...scoped });
 			if (parsed.auto) state.status = "Starting productionize auto mode...";
-			else if (parsed.targetStep) state.status = `Starting productionize ${parsed.targetStep} step...`;
+			else if (parsed.targetStep) state.status = `Starting productionize through ${parsed.targetStep}...`;
 			await launchPanel(ctx, state, { auto: parsed.auto, ...scoped });
 		},
 	});

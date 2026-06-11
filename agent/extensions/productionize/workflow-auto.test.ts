@@ -38,8 +38,8 @@ test("auto repair prompt is wired to raw failure context, not the manual handoff
 	assert.match(block, /Make the smallest code or file changes needed to address the failure\./);
 });
 
-test("scoped commit run only executes commit stage", async () => {
-	const state = createInitialState({ startFrom: "commit", stopAfter: "commit" });
+test("scoped commit run executes branch through commit", async () => {
+	const state = createInitialState({ startFrom: "branch", stopAfter: "commit" });
 	const seen: Array<{ command: string; args: string[] }> = [];
 	await runWorkflow(
 		createFakePi(),
@@ -47,14 +47,17 @@ test("scoped commit run only executes commit stage", async () => {
 		state,
 		new AbortController().signal,
 		() => undefined,
-		{ startFrom: "commit", stopAfter: "commit" },
+		{ startFrom: "branch", stopAfter: "commit" },
 		{
 			execCommand: async (command, args) => {
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
+				if (joined === "rev-parse --is-inside-work-tree") return ok("true\n");
 				if (joined === "branch --show-current") return ok("feat/scoped\n");
+				if (["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
 				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
+				if (joined === "ls-files --stage -- agent/settings.json") return ok("100644 abc 0\tagent/settings.json\n");
 				if (joined === "add -A") return ok();
 				if (joined === "diff --cached --name-status") return ok("M\tagent/settings.json\n");
 				if (joined === "diff --cached --stat") return ok(" agent/settings.json | 1 +\n 1 file changed, 1 insertion(+)\n");
@@ -66,11 +69,19 @@ test("scoped commit run only executes commit stage", async () => {
 	);
 
 	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.steps.find((step) => step.id === "branch")?.status, "done");
 	assert.equal(state.steps.find((step) => step.id === "commit")?.status, "done");
 	assert.equal(state.steps.find((step) => step.id === "push")?.status, "skipped");
 	assert.match(state.status, /Commit step finished/);
 	assert.deepEqual(seen.map(({ command, args }) => `${command} ${args.join(" ")}`), [
+		"git rev-parse --is-inside-work-tree",
 		"git branch --show-current",
+		"git rev-parse -q --verify MERGE_HEAD",
+		"git rev-parse -q --verify CHERRY_PICK_HEAD",
+		"git rev-parse -q --verify REBASE_HEAD",
+		"git rev-parse -q --verify REVERT_HEAD",
+		"git status --porcelain",
+		"git ls-files --stage -- agent/settings.json",
 		"git status --porcelain",
 		"git add -A",
 		"git diff --cached --name-status",
@@ -79,8 +90,8 @@ test("scoped commit run only executes commit stage", async () => {
 	]);
 });
 
-test("scoped pr run hydrates branch and remote state first", async () => {
-	const state = createInitialState({ startFrom: "pr", stopAfter: "pr" });
+test("scoped pr run executes branch through pr", async () => {
+	const state = createInitialState({ startFrom: "branch", stopAfter: "pr" });
 	const seen: Array<{ command: string; args: string[] }> = [];
 	await runWorkflow(
 		createFakePi(),
@@ -88,13 +99,17 @@ test("scoped pr run hydrates branch and remote state first", async () => {
 		state,
 		new AbortController().signal,
 		() => undefined,
-		{ startFrom: "pr", stopAfter: "pr" },
+		{ startFrom: "branch", stopAfter: "pr" },
 		{
 			execCommand: async (command, args) => {
 				seen.push({ command, args: [...args] });
 				const joined = args.join(" ");
+				if (command === "git" && joined === "rev-parse --is-inside-work-tree") return ok("true\n");
 				if (command === "git" && joined === "branch --show-current") return ok("feat/scoped\n");
+				if (command === "git" && ["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
+				if (command === "git" && joined === "status --porcelain") return ok("");
 				if (command === "git" && joined === "rev-parse --abbrev-ref --symbolic-full-name @{u}") return ok("origin/feat/scoped\n");
+				if (command === "git" && joined === "push") return ok();
 				if (command === "gh" && joined === "repo view --json defaultBranchRef") return ok('{"defaultBranchRef":{"name":"main"}}\n');
 				if (command === "git" && joined === "fetch origin main") return ok();
 				if (command === "git" && joined === "diff --name-status FETCH_HEAD...HEAD") return ok("M\tagent/settings.json\n");
@@ -115,21 +130,32 @@ test("scoped pr run hydrates branch and remote state first", async () => {
 	assert.equal(state.branch, "feat/scoped");
 	assert.equal(state.remote, "origin");
 	assert.equal(state.pr?.number, 12);
+	assert.equal(state.steps.find((step) => step.id === "branch")?.status, "done");
+	assert.equal(state.steps.find((step) => step.id === "commit")?.status, "done");
+	assert.equal(state.steps.find((step) => step.id === "push")?.status, "done");
 	assert.equal(state.steps.find((step) => step.id === "pr")?.status, "done");
 	assert.equal(state.steps.find((step) => step.id === "ci")?.status, "skipped");
 	assert.match(state.status, /Pull Request step finished/);
 	const commandLines = seen.map(({ command, args }) => `${command} ${args.join(" ")}`);
-	assert.deepEqual(commandLines.slice(0, 7), [
+	assert.deepEqual(commandLines.slice(0, 15), [
+		"git rev-parse --is-inside-work-tree",
 		"git branch --show-current",
+		"git rev-parse -q --verify MERGE_HEAD",
+		"git rev-parse -q --verify CHERRY_PICK_HEAD",
+		"git rev-parse -q --verify REBASE_HEAD",
+		"git rev-parse -q --verify REVERT_HEAD",
+		"git status --porcelain",
+		"git status --porcelain",
 		"git rev-parse --abbrev-ref --symbolic-full-name @{u}",
+		"git push",
 		"gh repo view --json defaultBranchRef",
 		"git fetch origin main",
 		"git diff --name-status FETCH_HEAD...HEAD",
 		"git rev-list --count FETCH_HEAD..HEAD",
 		"gh pr view --json number,title,url,headRefName,headRefOid",
 	]);
-	assert.match(commandLines[7] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
-	assert.equal(commandLines[8], "gh pr view --json number,title,url,headRefName,headRefOid");
+	assert.match(commandLines[15] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
+	assert.equal(commandLines[16], "gh pr view --json number,title,url,headRefName,headRefOid");
 });
 
 test("pr resume always clears downstream state", () => {
