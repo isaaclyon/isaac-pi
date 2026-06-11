@@ -66,7 +66,7 @@ export default function productionizeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("productionize", {
-		description: "Branch, commit, push, open a PR, watch CI, and squash-merge with a progress TUI",
+		description: "Branch, commit, push, open a PR, watch CI, squash-merge, or run one named stage with a progress TUI",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("/productionize requires interactive Pi", "error");
@@ -80,9 +80,11 @@ export default function productionizeExtension(pi: ExtensionAPI): void {
 			}
 
 			await ctx.waitForIdle();
-			const state = createInitialState({ auto: parsed.auto });
+			const scoped = parsed.targetStep ? { startFrom: parsed.targetStep, stopAfter: parsed.targetStep } : {};
+			const state = createInitialState({ auto: parsed.auto, ...scoped });
 			if (parsed.auto) state.status = "Starting productionize auto mode...";
-			await launchPanel(ctx, state, { auto: parsed.auto });
+			else if (parsed.targetStep) state.status = `Starting productionize ${parsed.targetStep} step...`;
+			await launchPanel(ctx, state, { auto: parsed.auto, ...scoped });
 		},
 	});
 }

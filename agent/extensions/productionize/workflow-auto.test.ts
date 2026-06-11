@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createDefaultSnapshot, decideResumePlan, invalidateForResume } from "./auto.ts";
-import { runWorkflow } from "./workflow.ts";
+import { createInitialState, runWorkflow } from "./workflow.ts";
 import type { RepairAttemptSummary } from "./repair-runner.ts";
 import type { ExecResult } from "./types.ts";
 
@@ -36,6 +36,100 @@ test("auto repair prompt is wired to raw failure context, not the manual handoff
 	assert.match(block, /const context = buildFailureContext\(/);
 	assert.doesNotMatch(block, /const context = buildFailurePrompt\(/);
 	assert.match(block, /Make the smallest code or file changes needed to address the failure\./);
+});
+
+test("scoped commit run only executes commit stage", async () => {
+	const state = createInitialState({ startFrom: "commit", stopAfter: "commit" });
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{ startFrom: "commit", stopAfter: "commit" },
+		{
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "branch --show-current") return ok("feat/scoped\n");
+				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
+				if (joined === "add -A") return ok();
+				if (joined === "diff --cached --name-status") return ok("M\tagent/settings.json\n");
+				if (joined === "diff --cached --stat") return ok(" agent/settings.json | 1 +\n 1 file changed, 1 insertion(+)\n");
+				if (joined === "commit -m chore: productionize changes") return ok();
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+			completeSpark: async () => "chore: productionize changes",
+		},
+	);
+
+	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.steps.find((step) => step.id === "commit")?.status, "done");
+	assert.equal(state.steps.find((step) => step.id === "push")?.status, "skipped");
+	assert.match(state.status, /Commit step finished/);
+	assert.deepEqual(seen.map(({ command, args }) => `${command} ${args.join(" ")}`), [
+		"git branch --show-current",
+		"git status --porcelain",
+		"git add -A",
+		"git diff --cached --name-status",
+		"git diff --cached --stat",
+		"git commit -m chore: productionize changes",
+	]);
+});
+
+test("scoped pr run hydrates branch and remote state first", async () => {
+	const state = createInitialState({ startFrom: "pr", stopAfter: "pr" });
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{ startFrom: "pr", stopAfter: "pr" },
+		{
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				const joined = args.join(" ");
+				if (command === "git" && joined === "branch --show-current") return ok("feat/scoped\n");
+				if (command === "git" && joined === "rev-parse --abbrev-ref --symbolic-full-name @{u}") return ok("origin/feat/scoped\n");
+				if (command === "gh" && joined === "repo view --json defaultBranchRef") return ok('{"defaultBranchRef":{"name":"main"}}\n');
+				if (command === "git" && joined === "fetch origin main") return ok();
+				if (command === "git" && joined === "diff --name-status FETCH_HEAD...HEAD") return ok("M\tagent/settings.json\n");
+				if (command === "git" && joined === "rev-list --count FETCH_HEAD..HEAD") return ok("1\n");
+				if (command === "gh" && joined === "pr view --json number,title,url,headRefName,headRefOid") {
+					return seen.filter((entry) => entry.command === "gh" && entry.args[0] === "pr" && entry.args[1] === "view").length === 1
+						? fail("", "no pull requests found for branch")
+						: ok('{"number":12,"title":"Scoped PR","url":"https://example.test/pr/12","headRefName":"feat/scoped","headRefOid":"abc"}\n');
+				}
+				if (command === "gh" && args[0] === "pr" && args[1] === "create") return ok();
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+			completeSpark: async () => "Scoped PR",
+		},
+	);
+
+	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.branch, "feat/scoped");
+	assert.equal(state.remote, "origin");
+	assert.equal(state.pr?.number, 12);
+	assert.equal(state.steps.find((step) => step.id === "pr")?.status, "done");
+	assert.equal(state.steps.find((step) => step.id === "ci")?.status, "skipped");
+	assert.match(state.status, /Pull Request step finished/);
+	const commandLines = seen.map(({ command, args }) => `${command} ${args.join(" ")}`);
+	assert.deepEqual(commandLines.slice(0, 7), [
+		"git branch --show-current",
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}",
+		"gh repo view --json defaultBranchRef",
+		"git fetch origin main",
+		"git diff --name-status FETCH_HEAD...HEAD",
+		"git rev-list --count FETCH_HEAD..HEAD",
+		"gh pr view --json number,title,url,headRefName,headRefOid",
+	]);
+	assert.match(commandLines[7] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
+	assert.equal(commandLines[8], "gh pr view --json number,title,url,headRefName,headRefOid");
 });
 
 test("pr resume always clears downstream state", () => {

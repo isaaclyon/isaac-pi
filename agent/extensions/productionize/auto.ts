@@ -137,14 +137,18 @@ export function createDefaultAutoState(enabled = false): ProductionizeAutoState 
 	};
 }
 
-export function parseProductionizeArgs(args: string): { auto: boolean; usageError?: string } {
+export function parseProductionizeArgs(args: string): { auto: boolean; targetStep?: StepId; usageError?: string } {
 	const tokens = args
 		.trim()
 		.split(/\s+/)
 		.filter(Boolean);
 	if (tokens.length === 0) return { auto: false };
-	if (tokens.length === 1 && tokens[0]?.toLowerCase() === "auto") return { auto: true };
-	return { auto: false, usageError: "Usage: /productionize [auto]" };
+	if (tokens.length === 1) {
+		const token = tokens[0]?.toLowerCase();
+		if (token === "auto") return { auto: true };
+		if (isStepId(token)) return { auto: false, targetStep: token };
+	}
+	return { auto: false, usageError: "Usage: /productionize [auto|branch|commit|push|pr|ci|merge|return]" };
 }
 
 export function buildRetryKey(stepId: StepId, headSha: string): string {
@@ -272,6 +276,10 @@ export function createDefaultSnapshot(enabled = false): ProductionizeStateSnapsh
 		cancelRequested: false,
 		auto: createDefaultAutoState(enabled),
 	};
+}
+
+function isStepId(value: string): value is StepId {
+	return STEP_ORDER.includes(value as StepId);
 }
 
 function isPersistedEntry(value: unknown): value is ProductionizePersistedEntry {

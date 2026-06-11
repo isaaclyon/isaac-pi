@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.78.1",
+  "lastChangelogVersion": "0.79.1",
   "packages": [
     "npm:lsp-pi",
     "npm:pi-schedule-prompt",
@@ -24,9 +24,9 @@
     "git:github.com/HazAT/pi-interactive-subagents",
     "git:github.com/sasha-computer/pi-cmux"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-5.4",
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
@@ -55,5 +55,11 @@
         "id": "gpt-5.4-mini"
       }
     ]
-  }
+  },
+  "enabledModels": [
+    "openai-codex/gpt-5.3-codex-spark",
+    "openai-codex/gpt-5.4",
+    "openai-codex/gpt-5.5",
+    "openai-codex/gpt-5.4-mini"
+  ]
 }

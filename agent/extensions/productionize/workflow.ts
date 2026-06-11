@@ -56,6 +56,8 @@ const COMMIT_DOWNSTREAM: StepId[] = ["push", "pr", "ci", "merge", "return"];
 
 export interface ProductionizeRunOptions {
 	auto?: boolean;
+	startFrom?: StepId;
+	stopAfter?: StepId;
 }
 
 export interface WorkflowHooks {
@@ -87,7 +89,9 @@ interface StepResult {
 }
 
 export function createInitialState(options: ProductionizeRunOptions = {}): ProductionizeState {
-	return createDefaultSnapshot(Boolean(options.auto));
+	const state = createDefaultSnapshot(Boolean(options.auto));
+	applyStepScope(state, options);
+	return state;
 }
 
 export async function runWorkflow(
@@ -121,7 +125,7 @@ export async function runWorkflow(
 			if (!recovered) return;
 		}
 
-		let currentStep = state.auto.resumeFromCheckpoint ?? firstPendingStep(state) ?? "branch";
+		let currentStep = state.auto.resumeFromCheckpoint ?? options.startFrom ?? firstPendingStep(state) ?? "branch";
 		while (true) {
 			if (signal.aborted || state.cancelRequested) throw new Error("cancelled");
 			state.auto.activeCheckpoint = currentStep;
@@ -130,9 +134,16 @@ export async function runWorkflow(
 			render();
 
 			try {
+				await hydrateStateForStep(runtime, currentStep);
 				const result = await runStep(runtime, currentStep);
 				if (result.finished) {
 					markSuccess(state);
+					if (state.auto.enabled) await persistState(runtime);
+					render();
+					return;
+				}
+				if (options.stopAfter === currentStep) {
+					markScopedSuccess(state, currentStep);
 					if (state.auto.enabled) await persistState(runtime);
 					render();
 					return;
@@ -208,6 +219,35 @@ async function runStep(runtime: WorkflowRuntime, stepId: StepId): Promise<StepRe
 			await runReturnStep(runtime);
 			return { finished: true };
 		}
+	}
+}
+
+async function hydrateStateForStep(runtime: WorkflowRuntime, stepId: StepId): Promise<void> {
+	const { state, ctx } = runtime;
+	const cwd = ctx.cwd;
+	if (stepId === "branch") return;
+
+	if (!state.branch) {
+		const currentResult = await execOrFail(runtime, stepId, "Current branch", "git", ["branch", "--show-current"], cwd);
+		const currentBranch = currentResult.stdout.trim();
+		if (!currentBranch) {
+			throw new WorkflowFailure(stepId, {
+				step: labelForStep(stepId),
+				command: "git",
+				args: ["branch", "--show-current"],
+				cwd,
+				message: `Detached HEAD is not supported by /productionize ${stepId}.`,
+			});
+		}
+		state.branch = currentBranch;
+	}
+
+	if (!state.remote && ["pr", "ci", "merge", "return"].includes(stepId)) {
+		state.remote = await inferBranchRemote(runtime, cwd, state.branch, stepId);
+	}
+
+	if (!state.pr && ["ci", "merge"].includes(stepId)) {
+		state.pr = await fetchPrInfo(runtime, cwd);
 	}
 }
 
@@ -894,6 +934,29 @@ async function localBranchExists(runtime: WorkflowRuntime, cwd: string, branch: 
 	return result.code === 0;
 }
 
+async function inferBranchRemote(runtime: WorkflowRuntime, cwd: string, branch: string, stepId: StepId): Promise<string> {
+	const upstream = await execCommand(runtime, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd, runtime.signal, 30_000);
+	if (upstream.code === 0 && upstream.stdout.trim()) return upstream.stdout.trim().split("/")[0] ?? "origin";
+
+	const configured = await execCommand(runtime, "git", ["config", `branch.${branch}.remote`], cwd, runtime.signal, 30_000);
+	if (configured.code === 0 && configured.stdout.trim() && configured.stdout.trim() !== ".") return configured.stdout.trim();
+
+	const remotes = await execCommand(runtime, "git", ["remote"], cwd, runtime.signal, 30_000);
+	const names = remotes.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+	if (names.includes("origin")) return "origin";
+	if (names[0]) return names[0];
+	throw new WorkflowFailure(stepId, {
+		step: labelForStep(stepId),
+		command: "git",
+		args: ["remote"],
+		cwd,
+		code: remotes.code,
+		stdout: remotes.stdout,
+		stderr: remotes.stderr,
+		message: `No git remote is configured for /productionize ${stepId}.`,
+	});
+}
+
 async function choosePushRemote(runtime: WorkflowRuntime, cwd: string, branch: string): Promise<string> {
 	const configured = await execCommand(runtime, "git", ["config", `branch.${branch}.remote`], cwd, runtime.signal, 30_000);
 	if (configured.code === 0 && configured.stdout.trim() && configured.stdout.trim() !== ".") return configured.stdout.trim();
@@ -1147,6 +1210,19 @@ function firstPendingStep(state: ProductionizeState): StepId | undefined {
 	return state.steps.find((step) => step.status === "pending" || step.status === "running" || step.status === "failed")?.id;
 }
 
+function applyStepScope(state: ProductionizeState, options: ProductionizeRunOptions): void {
+	if (!options.startFrom || !options.stopAfter) return;
+	const startIndex = STEP_ORDER.indexOf(options.startFrom);
+	const stopIndex = STEP_ORDER.indexOf(options.stopAfter);
+	if (startIndex === -1 || stopIndex === -1) return;
+	for (const [index, step] of state.steps.entries()) {
+		if (index < startIndex || index > stopIndex) {
+			step.status = "skipped";
+			step.detail = "Not requested";
+		}
+	}
+}
+
 function nextStep(stepId: StepId): StepId {
 	const index = STEP_ORDER.indexOf(stepId);
 	return STEP_ORDER[Math.min(index + 1, STEP_ORDER.length - 1)] ?? "return";
@@ -1238,6 +1314,16 @@ function markSuccess(state: ProductionizeState): void {
 			? `Productionize completed: no productionize changes to merge; local checkout returned to ${state.returnToBranch}.`
 			: "Productionize completed: no productionize changes to merge.";
 	log(state, "Workflow completed with no PR because no changes were detected");
+}
+
+function markScopedSuccess(state: ProductionizeState, stepId: StepId): void {
+	state.outcome = "succeeded";
+	state.auto.currentRepair = undefined;
+	state.auto.activeCheckpoint = undefined;
+	state.auto.resumeFromCheckpoint = undefined;
+	state.failure = undefined;
+	state.status = `Productionize completed: ${labelForStep(stepId)} step finished.`;
+	log(state, `Scoped workflow completed after ${labelForStep(stepId)}`);
 }
 
 function stateForFailure(runtime: WorkflowRuntime, failure: WorkflowFailure): void {
