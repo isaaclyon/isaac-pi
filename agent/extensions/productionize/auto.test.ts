@@ -12,11 +12,14 @@ import {
 	serializeSummaryEntry,
 } from "./auto.ts";
 
-test("/productionize auto parses while manual mode remains default", () => {
+test("/productionize args parse auto and single-stage manual targets", () => {
 	assert.deepEqual(parseProductionizeArgs(""), { auto: false });
 	assert.deepEqual(parseProductionizeArgs("auto"), { auto: true });
 	assert.deepEqual(parseProductionizeArgs("AUTO"), { auto: true });
+	assert.deepEqual(parseProductionizeArgs("commit"), { auto: false, targetStep: "commit" });
+	assert.deepEqual(parseProductionizeArgs("PR"), { auto: false, targetStep: "pr" });
 	assert.match(parseProductionizeArgs("later").usageError ?? "", /Usage/);
+	assert.match(parseProductionizeArgs("auto commit").usageError ?? "", /Usage/);
 });
 
 test("retry keys increment for same step and sha but reset for a new sha", () => {
