@@ -13,7 +13,6 @@
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - Be concise by default, but not terse: use the fewest words that still preserve warmth, clarity, and the key rationale.
-- For any non-trivial work, use your create-specs skill to create a robust plan.
 
 ## 2. Simplicity First
 
@@ -24,7 +23,7 @@
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios.
 - No shims, legacy paths, or backward-compatibility code unless explicitly requested.
-- If you write 200 lines and it could be 50, rewrite it.
+- If the solution feels overbuilt, simplify it before finalizing.
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
@@ -51,9 +50,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **Small commits. Proactive on safe steps. Loud on failures.**
 
-- Commit after each logical unit of work. Prefer small, focused commits over batching unrelated changes.
+- Prefer small, focused commits when making commits is part of the workflow. Do not create commits unless the user or repo workflow expects it.
 - If the next step is clearly non-destructive, value-additive, and the obvious continuation of the task, take it proactively - reserve confirmation for destructive, risky, or ambiguous actions.
-- Fail loudly. Never silently swallow or catch errors.
+- Fail loudly on unexpected errors. Do not silently swallow errors; if you catch one, handle it intentionally or surface it clearly.
 
 ## 5. Code Quality Standards
 
@@ -61,7 +60,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - Employ the strictest practical typing for both Python and TypeScript.
 - Python typing/tooling baseline: Pyright with strict settings.
-- Use `uv` instead of `python`/`python3` for Python execution and workflows.
+- Prefer `uv` for Python workflows when available.
 - Keep files focused; split before they become monolithic (target <600 lines).
 - Use environment/config boundaries for secrets and other hardcoded values.
 
