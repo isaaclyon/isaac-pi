@@ -33,3 +33,19 @@ This file records extensions that were removed or disabled so they can be recall
 - Reason: Removed on request.
 - Reinstall command: `pi install npm:pi-codex-fast`
 - Config note: `agent/extensions/pi-codex-fast.json` was deleted.
+
+## pi-subagent package
+
+- Package: `npm:@mjakl/pi-subagent@1.4.1`
+- Removed: 2026-06-11
+- Reason: Configured with `extensions: []`, so it was effectively disabled and removed for cleanup.
+- Reinstall command: `pi install npm:@mjakl/pi-subagent@1.4.1`
+- Config note: Re-adding the package entry to `agent/settings.json` is also enough to restore it.
+
+## pi-cmux package
+
+- Package: `git:github.com/sasha-computer/pi-cmux`
+- Removed: 2026-06-11
+- Reason: Configured with empty `extensions`, `skills`, `prompts`, and `themes`, so it was effectively disabled and removed for cleanup.
+- Reinstall command: `pi install git:github.com/sasha-computer/pi-cmux`
+- Config note: Re-adding the package entry to `agent/settings.json` is also enough to restore it.

@@ -6,10 +6,6 @@
     "npm:pi-rtk-optimizer@0.7.1",
     "npm:pi-updater",
     {
-      "source": "npm:@mjakl/pi-subagent@1.4.1",
-      "extensions": []
-    },
-    {
       "source": "git:github.com/tmustier/pi-extensions",
       "extensions": [
         "tab-status/tab-status.ts",
@@ -21,14 +17,7 @@
     "npm:@sting8k/pi-vcc",
     "npm:pi-web-access",
     "npm:pi-codex-fast",
-    "git:github.com/HazAT/pi-interactive-subagents",
-    {
-      "source": "git:github.com/sasha-computer/pi-cmux",
-      "extensions": [],
-      "skills": [],
-      "prompts": [],
-      "themes": []
-    }
+    "git:github.com/HazAT/pi-interactive-subagents"
   ],
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
