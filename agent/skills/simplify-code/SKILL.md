@@ -1,6 +1,6 @@
 ---
 name: simplify-code
-description: "Simplify recently modified code while preserving exact behavior. Use after implementing or refactoring code to improve clarity, consistency, and maintainability without changing functionality."
+description: "Simplify code while preserving exact behavior. By default, focus on recently modified code; if the user provides an argument, focus on that file, area, or request instead. Use after implementing or refactoring code to improve clarity, consistency, and maintainability without changing functionality."
 ---
 
 # Simplify Code Skill
@@ -9,7 +9,10 @@ Refine code for readability and maintainability while keeping behavior exactly t
 
 ## Purpose
 
-Use this skill to polish recently changed code so it is easier to read, reason about, and extend.
+Use this skill to polish code so it is easier to read, reason about, and extend.
+
+If the user invoked the skill with arguments (for example `/skill:simplify-code src/foo.ts` or `/skill:simplify-code the new auth flow`), treat that input as the focus area.
+If no argument was provided, default to recently changed code.
 
 ## When to Use
 
@@ -32,7 +35,8 @@ Use this skill to polish recently changed code so it is easier to read, reason a
    - Avoid clever transformations that make debugging harder.
 
 4. **Keep scope tight**
-   - Focus on files or regions touched in the current task unless asked to broaden scope.
+   - If the user provided a focus area, stay within that scope unless they explicitly broaden it.
+   - Otherwise, focus on files or regions touched in the current task.
 
 ## Simplification Heuristics
 
@@ -67,9 +71,9 @@ Synthesize their findings before making changes. Apply only recommendations that
 
 ## Workflow
 
-1. Identify recently modified code.
+1. Determine scope from the user's argument if provided; otherwise identify recently modified code.
 2. For non-trivial diffs, run the simplification reviewer pass.
-3. Spot readability and consistency improvements.
+3. Spot readability and consistency improvements within that scope.
 4. Apply minimal, behavior-preserving refinements.
 5. Re-check for parity and convention alignment.
 6. Summarize only meaningful changes that impact understanding.
