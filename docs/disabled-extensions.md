@@ -32,7 +32,7 @@ This file records extensions that were removed or disabled so they can be recall
 - Removed: 2026-05-24
 - Reason: Removed on request.
 - Reinstall command: `pi install npm:pi-codex-fast`
-- Config note: `agent/extensions/pi-codex-fast.json` was deleted.
+- Config note: `agent/extensions/pi-codex-fast.json` is deleted.
 
 ## pi-subagent package
 
