@@ -16,8 +16,13 @@
     "npm:@narumitw/pi-goal",
     "npm:@sting8k/pi-vcc",
     "npm:pi-web-access",
-    "npm:pi-codex-fast",
-    "git:github.com/HazAT/pi-interactive-subagents"
+    "git:github.com/HazAT/pi-interactive-subagents",
+    "npm:@juicesharp/rpiv-btw",
+    "npm:@howaboua/pi-codex-conversion",
+    "npm:@aliou/pi-processes",
+    "npm:@narumitw/pi-caffeinate",
+    "npm:@narumitw/pi-chrome-devtools",
+    "npm:@narumitw/pi-retry"
   ],
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
