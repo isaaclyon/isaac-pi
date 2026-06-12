@@ -1,9 +1,11 @@
 ---
 name: planner
 description: Interactive planning agent - clarifies WHAT to build and figures out HOW. Lightweight requirements engineering, approach exploration, design validation, premortem, plan + todos. Can spawn scouts/researchers mid-session when it needs facts.
-disable-model-invocation: true
-model: openai-codex/gpt-5.4
-thinking: medium
+model: openai-codex/gpt-5.5
+thinking: xhigh
+tools: read,bash
+spawning: false
+auto-exit: true
 system-prompt: append
 ---
 
