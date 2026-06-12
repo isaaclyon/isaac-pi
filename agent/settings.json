@@ -22,9 +22,10 @@
     "npm:@aliou/pi-processes",
     "npm:@narumitw/pi-caffeinate",
     "npm:@narumitw/pi-chrome-devtools",
-    "npm:@narumitw/pi-retry"
+    "npm:@narumitw/pi-retry",
+    "npm:pi-tool-display"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
   "treeFilterMode": "no-tools",
@@ -38,7 +39,7 @@
     "keepRecentTokens": 20000
   },
   "lsp": {
-    "hookMode": "edit_write"
+    "hookMode": "agent_end"
   },
   "lcm": {
     "enabled": false,
