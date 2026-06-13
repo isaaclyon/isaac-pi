@@ -41,6 +41,11 @@ function App() {
   const [focusEpicId, setFocusEpicId] = useState(null);
   const [readyOnly, setReadyOnly] = useState(false);
   const [themePref, setThemePref] = useState(readThemePref);
+  // Connection health: null = healthy. A non-null string is the banner message. `loaded` flips true
+  // after the first successful fetch and never back — it's how we tell "never reached the server"
+  // (full error state) apart from "had the board, then lost the connection" (stale board + banner).
+  const [connError, setConnError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const toastTimer = useRef(null);
   const lastSnapshotRef = useRef(null);
 
@@ -64,27 +69,61 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }
 
-  async function load() {
+  // One fetch path for both the initial load and the 2s poll, so res.ok and network rejections are
+  // handled identically. Returns the raw snapshot text; throws on any non-OK response.
+  async function fetchSnapshot() {
     const res = await fetch('/api/roadmap');
-    const text = await res.text();
-    lastSnapshotRef.current = text;
-    setData(JSON.parse(text));
+    if (!res.ok) throw new Error(`Server responded ${res.status}`);
+    return res.text();
+  }
+
+  // Apply a freshly fetched snapshot, skipping the re-render when nothing changed. Centralised so the
+  // load and poll paths agree on the diff check and on clearing the error/loaded flags on success.
+  function applySnapshot(text) {
+    if (text !== lastSnapshotRef.current) {
+      lastSnapshotRef.current = text;
+      setData(JSON.parse(text));
+    }
+    setLoaded(true);
+    setConnError(null);
+  }
+
+  // Network errors carry no useful HTTP status, so lean on navigator.onLine to phrase the banner.
+  function connMessage() {
+    return navigator.onLine ? "Can't reach the roadmap server." : 'You appear to be offline.';
+  }
+
+  // Initial load and the manual Retry share this. On failure the existing `data` is left in place —
+  // a stale board beats a blank one — and the banner explains why.
+  async function load() {
+    try { applySnapshot(await fetchSnapshot()); }
+    catch { setConnError(connMessage()); }
   }
   useEffect(() => { load(); }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   // Pick up out-of-band changes (e.g. an agent moving a card via the CLI) without a manual refresh.
-  // Only re-render when the snapshot truly changed.
+  // Doubles as the auto-recovery loop: a failed poll raises the banner, the next good one clears it,
+  // so a downed-then-restored server heals within one interval with no user action.
   useEffect(() => {
     const timer = setInterval(async () => {
-      const res = await fetch('/api/roadmap');
-      if (!res.ok) return;
-      const text = await res.text();
-      if (text === lastSnapshotRef.current) return;
-      lastSnapshotRef.current = text;
-      setData(JSON.parse(text));
+      try { applySnapshot(await fetchSnapshot()); }
+      catch { setConnError(connMessage()); }
     }, 2000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Instant feedback on connectivity flips: surface the banner the moment the OS reports offline, and
+  // trigger an immediate refresh on reconnect rather than waiting up to 2s for the next poll.
+  useEffect(() => {
+    const onOnline = () => load();
+    const onOffline = () => setConnError('You appear to be offline.');
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
   }, []);
 
   const grouped = useMemo(() => {
@@ -209,6 +248,9 @@ function App() {
       </div>
     </header>
 
+    {connError && loaded && <ConnBanner message={connError} onRetry={load} />}
+
+    {connError && !loaded ? <ConnBanner message={connError} onRetry={load} full /> : <>
     <section className="epic-rail" aria-label="Epic progress">
       <div className="epic-rail-head">
         <h2>Epics</h2>
@@ -255,6 +297,7 @@ function App() {
         })}
       </section>
     </div>
+    </>}
 
     {openEpic && <EpicModal
       epic={openEpic}
@@ -276,6 +319,21 @@ function App() {
 
     {toast && <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">{toast.text}</div>}
   </main>;
+}
+
+// Connection failure surface. Two shapes off one component: inline (a strip above a still-rendered,
+// now-stale board) and `full` (a centred panel that stands in for the board when we never reached the
+// server). role="alert" + assertive so the failure is announced the moment it appears; the Retry
+// button calls load() directly, though the 2s poll also clears the banner on its own once the server
+// returns.
+function ConnBanner({ message, onRetry, full = false }) {
+  return <div className={`conn-banner${full ? ' conn-banner-full' : ''}`} role="alert" aria-live="assertive">
+    <div className="conn-banner-copy">
+      <strong>{full ? "Couldn't load the roadmap" : 'Connection lost'}</strong>
+      <span>{message}{!full && ' Showing the last loaded board.'}</span>
+    </div>
+    <button type="button" className="primary" onClick={onRetry}>Retry</button>
+  </div>;
 }
 
 function Card({ card, epic, onOpen }) {
@@ -470,20 +528,21 @@ function formatEventTime(iso) {
 
 function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, onClose }) {
   const [direction, setDirection] = useState('');
-  const [events, setEvents] = useState(null); // null = loading, [] = none/unavailable, [...] = loaded
+  const [events, setEvents] = useState(null); // null = loading, 'error' = fetch failed, [] = none, [...] = loaded
   const panelRef = useRef(null);
 
   useEffect(() => { setDirection(''); }, [card.id]);
 
   // Lazy-load history when the card changes. Kept off the snapshot so the 2s board poll stays cheap
-  // as the events table grows. A fetch failure degrades to an empty list (full offline UX is ROAD-014).
+  // as the events table grows. A fetch failure flags 'error' so the body can say so explicitly rather
+  // than masquerading as an empty history.
   useEffect(() => {
     let alive = true;
     setEvents(null);
     fetch(`/api/cards/${card.id}/events`)
       .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
       .then(rows => { if (alive) setEvents(rows); })
-      .catch(() => { if (alive) setEvents([]); });
+      .catch(() => { if (alive) setEvents('error'); });
     return () => { alive = false; };
   }, [card.id]);
 
@@ -525,8 +584,9 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
 
         <p className="modal-section-label">History</p>
         {events === null ? <p className="empty">Loading history…</p>
-          : events.length === 0 ? <p className="empty">No history yet.</p>
-            : <ul className="card-history">
+          : events === 'error' ? <p className="empty">History unavailable — couldn't reach the server.</p>
+            : events.length === 0 ? <p className="empty">No history yet.</p>
+              : <ul className="card-history">
               {events.map(event =>
                 <li key={event.id}>
                   <span className={`history-actor actor-${event.actor_type}`}>{event.actor_type}</span>

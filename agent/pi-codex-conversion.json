@@ -22,7 +22,7 @@
     "responsesCompaction": false
   },
   "openai": {
-    "fast": true,
+    "fast": false,
     "verbosity": "low",
     "forceCachedWebSockets": true,
     "webSearchModel": "gpt-5.4-mini",

@@ -23,6 +23,7 @@ export const DEFAULT_PROMPTS = {
 
 const VALID = new Set(COLUMNS.map(c => c.key));
 const ACTORS = new Set(['user', 'agent', 'system']);
+const EPIC_PATCH_FIELDS = new Set(['title', 'summary', 'sort_index']);
 
 export function paths(projectRoot = process.cwd()) {
   const root = resolve(projectRoot);
@@ -40,43 +41,84 @@ export function openRoadmap(projectRoot = process.cwd()) {
   const p = paths(projectRoot);
   mkdirSync(p.dir, { recursive: true });
   const db = new DatabaseSync(p.db);
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS cards (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      summary TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL,
-      depends_on TEXT NOT NULL DEFAULT '[]',
-      enables TEXT NOT NULL DEFAULT '[]',
-      blocked_reason TEXT NOT NULL DEFAULT '',
-      position INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS epics (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      summary TEXT NOT NULL DEFAULT '',
-      sort_index INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      card_id TEXT,
-      event_type TEXT NOT NULL,
-      actor_type TEXT NOT NULL CHECK (actor_type IN ('user','agent','system')),
-      payload TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL
-    );
-  `);
-  ensureColumn(db, 'cards', 'epic_id', 'ALTER TABLE cards ADD COLUMN epic_id TEXT');
-  ensureMeta(db, 'next_card_number', '1');
-  ensureMeta(db, 'next_epic_number', '1');
+  // WAL lets readers and a single writer coexist; busy_timeout makes a *second* writer queue for
+  // the write lock (up to 5s) instead of throwing SQLITE_BUSY immediately, and synchronous=NORMAL
+  // is the durability/throughput pairing SQLite recommends with WAL. See README "Concurrency model".
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;');
+  migrate(db);
   ensurePrompts(p.prompts);
   return new RoadmapStore(db, p);
+}
+
+// Forward-only, versioned migrations keyed off PRAGMA user_version. Each entry is the step that
+// brings the schema *up to* its 1-based version number (index 0 -> version 1). The runner applies
+// every step whose version exceeds the DB's current user_version, each inside its own IMMEDIATE
+// transaction, then stamps the new version. Every step is written to be idempotent (IF NOT EXISTS
+// / ensureColumn / ensureMeta) so a pre-existing, full-but-unversioned DB (user_version still 0,
+// the state of every board created before this change) replays the whole chain safely and lands
+// on the same schema as a brand-new DB. Append new steps; never edit or reorder old ones.
+const MIGRATIONS = [
+  function v1_baseline(db) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS cards (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        depends_on TEXT NOT NULL DEFAULT '[]',
+        enables TEXT NOT NULL DEFAULT '[]',
+        blocked_reason TEXT NOT NULL DEFAULT '',
+        position INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS epics (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        sort_index INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id TEXT,
+        event_type TEXT NOT NULL,
+        actor_type TEXT NOT NULL CHECK (actor_type IN ('user','agent','system')),
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+      );
+    `);
+  },
+  function v2_card_epic_id(db) {
+    ensureColumn(db, 'cards', 'epic_id', 'ALTER TABLE cards ADD COLUMN epic_id TEXT');
+  },
+  function v3_id_counters(db) {
+    ensureMeta(db, 'next_card_number', '1');
+    ensureMeta(db, 'next_epic_number', '1');
+  },
+];
+
+export const SCHEMA_VERSION = MIGRATIONS.length;
+
+export function migrate(db) {
+  const current = Number(db.prepare('PRAGMA user_version').get().user_version);
+  for (let version = current + 1; version <= MIGRATIONS.length; version += 1) {
+    // BEGIN IMMEDIATE grabs the write lock up front. A deferred transaction would start as a
+    // reader and try to upgrade mid-step — two concurrent openers would then deadlock in a way
+    // busy_timeout can't resolve. Each step + its version stamp commit atomically: an interrupted
+    // migration leaves user_version untouched, so the next open simply retries from where it left off.
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      MIGRATIONS[version - 1](db);
+      db.exec(`PRAGMA user_version = ${version}`);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
 }
 
 function ensureColumn(db, table, column, sql) {
@@ -117,6 +159,28 @@ export function httpError(status, message) { const e = new Error(message); e.sta
 export class RoadmapStore {
   constructor(db, p) { this.db = db; this.paths = p; }
   close() { this.db.close(); }
+
+  // Run fn as one atomic unit. Every mutation routes through here so its row writes, its event
+  // row, and the ROADMAP.md re-export either all land or none do — a crash or thrown validation
+  // error mid-sequence rolls back cleanly instead of leaving a partial board. IMMEDIATE takes the
+  // write lock at BEGIN, so concurrent writers queue on busy_timeout rather than deadlocking on a
+  // lock upgrade. Nesting is a no-op join: a transaction already in flight just runs fn inline, so
+  // helpers that call each other (e.g. assignEpic -> card) don't issue a nested BEGIN.
+  tx(fn) {
+    if (this._inTx) return fn();
+    this.db.exec('BEGIN IMMEDIATE');
+    this._inTx = true;
+    try {
+      const result = fn();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    } finally {
+      this._inTx = false;
+    }
+  }
 
   init() { this.exportMarkdown('system'); return this.snapshot(); }
 
@@ -251,142 +315,172 @@ export class RoadmapStore {
   createTriage({ title, summary = '' }, actor = 'user') {
     const nextTitle = normalizeText(title);
     if (!nextTitle) throw httpError(400, 'Title is required');
-    const id = this.nextId();
-    const t = now();
-    this.db.prepare(`INSERT INTO cards (id, title, summary, status, position, created_at, updated_at, epic_id) VALUES (?, ?, ?, 'triage', ?, ?, ?, NULL)`)
-      .run(id, nextTitle, normalizeText(summary), this.maxPosition('triage') + 1, t, t);
-    this.event(id, 'card_created', actor, { status: 'triage' });
-    this.exportMarkdown('system');
-    return this.card(id);
+    return this.tx(() => {
+      const id = this.nextId();
+      const t = now();
+      this.db.prepare(`INSERT INTO cards (id, title, summary, status, position, created_at, updated_at, epic_id) VALUES (?, ?, ?, 'triage', ?, ?, ?, NULL)`)
+        .run(id, nextTitle, normalizeText(summary), this.maxPosition('triage') + 1, t, t);
+      this.event(id, 'card_created', actor, { status: 'triage' });
+      this.exportMarkdown('system');
+      return this.card(id);
+    });
   }
 
   updateTriage(id, { title, summary }, actor = 'user') {
-    const card = this.card(id);
-    if (card.status !== 'triage') throw httpError(403, 'Users can edit only Triage cards');
-    const nextTitle = title === undefined ? card.title : normalizeText(title);
-    if (!nextTitle) throw httpError(400, 'Title is required');
-    const nextSummary = summary === undefined ? card.summary : normalizeText(summary);
-    this.db.prepare('UPDATE cards SET title = ?, summary = ?, updated_at = ? WHERE id = ?').run(nextTitle, nextSummary, now(), id);
-    this.event(id, 'card_updated', actor, { fields: ['title', 'summary'] });
-    this.exportMarkdown('system');
-    return this.card(id);
+    return this.tx(() => {
+      const card = this.card(id);
+      if (card.status !== 'triage') throw httpError(403, 'Users can edit only Triage cards');
+      const nextTitle = title === undefined ? card.title : normalizeText(title);
+      if (!nextTitle) throw httpError(400, 'Title is required');
+      const nextSummary = summary === undefined ? card.summary : normalizeText(summary);
+      this.db.prepare('UPDATE cards SET title = ?, summary = ?, updated_at = ? WHERE id = ?').run(nextTitle, nextSummary, now(), id);
+      this.event(id, 'card_updated', actor, { fields: ['title', 'summary'] });
+      this.exportMarkdown('system');
+      return this.card(id);
+    });
   }
 
   createEpic({ title, summary = '', sort_index }, actor = 'agent') {
     const nextTitle = normalizeText(title);
     if (!nextTitle) throw httpError(400, 'Title is required');
-    const nextSortIndex = sort_index === undefined ? this.maxEpicSortIndex() + 1 : normalizeSortIndex(sort_index);
-    const id = this.nextEpicId();
-    const t = now();
-    this.db.prepare('INSERT INTO epics (id, title, summary, sort_index, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, nextTitle, normalizeText(summary), nextSortIndex, t, t);
-    this.event(null, 'epic_created', actor, { epic_id: id });
-    this.exportMarkdown('system');
-    return this.epic(id);
+    const nextSortIndex = sort_index === undefined ? undefined : normalizeSortIndex(sort_index);
+    return this.tx(() => {
+      const id = this.nextEpicId();
+      const t = now();
+      this.db.prepare('INSERT INTO epics (id, title, summary, sort_index, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, nextTitle, normalizeText(summary), nextSortIndex ?? this.maxEpicSortIndex() + 1, t, t);
+      this.event(null, 'epic_created', actor, { epic_id: id });
+      this.exportMarkdown('system');
+      return this.epic(id);
+    });
   }
 
   updateEpic(id, patch, actor = 'agent') {
-    const epic = this.epic(id);
-    const nextTitle = patch.title === undefined ? epic.title : normalizeText(patch.title);
-    if (!nextTitle) throw httpError(400, 'Title is required');
-    const nextSummary = patch.summary === undefined ? epic.summary : normalizeText(patch.summary);
-    const nextSortIndex = patch.sort_index === undefined ? epic.sort_index : normalizeSortIndex(patch.sort_index);
-    this.db.prepare('UPDATE epics SET title = ?, summary = ?, sort_index = ?, updated_at = ? WHERE id = ?')
-      .run(nextTitle, nextSummary, nextSortIndex, now(), id);
-    this.event(null, 'epic_updated', actor, { epic_id: id, fields: Object.keys(patch) });
-    this.exportMarkdown('system');
-    return this.epic(id);
+    return this.tx(() => {
+      const epic = this.epic(id);
+      const unknown = Object.keys(patch).filter(key => !EPIC_PATCH_FIELDS.has(key));
+      if (unknown.length) throw httpError(400, `Unknown epic field(s): ${unknown.join(', ')}`);
+      const nextTitle = patch.title === undefined ? epic.title : normalizeText(patch.title);
+      if (!nextTitle) throw httpError(400, 'Title is required');
+      const nextSummary = patch.summary === undefined ? epic.summary : normalizeText(patch.summary);
+      const nextSortIndex = patch.sort_index === undefined ? epic.sort_index : normalizeSortIndex(patch.sort_index);
+      // Log only what actually moved, so a rename reads as a rename and a no-op writes nothing.
+      const changed = [];
+      if (nextTitle !== epic.title) changed.push('title');
+      if (nextSummary !== epic.summary) changed.push('summary');
+      if (nextSortIndex !== epic.sort_index) changed.push('sort_index');
+      if (!changed.length) return epic;
+      this.db.prepare('UPDATE epics SET title = ?, summary = ?, sort_index = ?, updated_at = ? WHERE id = ?')
+        .run(nextTitle, nextSummary, nextSortIndex, now(), id);
+      const payload = { epic_id: id, fields: changed };
+      if (nextTitle !== epic.title) { payload.renamed_from = epic.title; payload.renamed_to = nextTitle; }
+      this.event(null, 'epic_updated', actor, payload);
+      this.exportMarkdown('system');
+      return this.epic(id);
+    });
   }
 
   assignEpic(cardId, epicId, actor = 'agent') {
-    const card = this.card(cardId);
     const nextEpicId = normalizeOptionalId(epicId);
-    if (nextEpicId) this.epic(nextEpicId);
-    this.db.prepare('UPDATE cards SET epic_id = ?, updated_at = ? WHERE id = ?').run(nextEpicId, now(), card.id);
-    this.event(card.id, 'card_updated', actor, { fields: ['epic_id'], epic_id: nextEpicId });
-    this.exportMarkdown('system');
-    return this.card(card.id);
+    return this.tx(() => {
+      const card = this.card(cardId);
+      if (nextEpicId) this.epic(nextEpicId);
+      this.db.prepare('UPDATE cards SET epic_id = ?, updated_at = ? WHERE id = ?').run(nextEpicId, now(), card.id);
+      this.event(card.id, 'card_updated', actor, { fields: ['epic_id'], epic_id: nextEpicId });
+      this.exportMarkdown('system');
+      return this.card(card.id);
+    });
   }
 
   deleteEpic(id, actor = 'agent') {
-    const epic = this.epic(id);
-    const children = this.db.prepare('SELECT id FROM cards WHERE epic_id = ?').all(epic.id);
-    const t = now();
-    for (const row of children) {
-      this.db.prepare('UPDATE cards SET epic_id = NULL, updated_at = ? WHERE id = ?').run(t, row.id);
-      this.event(row.id, 'card_updated', actor, { fields: ['epic_id'], unassigned_epic: epic.id });
-    }
-    this.db.prepare('DELETE FROM epics WHERE id = ?').run(epic.id);
-    const detached = children.map(row => row.id);
-    this.event(null, 'epic_deleted', actor, { epic_id: epic.id, detached });
-    this.exportMarkdown('system');
-    return { id: epic.id, deleted: true, detached };
+    return this.tx(() => {
+      const epic = this.epic(id);
+      const children = this.db.prepare('SELECT id FROM cards WHERE epic_id = ?').all(epic.id);
+      const t = now();
+      for (const row of children) {
+        this.db.prepare('UPDATE cards SET epic_id = NULL, updated_at = ? WHERE id = ?').run(t, row.id);
+        this.event(row.id, 'card_updated', actor, { fields: ['epic_id'], unassigned_epic: epic.id });
+      }
+      this.db.prepare('DELETE FROM epics WHERE id = ?').run(epic.id);
+      const detached = children.map(row => row.id);
+      this.event(null, 'epic_deleted', actor, { epic_id: epic.id, detached });
+      this.exportMarkdown('system');
+      return { id: epic.id, deleted: true, detached };
+    });
   }
 
   agentUpdate(id, patch, actor = 'agent') {
-    const card = this.card(id);
-    const next = {
-      title: patch.title === undefined ? card.title : normalizeText(patch.title),
-      summary: patch.summary === undefined ? card.summary : normalizeText(patch.summary),
-      depends_on: patch.depends_on === undefined ? card.depends_on : this.validateCardIds(patch.depends_on, id),
-      enables: patch.enables === undefined ? card.enables : this.validateCardIds(patch.enables, id),
-      blocked_reason: patch.blocked_reason === undefined ? card.blocked_reason : normalizeText(patch.blocked_reason),
-    };
-    if (!next.title) throw httpError(400, 'Title is required');
-    this.assertNoCycle(id, next.depends_on, next.enables);
-    this.db.prepare('UPDATE cards SET title = ?, summary = ?, depends_on = ?, enables = ?, blocked_reason = ?, updated_at = ? WHERE id = ?')
-      .run(next.title, next.summary, stringifyList(next.depends_on), stringifyList(next.enables), next.blocked_reason, now(), id);
-    this.event(id, 'card_updated', actor, { fields: Object.keys(patch) });
-    this.exportMarkdown('system');
-    return this.card(id);
+    return this.tx(() => {
+      const card = this.card(id);
+      const next = {
+        title: patch.title === undefined ? card.title : normalizeText(patch.title),
+        summary: patch.summary === undefined ? card.summary : normalizeText(patch.summary),
+        depends_on: patch.depends_on === undefined ? card.depends_on : this.validateCardIds(patch.depends_on, id),
+        enables: patch.enables === undefined ? card.enables : this.validateCardIds(patch.enables, id),
+        blocked_reason: patch.blocked_reason === undefined ? card.blocked_reason : normalizeText(patch.blocked_reason),
+      };
+      if (!next.title) throw httpError(400, 'Title is required');
+      this.assertNoCycle(id, next.depends_on, next.enables);
+      this.db.prepare('UPDATE cards SET title = ?, summary = ?, depends_on = ?, enables = ?, blocked_reason = ?, updated_at = ? WHERE id = ?')
+        .run(next.title, next.summary, stringifyList(next.depends_on), stringifyList(next.enables), next.blocked_reason, now(), id);
+      this.event(id, 'card_updated', actor, { fields: Object.keys(patch) });
+      this.exportMarkdown('system');
+      return this.card(id);
+    });
   }
 
   move(id, status, { blocked_reason } = {}, actor = 'agent') {
     assertStatus(status);
-    const card = this.card(id);
-    const reason = blocked_reason === undefined ? card.blocked_reason : normalizeText(blocked_reason);
-    if (status === 'blocked' && !reason) throw httpError(400, 'Blocked cards require a blocked_reason');
-    this.db.prepare('UPDATE cards SET status = ?, position = ?, blocked_reason = ?, updated_at = ? WHERE id = ?')
-      .run(status, this.maxPosition(status) + 1, reason, now(), id);
-    this.event(id, 'card_moved', actor, { from: card.status, to: status });
-    this.exportMarkdown('system');
-    return this.card(id);
+    return this.tx(() => {
+      const card = this.card(id);
+      const reason = blocked_reason === undefined ? card.blocked_reason : normalizeText(blocked_reason);
+      if (status === 'blocked' && !reason) throw httpError(400, 'Blocked cards require a blocked_reason');
+      this.db.prepare('UPDATE cards SET status = ?, position = ?, blocked_reason = ?, updated_at = ? WHERE id = ?')
+        .run(status, this.maxPosition(status) + 1, reason, now(), id);
+      this.event(id, 'card_moved', actor, { from: card.status, to: status });
+      this.exportMarkdown('system');
+      return this.card(id);
+    });
   }
 
   deleteCard(id, actor = 'user') {
-    const card = this.card(id);
-    if (actor === 'user' && card.status !== 'triage') throw httpError(403, 'Users can delete only Triage cards');
+    return this.tx(() => {
+      const card = this.card(id);
+      if (actor === 'user' && card.status !== 'triage') throw httpError(403, 'Users can delete only Triage cards');
 
-    const linked = this.db.prepare(
-      `SELECT id, depends_on, enables FROM cards WHERE id != ? AND (depends_on LIKE ? OR enables LIKE ?)`
-    ).all(id, `%${id}%`, `%${id}%`);
-    const t = now();
-    for (const row of linked) {
-      const depends_on = parseList(row.depends_on).filter(x => x !== id);
-      const enables = parseList(row.enables).filter(x => x !== id);
-      this.db.prepare('UPDATE cards SET depends_on = ?, enables = ?, updated_at = ? WHERE id = ?')
-        .run(stringifyList(depends_on), stringifyList(enables), t, row.id);
-      this.event(row.id, 'card_updated', actor, { fields: ['depends_on', 'enables'], unlinked: id });
-    }
+      const linked = this.db.prepare(
+        `SELECT id, depends_on, enables FROM cards WHERE id != ? AND (depends_on LIKE ? OR enables LIKE ?)`
+      ).all(id, `%${id}%`, `%${id}%`);
+      const t = now();
+      for (const row of linked) {
+        const depends_on = parseList(row.depends_on).filter(x => x !== id);
+        const enables = parseList(row.enables).filter(x => x !== id);
+        this.db.prepare('UPDATE cards SET depends_on = ?, enables = ?, updated_at = ? WHERE id = ?')
+          .run(stringifyList(depends_on), stringifyList(enables), t, row.id);
+        this.event(row.id, 'card_updated', actor, { fields: ['depends_on', 'enables'], unlinked: id });
+      }
 
-    this.db.prepare('DELETE FROM cards WHERE id = ?').run(id);
-    this.event(id, 'card_deleted', actor, { status: card.status });
-    this.exportMarkdown('system');
-    return { id, deleted: true, status: card.status };
+      this.db.prepare('DELETE FROM cards WHERE id = ?').run(id);
+      this.event(id, 'card_deleted', actor, { status: card.status });
+      this.exportMarkdown('system');
+      return { id, deleted: true, status: card.status };
+    });
   }
 
   reorderTriage(ids, actor = 'user') {
     if (!Array.isArray(ids)) throw httpError(400, 'ids must be an array');
-    const triageIds = this.cards().filter(c => c.status === 'triage').map(c => c.id);
-    if (new Set(ids).size !== ids.length || ids.length !== triageIds.length || !triageIds.every(id => ids.includes(id))) {
-      throw httpError(400, 'Reorder must include every current Triage card exactly once');
-    }
-    const stmt = this.db.prepare('UPDATE cards SET position = ?, updated_at = ? WHERE id = ? AND status = \'triage\'');
-    const t = now();
-    ids.forEach((id, i) => stmt.run(i, t, id));
-    this.event(null, 'triage_reordered', actor, { ids });
-    this.exportMarkdown('system');
-    return this.cards().filter(c => c.status === 'triage');
+    return this.tx(() => {
+      const triageIds = this.cards().filter(c => c.status === 'triage').map(c => c.id);
+      if (new Set(ids).size !== ids.length || ids.length !== triageIds.length || !triageIds.every(id => ids.includes(id))) {
+        throw httpError(400, 'Reorder must include every current Triage card exactly once');
+      }
+      const stmt = this.db.prepare('UPDATE cards SET position = ?, updated_at = ? WHERE id = ? AND status = \'triage\'');
+      const t = now();
+      ids.forEach((id, i) => stmt.run(i, t, id));
+      this.event(null, 'triage_reordered', actor, { ids });
+      this.exportMarkdown('system');
+      return this.cards().filter(c => c.status === 'triage');
+    });
   }
 
   validateCardIds(ids, selfId) {
@@ -429,6 +523,10 @@ export class RoadmapStore {
   }
 
   exportMarkdown(actor = 'system') {
+    return this.tx(() => this._exportMarkdown(actor));
+  }
+
+  _exportMarkdown(actor = 'system') {
     const cards = this.cards();
     const epics = this.epics();
     const byStatus = new Map(COLUMNS.map(c => [c.key, []]));

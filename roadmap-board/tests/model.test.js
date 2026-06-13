@@ -261,6 +261,64 @@ test('deleting an unknown epic throws 404', () => withStore((store) => {
   assert.throws(() => store.deleteEpic('EPIC-999'), /Unknown epic/);
 }));
 
+// Read epic-scoped events (card_id IS NULL) directly; cardEvents() only surfaces card history.
+function lastEpicEvent(store, epicId) {
+  const row = store.db
+    .prepare("SELECT event_type, payload FROM events WHERE card_id IS NULL AND json_extract(payload, '$.epic_id') = ? ORDER BY id DESC LIMIT 1")
+    .get(epicId);
+  return row ? { event_type: row.event_type, payload: JSON.parse(row.payload) } : null;
+}
+
+test('renaming an epic updates markdown and records the before/after title in the event', () => withStore((store, dir) => {
+  const epic = store.createEpic({ title: 'Old name', summary: 'Keep me' });
+  const renamed = store.updateEpic(epic.id, { title: 'New name' });
+  assert.equal(renamed.title, 'New name');
+  assert.equal(renamed.summary, 'Keep me'); // untouched fields survive
+
+  const event = lastEpicEvent(store, epic.id);
+  assert.equal(event.event_type, 'epic_updated');
+  assert.deepEqual(event.payload.fields, ['title']);
+  assert.equal(event.payload.renamed_from, 'Old name');
+  assert.equal(event.payload.renamed_to, 'New name');
+
+  const markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /New name/);
+  assert.doesNotMatch(markdown, /Old name/);
+}));
+
+test('summary- and sort_index-only updates log just the changed field without a rename payload', () => withStore((store) => {
+  const epic = store.createEpic({ title: 'Stable', summary: 'v1', sort_index: 3 });
+
+  store.updateEpic(epic.id, { summary: 'v2' });
+  let event = lastEpicEvent(store, epic.id);
+  assert.deepEqual(event.payload.fields, ['summary']);
+  assert.equal(event.payload.renamed_from, undefined);
+
+  const reordered = store.updateEpic(epic.id, { sort_index: 9 });
+  assert.equal(reordered.sort_index, 9);
+  event = lastEpicEvent(store, epic.id);
+  assert.deepEqual(event.payload.fields, ['sort_index']);
+}));
+
+test('a no-op epic update writes nothing — no event, no updated_at bump', () => withStore((store) => {
+  const epic = store.createEpic({ title: 'Inert', summary: 'same' });
+  const before = store.epic(epic.id).updated_at;
+  const result = store.updateEpic(epic.id, { title: 'Inert', summary: 'same' });
+  assert.equal(result.updated_at, before);
+  // Only the creation event exists; the no-op added none.
+  const count = store.db
+    .prepare("SELECT COUNT(*) AS n FROM events WHERE card_id IS NULL AND json_extract(payload, '$.epic_id') = ? AND event_type = 'epic_updated'")
+    .get(epic.id).n;
+  assert.equal(count, 0);
+}));
+
+test('updateEpic rejects unknown fields and blank titles, and 404s on unknown ids', () => withStore((store) => {
+  const epic = store.createEpic({ title: 'Guarded' });
+  assert.throws(() => store.updateEpic(epic.id, { name: 'typo' }), /Unknown epic field\(s\): name/);
+  assert.throws(() => store.updateEpic(epic.id, { title: '   ' }), /Title is required/);
+  assert.throws(() => store.updateEpic('EPIC-999', { title: 'x' }), /Unknown epic/);
+}));
+
 test('returns per-card event history newest-first and excludes unrelated events', () => withStore((store) => {
   const card = store.createTriage({ title: 'Trace me' });
   store.move(card.id, 'in_progress');

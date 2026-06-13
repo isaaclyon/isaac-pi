@@ -18,12 +18,12 @@
   - Cards: ROAD-012, ROAD-010, ROAD-011
 - **EPIC-004** — Robustness & tests
   - Summary: Keep the board from failing silently as it becomes load-bearing: API tests, UI error states, migration hardening.
-  - Progress: 1 / 3 (33%)
-  - Cards: ROAD-014, ROAD-015, ROAD-013
+  - Progress: 3 / 3 (100%)
+  - Cards: ROAD-013, ROAD-014, ROAD-015
 - **EPIC-005** — Epic depth
   - Summary: Deepen the grouping layer with metadata and agent-only management. No target dates; no manual reorder.
-  - Progress: 0 / 3 (0%)
-  - Cards: ROAD-016, ROAD-017, ROAD-018
+  - Progress: 1 / 3 (33%)
+  - Cards: ROAD-017, ROAD-018, ROAD-016
 
 ## Triage
 
@@ -31,16 +31,6 @@ _No cards._
 
 ## Backlog
 
-- **ROAD-014** — UI error and offline states
-  - Summary: Handle fetch failures in the client: load() ignores res.ok and the 2s poller swallows errors, so a downed server shows a blank board. Add an error/offline banner with retry.
-  - Epic: EPIC-004
-- **ROAD-015** — Migration and concurrency hardening
-  - Summary: Harden the SQLite forward-migration path and guard/document concurrent writers on the single WAL database. Add a migration test for older/partial schemas.
-  - Epic: EPIC-004
-- **ROAD-016** — Agent epic rename
-  - Summary: Expose epic rename via the agent path (updateEpic already supports title/summary); ensure CLI/API and event logging are clean. Browser stays read-only.
-  - Epic: EPIC-005
-  - Depends on: ROAD-009
 - **ROAD-017** — Agent epic reorder
   - Summary: Let agents reorder epics by setting sort_index (updateEpic already accepts it; add a clear reorder command/route). No manual drag in the browser.
   - Epic: EPIC-005
@@ -100,4 +90,14 @@ _No cards._
   - Depends on: ROAD-010, ROAD-012
 - **ROAD-013** — Server/API endpoint tests
   - Summary: DONE: Added tests/server.test.js — 8 tests covering all 8 Express routes (snapshot, events, agentUpdate, epic create/update/delete, assign-epic, move). Zero new deps: boots startServer on an ephemeral port and drives it over real HTTP with global fetch. Asserts happy paths, the httpError->HTTP status mapping via the error middleware (400/404), the {error} envelope, and agent-actor attribution. Full suite green: 27/27 (19 model + 8 server).
+  - Epic: EPIC-004
+- **ROAD-014** — UI error and offline states
+  - Summary: Handle fetch failures in the client: load() ignores res.ok and the 2s poller swallows errors, so a downed server shows a blank board. Add an error/offline banner with retry.
+  - Epic: EPIC-004
+- **ROAD-016** — Agent epic rename
+  - Summary: Hardened the agent epic-rename path (model.updateEpic + CLI epic-update + PATCH /api/epics/:id). updateEpic now whitelists title/summary/sort_index (400 on unknown keys), logs only fields that actually changed, short-circuits no-op patches (no event/updated_at churn), and records renamed_from/renamed_to for an auditable rename trail. Added model + server tests. Browser remains read-only.
+  - Epic: EPIC-005
+  - Depends on: ROAD-009
+- **ROAD-015** — Migration and concurrency hardening
+  - Summary: Hardened the SQLite forward-migration path and concurrent-writer safety on the single WAL database. Migrations are now versioned via PRAGMA user_version with an append-only, idempotent step list applied in transactions on open; legacy unversioned DBs upgrade with no data loss. All mutations run in BEGIN IMMEDIATE transactions (atomic row+event+markdown), with busy_timeout=5000 and synchronous=NORMAL so concurrent writers queue instead of failing. Added tests/migration.test.js covering partial/legacy/idempotent schemas and transaction rollback; documented the concurrency model in README.
   - Epic: EPIC-004

@@ -113,6 +113,10 @@ test('PATCH /api/epics/:id patches fields and validates inputs', () => withServe
   const badIndex = await req(base, 'PATCH', `/api/epics/${epic.id}`, { sort_index: 1.5 });
   assert.equal(badIndex.status, 400);
   assert.match(badIndex.json.error, /sort_index must be an integer/);
+
+  const unknownField = await req(base, 'PATCH', `/api/epics/${epic.id}`, { name: 'wrong key' });
+  assert.equal(unknownField.status, 400);
+  assert.match(unknownField.json.error, /Unknown epic field\(s\): name/);
 }));
 
 test('DELETE /api/epics/:id detaches member cards and 404s on unknown ids', () => withServer(async ({ base, store }) => {
