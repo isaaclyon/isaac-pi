@@ -39,6 +39,7 @@ function App() {
   const [openId, setOpenId] = useState(null);
   const [openEpicId, setOpenEpicId] = useState(null);
   const [focusEpicId, setFocusEpicId] = useState(null);
+  const [readyOnly, setReadyOnly] = useState(false);
   const [themePref, setThemePref] = useState(readThemePref);
   const toastTimer = useRef(null);
   const lastSnapshotRef = useRef(null);
@@ -93,12 +94,18 @@ function App() {
     return map;
   }, [data]);
 
+  // Board filters compose (AND): the epic focus and the ready-next toggle each narrow the
+  // same grouped view. Skip the work entirely when neither is active.
   const view = useMemo(() => {
-    if (!focusEpicId) return grouped;
+    if (!focusEpicId && !readyOnly) return grouped;
     const out = {};
-    for (const [key, cards] of Object.entries(grouped)) out[key] = cards.filter(c => c.epic_id === focusEpicId);
+    for (const [key, cards] of Object.entries(grouped)) {
+      out[key] = cards.filter(c => (!focusEpicId || c.epic_id === focusEpicId) && (!readyOnly || c.ready));
+    }
     return out;
-  }, [grouped, focusEpicId]);
+  }, [grouped, focusEpicId, readyOnly]);
+
+  const readyCount = useMemo(() => data.cards.filter(c => c.ready).length, [data.cards]);
 
   const epicsById = useMemo(() => Object.fromEntries(data.epics.map(epic => [epic.id, epic])), [data.epics]);
   const statusLabels = useMemo(() => Object.fromEntries(data.columns.map(c => [c.key, c.label])), [data.columns]);
@@ -177,16 +184,28 @@ function App() {
           <h1>Roadmap Board</h1>
           <p className="lede">Local planning board for shaping and shipping work.</p>
         </div>
-        <button
-          type="button"
-          className="ghost theme-toggle"
-          aria-label={`Theme: ${THEME_LABEL[themePref]}. Switch to ${THEME_LABEL[THEME_NEXT[themePref]]}.`}
-          title={`Theme: ${THEME_LABEL[themePref]}`}
-          onClick={() => setThemePref(p => THEME_NEXT[p])}
-        >
-          <span className="theme-icon" aria-hidden="true">{THEME_ICON[themePref]}</span>
-          {THEME_LABEL[themePref]}
-        </button>
+        <div className="header-controls">
+          <button
+            type="button"
+            className={`ghost ready-toggle${readyOnly ? ' is-active' : ''}`}
+            aria-pressed={readyOnly}
+            title="Show only cards whose dependencies are all completed"
+            onClick={() => setReadyOnly(v => !v)}
+          >
+            Ready next
+            <span className="count">{readyCount}</span>
+          </button>
+          <button
+            type="button"
+            className="ghost theme-toggle"
+            aria-label={`Theme: ${THEME_LABEL[themePref]}. Switch to ${THEME_LABEL[THEME_NEXT[themePref]]}.`}
+            title={`Theme: ${THEME_LABEL[themePref]}`}
+            onClick={() => setThemePref(p => THEME_NEXT[p])}
+          >
+            <span className="theme-icon" aria-hidden="true">{THEME_ICON[themePref]}</span>
+            {THEME_LABEL[themePref]}
+          </button>
+        </div>
       </div>
     </header>
 
@@ -273,6 +292,8 @@ function Card({ card, epic, onOpen }) {
         <span className="card-id">{card.id}</span>
         {epic && <span className="epic-chip" title={epic.title}>{epic.id}</span>}
       </div>
+      {card.ready && <span className="ready-chip" title="All dependencies completed">Ready</span>}
+      {card.dependency_blocked && <span className="blocked-chip" title="Waiting on incomplete dependencies">Waiting</span>}
     </div>
     <h3 className="card-title">{card.title}</h3>
     {card.summary && <p className="card-summary">{card.summary}</p>}
@@ -475,7 +496,7 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
     setDirection('');
   }
 
-  const hasProps = epic || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
+  const hasProps = epic || card.ready || card.dependency_blocked || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
 
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-label={`${card.id}: ${card.title}`} tabIndex={-1} ref={panelRef} onClick={e => e.stopPropagation()}>
@@ -492,6 +513,8 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
 
         {hasProps && <dl className="modal-props">
           {epic && <><dt>Epic</dt><dd><span className="epic-chip" title={epic.title}>{epic.id}</span><span className="prop-text">{epic.title}</span></dd></>}
+          {card.ready && <><dt>Ready</dt><dd><span className="ready-chip">Ready</span><span className="prop-text">All dependencies completed</span></dd></>}
+          {card.dependency_blocked && <><dt>Waiting</dt><dd><span className="blocked-chip">Waiting</span><span className="prop-text">Waiting on incomplete dependencies</span></dd></>}
           {card.depends_on.length > 0 && <><dt>Depends on</dt><dd className="prop-text">{card.depends_on.join(', ')}</dd></>}
           {card.enables.length > 0 && <><dt>Enables</dt><dd className="prop-text">{card.enables.join(', ')}</dd></>}
           {card.blocked_reason && <><dt>Blocked</dt><dd className="prop-text">{card.blocked_reason}</dd></>}

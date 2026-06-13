@@ -21,6 +21,8 @@ node roadmap-board/src/server/cli.js epic-add "Improve roadmap UX" "Group relate
 node roadmap-board/src/server/cli.js add "Try an idea" "Optional summary"
 node roadmap-board/src/server/cli.js assign-epic ROAD-001 EPIC-001
 node roadmap-board/src/server/cli.js move ROAD-001 in_progress
+node roadmap-board/src/server/cli.js ready        # cards whose dependencies are all completed
+node roadmap-board/src/server/cli.js blocked-deps # cards waiting on an incomplete dependency
 node roadmap-board/src/server/cli.js serve --port 4177
 ```
 

@@ -53,6 +53,124 @@ test('dependencies and enablements must reference existing cards', () => withSto
   assert.throws(() => store.agentUpdate(a.id, { depends_on: ['ROAD-999'] }), /Unknown card/);
 }));
 
+test('rejects depends_on/enables links that would form a dependency cycle', () => withStore((store) => {
+  const a = store.createTriage({ title: 'A' });
+  const b = store.createTriage({ title: 'B' });
+  const c = store.createTriage({ title: 'C' });
+  const d = store.createTriage({ title: 'D' });
+
+  // Direct cycle: A depends on B, then B depends on A.
+  store.agentUpdate(a.id, { depends_on: [b.id] });
+  assert.throws(() => store.agentUpdate(b.id, { depends_on: [a.id] }), /dependency cycle/);
+
+  // Transitive cycle across a chain: A -> B -> C, then C -> A.
+  store.agentUpdate(b.id, { depends_on: [c.id] });
+  assert.throws(() => store.agentUpdate(c.id, { depends_on: [a.id] }), /dependency cycle/);
+
+  // enables is the inverse edge: with A -> B already, A enables B adds B -> A and closes the cycle.
+  assert.throws(() => store.agentUpdate(a.id, { enables: [b.id] }), /dependency cycle/);
+
+  // The rejected update is not persisted.
+  assert.deepEqual(store.card(a.id).depends_on, [b.id]);
+  assert.deepEqual(store.card(a.id).enables, []);
+
+  // A non-cyclic link still succeeds (D depends on the existing A -> B -> C chain).
+  assert.deepEqual(store.agentUpdate(d.id, { depends_on: [a.id] }).depends_on, [a.id]);
+}));
+
+test('derives ready-next from completed dependencies', () => withStore((store) => {
+  const dep1 = store.createTriage({ title: 'Dep 1' });
+  const dep2 = store.createTriage({ title: 'Dep 2' });
+  const gated = store.createTriage({ title: 'Gated work' });
+  const free = store.createTriage({ title: 'No-dep work' });
+  store.agentUpdate(gated.id, { depends_on: [dep1.id, dep2.id] });
+
+  // Gated by two incomplete deps -> not ready.
+  assert.equal(store.card(gated.id).ready, false);
+  // No dependencies -> never "ready next" (it was never waiting on anything).
+  assert.equal(store.card(free.id).ready, false);
+
+  // Completing only one dependency is not enough.
+  store.move(dep1.id, 'completed');
+  assert.equal(store.card(gated.id).ready, false);
+
+  // Completing the last outstanding dependency flips it ready (liveness).
+  store.move(dep2.id, 'completed');
+  assert.equal(store.card(gated.id).ready, true);
+
+  // A completed card is never ready, even with all deps completed.
+  store.move(gated.id, 'completed');
+  assert.equal(store.card(gated.id).ready, false);
+}));
+
+test('derives dependency-blocked as the inverse of ready, independent of blocked status', () => withStore((store) => {
+  const dep1 = store.createTriage({ title: 'Dep 1' });
+  const dep2 = store.createTriage({ title: 'Dep 2' });
+  const gated = store.createTriage({ title: 'Gated work' });
+  const free = store.createTriage({ title: 'No-dep work' });
+  store.agentUpdate(gated.id, { depends_on: [dep1.id, dep2.id] });
+
+  // Any incomplete dependency -> blocked, and never simultaneously ready.
+  assert.equal(store.card(gated.id).dependency_blocked, true);
+  assert.equal(store.card(gated.id).ready, false);
+  // No dependencies -> never dependency-blocked (it was never waiting on anything).
+  assert.equal(store.card(free.id).dependency_blocked, false);
+
+  // One outstanding dependency is enough to keep it blocked.
+  store.move(dep1.id, 'completed');
+  assert.equal(store.card(gated.id).dependency_blocked, true);
+
+  // Completing the last dependency flips blocked off and ready on (exact complement).
+  store.move(dep2.id, 'completed');
+  assert.equal(store.card(gated.id).dependency_blocked, false);
+  assert.equal(store.card(gated.id).ready, true);
+
+  // A completed card is never dependency-blocked, even with incomplete deps.
+  const reopened = store.createTriage({ title: 'Reopened dep' });
+  store.agentUpdate(gated.id, { depends_on: [reopened.id] });
+  store.move(gated.id, 'completed');
+  assert.equal(store.card(gated.id).dependency_blocked, false);
+}));
+
+test('dependency-blocked is orthogonal to the blocked status column', () => withStore((store) => {
+  const dep = store.createTriage({ title: 'Dependency' });
+  const waiting = store.createTriage({ title: 'Waiting on dep' });
+  const manuallyBlocked = store.createTriage({ title: 'Manually blocked' });
+  store.agentUpdate(waiting.id, { depends_on: [dep.id] });
+  store.agentUpdate(manuallyBlocked.id, { depends_on: [dep.id] });
+
+  // In the Blocked column for an unrelated reason but the dep is incomplete -> still dependency-blocked.
+  store.move(manuallyBlocked.id, 'blocked', { blocked_reason: 'unrelated reason' });
+  assert.equal(store.card(manuallyBlocked.id).dependency_blocked, true);
+
+  // Completing the dep clears the derived flag even while it stays in the Blocked column.
+  store.move(dep.id, 'completed');
+  assert.equal(store.card(manuallyBlocked.id).dependency_blocked, false);
+  assert.equal(store.card(manuallyBlocked.id).status, 'blocked');
+
+  // dependencyBlockedCards returns exactly the derived set, regardless of column.
+  assert.deepEqual(store.dependencyBlockedCards().map(c => c.id), []);
+  const stillWaiting = store.createTriage({ title: 'Still waiting' });
+  store.agentUpdate(stillWaiting.id, { depends_on: [waiting.id] });
+  assert.deepEqual(store.dependencyBlockedCards().map(c => c.id).sort(), [stillWaiting.id].sort());
+}));
+
+test('readyCards returns exactly the ready set', () => withStore((store) => {
+  const dep = store.createTriage({ title: 'Dependency' });
+  const ready = store.createTriage({ title: 'Unblocked' });
+  store.createTriage({ title: 'Free agent' }); // no deps -> excluded
+  const stillGated = store.createTriage({ title: 'Still gated' });
+
+  store.agentUpdate(ready.id, { depends_on: [dep.id] });
+  store.agentUpdate(stillGated.id, { depends_on: [dep.id] });
+  store.move(dep.id, 'completed');
+  store.move(stillGated.id, 'blocked', { blocked_reason: 'unrelated reason' });
+
+  // dep is completed, so `ready` is unblocked; stillGated is also unblocked by deps
+  // (any non-completed status qualifies) -> both surface, free agent and dep do not.
+  assert.deepEqual(store.readyCards().map(c => c.id).sort(), [ready.id, stillGated.id].sort());
+}));
+
 test('users can delete Triage cards but not cards in other columns', () => withStore((store, dir) => {
   const triaged = store.createTriage({ title: 'Disposable idea' });
   const result = store.deleteCard(triaged.id, 'user');

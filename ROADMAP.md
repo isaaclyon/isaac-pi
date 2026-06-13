@@ -14,8 +14,8 @@
   - Cards: ROAD-009, ROAD-008, ROAD-006
 - **EPIC-003** — Dependencies & sequencing
   - Summary: Turn the existing depends_on/enables data into planning value: ready-next, blocked-by-dependency, cycle safety.
-  - Progress: 0 / 3 (0%)
-  - Cards: ROAD-010, ROAD-011, ROAD-012
+  - Progress: 3 / 3 (100%)
+  - Cards: ROAD-012, ROAD-010, ROAD-011
 - **EPIC-004** — Robustness & tests
   - Summary: Keep the board from failing silently as it becomes load-bearing: API tests, UI error states, migration hardening.
   - Progress: 0 / 3 (0%)
@@ -31,15 +31,6 @@ _No cards._
 
 ## Backlog
 
-- **ROAD-010** — Ready-next view
-  - Summary: Surface cards whose depends_on targets are all completed (and that aren't completed themselves). Expose as a UI filter/badge and a CLI query. Uses existing depends_on data, no new schema.
-  - Epic: EPIC-003
-- **ROAD-011** — Auto-flag dependency-blocked cards
-  - Summary: Visually mark a card as effectively blocked when any depends_on target isn't completed, distinct from the explicit 'blocked' status. Derived at render time, not stored.
-  - Epic: EPIC-003
-- **ROAD-012** — Dependency cycle detection
-  - Summary: Reject a depends_on/enables link that would form a cycle. model.js validateCardIds already checks existence and self-links but not cycles; extend agentUpdate validation.
-  - Epic: EPIC-003
 - **ROAD-013** — Server/API endpoint tests
   - Summary: Add tests for the Express routes in server.js (snapshot, agentUpdate, move, epic create/update, assign). Only model.js is covered today.
   - Epic: EPIC-004
@@ -52,9 +43,11 @@ _No cards._
 - **ROAD-016** — Agent epic rename
   - Summary: Expose epic rename via the agent path (updateEpic already supports title/summary); ensure CLI/API and event logging are clean. Browser stays read-only.
   - Epic: EPIC-005
+  - Depends on: ROAD-009
 - **ROAD-017** — Agent epic reorder
   - Summary: Let agents reorder epics by setting sort_index (updateEpic already accepts it; add a clear reorder command/route). No manual drag in the browser.
   - Epic: EPIC-005
+  - Depends on: ROAD-009
 - **ROAD-018** — Epic color accents
   - Summary: Give each epic an optional color used on its chips and the progress rail. Add a nullable color field on epics; render in main.jsx/styles.css.
   - Epic: EPIC-005
@@ -98,3 +91,13 @@ _No cards._
 - **ROAD-006** — Portable roadmap board skill
   - Summary: Ship a portable Claude Code skill (not MCP, no server) that drives the board through cli.js. A self-contained resolver locates the target board (.pi/roadmap/roadmap.sqlite, walking up from cwd with a ROADMAP_PROJECT_ROOT override) and the CLI, then thin helper scripts wrap the existing write verbs (update/move/assign/epic CRUD/delete/reorder/events) and add token-light reads: get <id> (card + its events) and a filtered list (by status/epic) instead of the full snapshot dump. Surface valid statuses and parsed validation errors. Mutations already auto-export ROADMAP.md, so no manual export step. Requires Node 22+ (node:sqlite).
   - Epic: EPIC-002
+- **ROAD-012** — Dependency cycle detection
+  - Summary: Reject a depends_on/enables link that would form a cycle. model.js validateCardIds already checks existence and self-links but not cycles; extend agentUpdate validation.
+  - Epic: EPIC-003
+- **ROAD-010** — Ready-next view
+  - Summary: Surface cards whose depends_on targets are all completed (and that aren't completed themselves). Expose as a UI filter/badge and a CLI query. Uses existing depends_on data, no new schema.
+  - Epic: EPIC-003
+- **ROAD-011** — Auto-flag dependency-blocked cards
+  - Summary: Visually mark a card as effectively blocked when any depends_on target isn't completed, distinct from the explicit 'blocked' status. Derived at render time, not stored.
+  - Epic: EPIC-003
+  - Depends on: ROAD-010, ROAD-012

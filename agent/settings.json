@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.79.2",
+  "lastChangelogVersion": "0.79.3",
   "packages": [
     "npm:lsp-pi",
     "npm:pi-schedule-prompt",
