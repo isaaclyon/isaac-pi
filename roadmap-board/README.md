@@ -9,6 +9,8 @@ A local, per-project roadmap board for Pi-driven work.
 - Fixed columns: Triage, Backlog, Up next, In progress, Blocked, Review, Completed
 - The browser is read-only: users refine cards by copying a prompt for an agent (Refine + Brainstorm/Plan/Execute/Review)
 - All card changes — create, edit, move, reorder, delete — flow through agents via the CLI/API validation layer
+- Cards can carry ordered supporting document references (`title`, `href`, optional `kind`/`note`); the board stores references, not uploaded file blobs
+- Cards can carry a transient **ownership claim** (`claimed_by`, `claimed_at`, optional note) so concurrent agents see which session is actively holding a card; claims live in the DB and UI but are intentionally excluded from the committed `ROADMAP.md`
 
 ## Usage
 
@@ -19,8 +21,11 @@ cd ..
 node roadmap-board/src/server/cli.js init
 node roadmap-board/src/server/cli.js epic-add "Improve roadmap UX" "Group related cards under progress rails"
 node roadmap-board/src/server/cli.js add "Try an idea" "Optional summary"
+node roadmap-board/src/server/cli.js attach-doc ROAD-001 "Review notes" docs/review.md review
 node roadmap-board/src/server/cli.js assign-epic ROAD-001 EPIC-001
 node roadmap-board/src/server/cli.js move ROAD-001 in_progress
+node roadmap-board/src/server/cli.js claim ROAD-001 alice "wiring up the API"  # active ownership claim
+node roadmap-board/src/server/cli.js release ROAD-001 alice                     # drop the claim
 node roadmap-board/src/server/cli.js ready        # cards whose dependencies are all completed
 node roadmap-board/src/server/cli.js blocked-deps # cards waiting on an incomplete dependency
 node roadmap-board/src/server/cli.js serve --port 4177
@@ -44,3 +49,25 @@ After `npm run build`, `node roadmap-board/src/server/cli.js serve --port 4177` 
 ## Fresh clones and worktrees
 
 The SQLite database is intentionally local. A fresh clone starts with an empty editable board and treats any committed `ROADMAP.md` as a read-only snapshot. Card IDs are sequential within the local database. If multiple worktrees need independent roadmaps, run the CLI from each worktree root.
+
+## Concurrency model
+
+The board is a single SQLite database in WAL mode. It is safe to run CLI commands (short-lived processes) alongside a long-running `serve` process against the same database — they coordinate through SQLite itself, no extra lock files:
+
+- **WAL** lets any number of readers run concurrently with a single writer, so reads never block.
+- **One writer at a time.** A second writer does not fail — `PRAGMA busy_timeout = 5000` makes it wait up to 5s for the write lock. Because mutations are tiny and fast, the wait is effectively imperceptible.
+- **Every mutation is one transaction.** Each create / update / move / delete / reorder wraps its row writes, its event-log row, and the `ROADMAP.md` re-export in a single `BEGIN IMMEDIATE … COMMIT`. A crash or a rejected validation rolls the whole thing back — you never get a half-applied change, an orphaned event, or a burned card ID. `IMMEDIATE` takes the write lock at the start of the transaction, so writers queue cleanly instead of deadlocking on a lock upgrade.
+- **`ROADMAP.md` is last-writer-wins.** It is a generated artifact derived from the database, regenerated inside the same transaction as the change that triggered it. If two writers commit back-to-back, the file reflects whichever committed last — which is always a complete, consistent snapshot, never a partial one. The database, not the markdown, is the source of truth.
+
+### Ownership claims
+
+`claim <id> [owner] [note]` / `release <id> [owner]` let concurrent agents signal which session is actively working a card. A claim is **advisory coordination, not a lock** — it never blocks a write, it just records `claimed_by` / `claimed_at` so other sessions (and the live board) can see the card is taken.
+
+- **Owner is an opaque string.** The Pi extension passes the session id; the CLI defaults to `$ROADMAP_SESSION_ID`, or you can pass any label (`alice`). The board does not interpret it.
+- **Claiming a held card is guarded.** A different owner claiming an already-claimed card gets a `409` unless they pass `--force` (which records `stolen_from` in the event log). Re-claiming as the same owner just refreshes the note. `release` has the symmetric guard: a mismatched owner needs `--force`.
+- **Claims are transient and excluded from `ROADMAP.md`.** Like the gitignored `.server.json`, claim state is per-session live coordination, not part of the committed snapshot — exporting it would churn the shared file with stale session ids. It lives in SQLite, the `/api/roadmap` feed, the read-only UI chip, and the event log only.
+- **Sessions release their own claims on shutdown.** The Pi extension's `session_shutdown` hook releases every card still claimed by the exiting session, so a crashed or closed session does not leave cards looking permanently held.
+
+## Schema migrations
+
+The schema is versioned with `PRAGMA user_version` and upgraded forward automatically on every `openRoadmap`. Migrations are an ordered, append-only list (`MIGRATIONS` in `src/server/model.js`); on open, every step past the database's current version runs in its own transaction and the version is stamped. Each step is idempotent, so a database created before versioning existed (`user_version` 0, full-but-unversioned) replays the chain safely and converges on the current schema with no data loss. To evolve the schema, **append** a new migration step — never edit or reorder existing ones.

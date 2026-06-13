@@ -22,6 +22,34 @@ function readThemePref() {
   return 'system';
 }
 
+// Session/owner ids can be long opaque uuids; show a readable prefix on the chip and keep the full
+// value on the title attribute for hover/inspection. Short human labels pass through untouched.
+function shortOwner(owner) {
+  if (!owner) return '';
+  return owner.length > 12 ? `${owner.slice(0, 8)}…` : owner;
+}
+
+// Compact relative age for a claim ("just now", "5m", "3h", "2d"). Claims are live state, so an
+// absolute timestamp would read as stale; the elapsed time answers "is this claim still warm?".
+function formatClaimAge(iso) {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.round(hrs / 24)}d`;
+}
+
+function claimTitle(card) {
+  const parts = [`Claimed by ${card.claimed_by}`];
+  if (card.claimed_at) parts.push(`since ${new Date(card.claimed_at).toLocaleString()}`);
+  if (card.claim_note) parts.push(`— ${card.claim_note}`);
+  return parts.join(' ');
+}
+
 const EMPTY_HINTS = {
   triage: 'No triage cards yet — an agent adds them.',
   backlog: 'Nothing parked here yet.',
@@ -36,11 +64,17 @@ function App() {
   const [data, setData] = useState({ columns: [], prompts: {}, epics: [], cards: [] });
   const [toast, setToast] = useState(null);
   const [collapsedCompleted, setCollapsedCompleted] = useState(true);
+  const [collapsedArchived, setCollapsedArchived] = useState(true);
   const [openId, setOpenId] = useState(null);
   const [openEpicId, setOpenEpicId] = useState(null);
   const [focusEpicId, setFocusEpicId] = useState(null);
   const [readyOnly, setReadyOnly] = useState(false);
   const [themePref, setThemePref] = useState(readThemePref);
+  // Connection health: null = healthy. A non-null string is the banner message. `loaded` flips true
+  // after the first successful fetch and never back — it's how we tell "never reached the server"
+  // (full error state) apart from "had the board, then lost the connection" (stale board + banner).
+  const [connError, setConnError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const toastTimer = useRef(null);
   const lastSnapshotRef = useRef(null);
 
@@ -64,27 +98,61 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }
 
-  async function load() {
+  // One fetch path for both the initial load and the 2s poll, so res.ok and network rejections are
+  // handled identically. Returns the raw snapshot text; throws on any non-OK response.
+  async function fetchSnapshot() {
     const res = await fetch('/api/roadmap');
-    const text = await res.text();
-    lastSnapshotRef.current = text;
-    setData(JSON.parse(text));
+    if (!res.ok) throw new Error(`Server responded ${res.status}`);
+    return res.text();
+  }
+
+  // Apply a freshly fetched snapshot, skipping the re-render when nothing changed. Centralised so the
+  // load and poll paths agree on the diff check and on clearing the error/loaded flags on success.
+  function applySnapshot(text) {
+    if (text !== lastSnapshotRef.current) {
+      lastSnapshotRef.current = text;
+      setData(JSON.parse(text));
+    }
+    setLoaded(true);
+    setConnError(null);
+  }
+
+  // Network errors carry no useful HTTP status, so lean on navigator.onLine to phrase the banner.
+  function connMessage() {
+    return navigator.onLine ? "Can't reach the roadmap server." : 'You appear to be offline.';
+  }
+
+  // Initial load and the manual Retry share this. On failure the existing `data` is left in place —
+  // a stale board beats a blank one — and the banner explains why.
+  async function load() {
+    try { applySnapshot(await fetchSnapshot()); }
+    catch { setConnError(connMessage()); }
   }
   useEffect(() => { load(); }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   // Pick up out-of-band changes (e.g. an agent moving a card via the CLI) without a manual refresh.
-  // Only re-render when the snapshot truly changed.
+  // Doubles as the auto-recovery loop: a failed poll raises the banner, the next good one clears it,
+  // so a downed-then-restored server heals within one interval with no user action.
   useEffect(() => {
     const timer = setInterval(async () => {
-      const res = await fetch('/api/roadmap');
-      if (!res.ok) return;
-      const text = await res.text();
-      if (text === lastSnapshotRef.current) return;
-      lastSnapshotRef.current = text;
-      setData(JSON.parse(text));
+      try { applySnapshot(await fetchSnapshot()); }
+      catch { setConnError(connMessage()); }
     }, 2000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Instant feedback on connectivity flips: surface the banner the moment the OS reports offline, and
+  // trigger an immediate refresh on reconnect rather than waiting up to 2s for the next poll.
+  useEffect(() => {
+    const onOnline = () => load();
+    const onOffline = () => setConnError('You appear to be offline.');
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
   }, []);
 
   const grouped = useMemo(() => {
@@ -108,6 +176,10 @@ function App() {
   const readyCount = useMemo(() => data.cards.filter(c => c.ready).length, [data.cards]);
 
   const epicsById = useMemo(() => Object.fromEntries(data.epics.map(epic => [epic.id, epic])), [data.epics]);
+  // Active epics fill the rail; archived ones drop into a collapsed group at the bottom. Archiving is
+  // a CLI/skill action — the board stays read-only — so the UI only reflects archived_at, never sets it.
+  const activeEpics = useMemo(() => data.epics.filter(epic => !epic.archived_at), [data.epics]);
+  const archivedEpics = useMemo(() => data.epics.filter(epic => epic.archived_at), [data.epics]);
   const statusLabels = useMemo(() => Object.fromEntries(data.columns.map(c => [c.key, c.label])), [data.columns]);
   const openCard = useMemo(() => data.cards.find(c => c.id === openId) ?? null, [data.cards, openId]);
   const openEpic = useMemo(() => data.epics.find(e => e.id === openEpicId) ?? null, [data.epics, openEpicId]);
@@ -209,13 +281,16 @@ function App() {
       </div>
     </header>
 
+    {connError && loaded && <ConnBanner message={connError} onRetry={load} />}
+
+    {connError && !loaded ? <ConnBanner message={connError} onRetry={load} full /> : <>
     <section className="epic-rail" aria-label="Epic progress">
       <div className="epic-rail-head">
         <h2>Epics</h2>
-        <span className="count">{data.epics.length}</span>
+        <span className="count">{activeEpics.length}</span>
         {focusEpicId && <button type="button" className="epic-clear" onClick={() => setFocusEpicId(null)}>Showing {focusEpicId} · clear</button>}
       </div>
-      {data.epics.length === 0 ? <p className="muted">No epics yet.</p> : data.epics.map(epic =>
+      {activeEpics.length === 0 ? <p className="muted">No epics yet.</p> : activeEpics.map(epic =>
         <EpicRow
           key={epic.id}
           epic={epic}
@@ -225,6 +300,25 @@ function App() {
           onOpen={() => setOpenEpicId(epic.id)}
         />
       )}
+      {archivedEpics.length > 0 && <div className="epic-archived">
+        <div className="epic-archived-head">
+          <h3>Archived</h3>
+          <span className="count">{archivedEpics.length}</span>
+          <button type="button" className="collapse" onClick={() => setCollapsedArchived(v => !v)}>{collapsedArchived ? 'Show' : 'Hide'}</button>
+        </div>
+        {collapsedArchived
+          ? <p className="muted">{archivedEpics.length} archived epic{archivedEpics.length === 1 ? '' : 's'} hidden.</p>
+          : archivedEpics.map(epic =>
+            <EpicRow
+              key={epic.id}
+              epic={epic}
+              active={focusEpicId === epic.id}
+              dimmed={!!focusEpicId && focusEpicId !== epic.id}
+              onSelect={() => setFocusEpicId(id => id === epic.id ? null : epic.id)}
+              onOpen={() => setOpenEpicId(epic.id)}
+            />
+          )}
+      </div>}
     </section>
 
     <div className="board-scroll">
@@ -255,6 +349,7 @@ function App() {
         })}
       </section>
     </div>
+    </>}
 
     {openEpic && <EpicModal
       epic={openEpic}
@@ -278,10 +373,27 @@ function App() {
   </main>;
 }
 
+// Connection failure surface. Two shapes off one component: inline (a strip above a still-rendered,
+// now-stale board) and `full` (a centred panel that stands in for the board when we never reached the
+// server). role="alert" + assertive so the failure is announced the moment it appears; the Retry
+// button calls load() directly, though the 2s poll also clears the banner on its own once the server
+// returns.
+function ConnBanner({ message, onRetry, full = false }) {
+  return <div className={`conn-banner${full ? ' conn-banner-full' : ''}`} role="alert" aria-live="assertive">
+    <div className="conn-banner-copy">
+      <strong>{full ? "Couldn't load the roadmap" : 'Connection lost'}</strong>
+      <span>{message}{!full && ' Showing the last loaded board.'}</span>
+    </div>
+    <button type="button" className="primary" onClick={onRetry}>Retry</button>
+  </div>;
+}
+
 function Card({ card, epic, onOpen }) {
+  const documents = Array.isArray(card.documents) ? card.documents : [];
   return <article
     className="card"
     data-card-id={card.id}
+    data-claimed={card.claimed_by ? 'true' : undefined}
     role="button"
     tabIndex={0}
     onClick={onOpen}
@@ -292,10 +404,16 @@ function Card({ card, epic, onOpen }) {
         <span className="card-id">{card.id}</span>
         {epic && <span className="epic-chip" title={epic.title}>{epic.id}</span>}
       </div>
+      {documents.length > 0 && <span className="doc-chip" title={`${documents.length} document${documents.length === 1 ? '' : 's'}`}>Docs {documents.length}</span>}
       {card.ready && <span className="ready-chip" title="All dependencies completed">Ready</span>}
       {card.dependency_blocked && <span className="blocked-chip" title="Waiting on incomplete dependencies">Waiting</span>}
     </div>
     <h3 className="card-title">{card.title}</h3>
+    {card.claimed_by && <p className="claim-line" title={claimTitle(card)}>
+      <span aria-hidden="true">🔒</span>
+      <span>{shortOwner(card.claimed_by)}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}</span>
+      {card.claim_note && <span className="claim-line-note">— {card.claim_note}</span>}
+    </p>}
     {card.summary && <p className="card-summary">{card.summary}</p>}
     {(card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason) && <dl>
       {card.depends_on.length > 0 && <><dt>Depends on</dt><dd>{card.depends_on.join(', ')}</dd></>}
@@ -336,7 +454,10 @@ function EpicRow({ epic, active, dimmed, onSelect, onOpen }) {
     <div className="epic-meter" role="progressbar" aria-valuenow={epic.percent_complete} aria-valuemin={0} aria-valuemax={100} aria-label={`${epic.title} progress`}>
       <span style={{ width: `${epic.percent_complete}%` }} />
     </div>
-    <span className="id-tag">{epic.id}</span>
+    <span className="epic-id-cell">
+      <span className="id-tag">{epic.id}</span>
+      {epic.is_complete && <span className="done-chip" title="All cards completed">Done</span>}
+    </span>
     <div className="epic-copy">
       <h3>{epic.title}</h3>
       {epic.summary && <p>{epic.summary}</p>}
@@ -447,6 +568,8 @@ function describeEvent(event, statusLabels) {
     case 'card_created': return `Created in ${label(p.status)}`;
     case 'card_moved': return `Moved from ${label(p.from)} to ${label(p.to)}`;
     case 'card_deleted': return `Deleted from ${label(p.status)}`;
+    case 'card_claimed': return p.stolen_from ? `Claimed by ${p.owner} (stole from ${p.stolen_from})` : `Claimed by ${p.owner}`;
+    case 'card_released': return p.owner ? `Released by ${p.owner}` : 'Released';
     case 'card_updated': {
       const fields = p.fields ?? [];
       if (fields.length === 1 && fields[0] === 'epic_id') {
@@ -468,22 +591,27 @@ function formatEventTime(iso) {
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function isUrl(href) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(href);
+}
+
 function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, onClose }) {
   const [direction, setDirection] = useState('');
-  const [events, setEvents] = useState(null); // null = loading, [] = none/unavailable, [...] = loaded
+  const [events, setEvents] = useState(null); // null = loading, 'error' = fetch failed, [] = none, [...] = loaded
   const panelRef = useRef(null);
 
   useEffect(() => { setDirection(''); }, [card.id]);
 
   // Lazy-load history when the card changes. Kept off the snapshot so the 2s board poll stays cheap
-  // as the events table grows. A fetch failure degrades to an empty list (full offline UX is ROAD-014).
+  // as the events table grows. A fetch failure flags 'error' so the body can say so explicitly rather
+  // than masquerading as an empty history.
   useEffect(() => {
     let alive = true;
     setEvents(null);
     fetch(`/api/cards/${card.id}/events`)
       .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
       .then(rows => { if (alive) setEvents(rows); })
-      .catch(() => { if (alive) setEvents([]); });
+      .catch(() => { if (alive) setEvents('error'); });
     return () => { alive = false; };
   }, [card.id]);
 
@@ -496,7 +624,8 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
     setDirection('');
   }
 
-  const hasProps = epic || card.ready || card.dependency_blocked || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
+  const hasProps = epic || card.claimed_by || card.ready || card.dependency_blocked || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
+  const documents = Array.isArray(card.documents) ? card.documents : [];
 
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-label={`${card.id}: ${card.title}`} tabIndex={-1} ref={panelRef} onClick={e => e.stopPropagation()}>
@@ -513,6 +642,7 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
 
         {hasProps && <dl className="modal-props">
           {epic && <><dt>Epic</dt><dd><span className="epic-chip" title={epic.title}>{epic.id}</span><span className="prop-text">{epic.title}</span></dd></>}
+          {card.claimed_by && <><dt>Claimed</dt><dd><span className="claim-chip" title={claimTitle(card)}>🔒 {shortOwner(card.claimed_by)}</span><span className="prop-text">{card.claimed_by}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}{card.claim_note ? ` — ${card.claim_note}` : ''}</span></dd></>}
           {card.ready && <><dt>Ready</dt><dd><span className="ready-chip">Ready</span><span className="prop-text">All dependencies completed</span></dd></>}
           {card.dependency_blocked && <><dt>Waiting</dt><dd><span className="blocked-chip">Waiting</span><span className="prop-text">Waiting on incomplete dependencies</span></dd></>}
           {card.depends_on.length > 0 && <><dt>Depends on</dt><dd className="prop-text">{card.depends_on.join(', ')}</dd></>}
@@ -523,10 +653,21 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
         <p className="modal-section-label">Description</p>
         {card.summary ? <p className="modal-summary">{card.summary}</p> : <p className="empty">No description yet.</p>}
 
+        <p className="modal-section-label">Documents</p>
+        {documents.length === 0 ? <p className="empty">No documents attached.</p> : <ul className="card-documents">
+          {documents.map((document, index) => <li key={`${document.href}-${index}`}>
+            <a href={document.href} target={isUrl(document.href) ? '_blank' : undefined} rel={isUrl(document.href) ? 'noreferrer' : undefined}>{document.title}</a>
+            {document.kind && <span className="doc-kind">{document.kind}</span>}
+            {document.note && <span className="doc-note">{document.note}</span>}
+            {!isUrl(document.href) && <code>{document.href}</code>}
+          </li>)}
+        </ul>}
+
         <p className="modal-section-label">History</p>
         {events === null ? <p className="empty">Loading history…</p>
-          : events.length === 0 ? <p className="empty">No history yet.</p>
-            : <ul className="card-history">
+          : events === 'error' ? <p className="empty">History unavailable — couldn't reach the server.</p>
+            : events.length === 0 ? <p className="empty">No history yet.</p>
+              : <ul className="card-history">
               {events.map(event =>
                 <li key={event.id}>
                   <span className={`history-actor actor-${event.actor_type}`}>{event.actor_type}</span>

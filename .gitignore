@@ -22,6 +22,9 @@ agent/npm/
 !.pi/roadmap/
 .pi/roadmap/roadmap.sqlite*
 !.pi/roadmap/prompts.json
+# Extension server-lifecycle state (transient; per-machine)
+.pi/roadmap/.server.json
+.pi/roadmap/.server.lock
 
 # SQLite WAL/SHM sidecars (transient; reconstructed on open)
 *.sqlite-shm

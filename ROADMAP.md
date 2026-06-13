@@ -4,53 +4,43 @@
 
 ## Epics
 
+- **EPIC-006** — Agent work visibility
+  - Summary: Make agent work visible on the roadmap by connecting cards to active Pi sessions and showing what those sessions are doing over time.
+  - Progress: 0 / 2 (0%)
+  - Cards: ROAD-024, ROAD-025
+- **EPIC-007** — Card Data Enhancement
+  - Summary: Enhance roadmap card data with richer metadata and supporting artifacts.
+  - Progress: 0 / 1 (0%)
+  - Cards: ROAD-023
+
+## Archived Epics
+
 - **EPIC-001** — Board UX polish
-  - Summary: Refinements to the read-only board UI: theming, keyboard navigation, search, first-load, and accessibility.
   - Progress: 4 / 4 (100%)
   - Cards: ROAD-001, ROAD-019, ROAD-005, ROAD-002
 - **EPIC-002** — Frictionless agent loop
-  - Summary: Close the gap between the board and the agent: native API access, deep links, history, and the missing epic delete.
   - Progress: 3 / 3 (100%)
   - Cards: ROAD-009, ROAD-008, ROAD-006
 - **EPIC-003** — Dependencies & sequencing
-  - Summary: Turn the existing depends_on/enables data into planning value: ready-next, blocked-by-dependency, cycle safety.
   - Progress: 3 / 3 (100%)
   - Cards: ROAD-012, ROAD-010, ROAD-011
 - **EPIC-004** — Robustness & tests
-  - Summary: Keep the board from failing silently as it becomes load-bearing: API tests, UI error states, migration hardening.
-  - Progress: 0 / 3 (0%)
+  - Progress: 3 / 3 (100%)
   - Cards: ROAD-013, ROAD-014, ROAD-015
 - **EPIC-005** — Epic depth
-  - Summary: Deepen the grouping layer with metadata and agent-only management. No target dates; no manual reorder.
-  - Progress: 0 / 3 (0%)
-  - Cards: ROAD-016, ROAD-017, ROAD-018
+  - Progress: 2 / 2 (100%)
+  - Cards: ROAD-016, ROAD-017
 
 ## Triage
 
-_No cards._
+- **ROAD-025** — Show a live agent activity timeline
+  - Summary: Provide a chronological feed of active Pi session activity so the roadmap can show what agents are doing now and what just happened, including current steps, notable tool/status events, stalls, and final results. This should complement card ownership claims by making claimed work observable over time.
+  - Epic: EPIC-006
+  - Depends on: ROAD-024
 
 ## Backlog
 
-- **ROAD-013** — Server/API endpoint tests
-  - Summary: Add tests for the Express routes in server.js (snapshot, agentUpdate, move, epic create/update, assign). Only model.js is covered today.
-  - Epic: EPIC-004
-- **ROAD-014** — UI error and offline states
-  - Summary: Handle fetch failures in the client: load() ignores res.ok and the 2s poller swallows errors, so a downed server shows a blank board. Add an error/offline banner with retry.
-  - Epic: EPIC-004
-- **ROAD-015** — Migration and concurrency hardening
-  - Summary: Harden the SQLite forward-migration path and guard/document concurrent writers on the single WAL database. Add a migration test for older/partial schemas.
-  - Epic: EPIC-004
-- **ROAD-016** — Agent epic rename
-  - Summary: Expose epic rename via the agent path (updateEpic already supports title/summary); ensure CLI/API and event logging are clean. Browser stays read-only.
-  - Epic: EPIC-005
-  - Depends on: ROAD-009
-- **ROAD-017** — Agent epic reorder
-  - Summary: Let agents reorder epics by setting sort_index (updateEpic already accepts it; add a clear reorder command/route). No manual drag in the browser.
-  - Epic: EPIC-005
-  - Depends on: ROAD-009
-- **ROAD-018** — Epic color accents
-  - Summary: Give each epic an optional color used on its chips and the progress rail. Add a nullable color field on epics; render in main.jsx/styles.css.
-  - Epic: EPIC-005
+_No cards._
 
 ## Up next
 
@@ -66,7 +56,37 @@ _No cards._
 
 ## Review
 
-_No cards._
+- **ROAD-023** — Attach documents to roadmap cards
+  - Summary: Done: roadmap cards now support ordered supporting document references (title + href, optional kind/note) without storing uploaded blobs.
+
+Implemented:
+- Schema/model: added cards.documents JSON storage with forward migration, hydration defaults, strict validation, markdown export, and attachDocument/detachDocument helpers in roadmap-board/src/server/model.js.
+- CLI/API: agent updates accept documents; CLI supports attach-doc/detach-doc; the portable roadmap skill passes those commands through.
+- UI: card previews show document count chips and card modals render a Documents section with links/details in roadmap-board/src/client/main.jsx and styles.css.
+- Docs/tests: README and skill usage mention document references; model/server/migration tests cover storage, validation, export, API, helper methods, and legacy DB migration.
+
+Validation:
+- npm test (53 passing)
+- npm run build
+
+Notes:
+- Existing claim/ownership changes for ROAD-024 were already present in the working tree and were preserved.
+  - Epic: EPIC-007
+- **ROAD-024** — Support active ownership claims on roadmap cards
+  - Summary: Let concurrent Pi sessions claim a card so agents see who is actively working it. Focused feature (not the larger coordination epic yet).
+
+PLAN — one active claim per card, stored as card metadata, surfaced in the live board + event log, EXCLUDED from committed ROADMAP.md (transient per-session, like gitignored .server.json).
+1. model.js: migration v5 adds claimed_by/claimed_at/claim_note to cards. claimCard(id,owner,{note,force}) + releaseCard(id,{owner,force}). Reject claiming a card held by a different owner unless force (steal, logged); idempotent re-claim refreshes. release guards owner-match unless force. Events card_claimed/card_released feed ROAD-025 timeline. hydrateCard normalizes nulls; markdown export omits claim fields.
+2. cli.js: claim <id> <owner> [note] [--force]; release <id> [owner] [--force]; owner falls back to $ROADMAP_SESSION_ID.
+3. server.js: POST /api/cards/:id/claim + /release (parity).
+4. client main.jsx: claim chip on card + modal row (short owner + age, full id on hover); describeEvent for claim/release.
+5. styles.css: claim chip.
+6. extension index.ts: /road claim|release <id> using live sessionId; release this session claims on shutdown; surface claim in summary. core.ts helper(s) + core.test.ts.
+7. skill roadmap.mjs: add claim/release to PASSTHROUGH.
+8. Tests: model.test.js, server.test.js. Docs: README + SKILL.md.
+
+DONE — all 8 steps shipped. Claims are advisory coordination (never a lock): claimCard/releaseCard guard cross-owner overwrite with a 409 unless --force (force logs stolen_from); same-owner re-claim refreshes the note. State lives in SQLite + /api/roadmap feed + read-only UI chip (🔒 short-owner · age) + card_claimed/card_released events, and is deliberately excluded from ROADMAP.md (test asserts no claim text leaks into markdown). Extension releases a session's own claims on session_shutdown so a closed/crashed session never leaves cards held. Surfaces: cli.js claim/release (owner→$ROADMAP_SESSION_ID), server.js parity routes, /road claim|release, skill passthrough. Verified: 47 model+server tests pass, 20 core tests pass, E2E HTTP claim→snapshot round-trip confirmed. Files: model.js (migration v5, claimCard/releaseCard, hydrate, export omission), cli.js, server.js, client main.jsx + styles.css, extension core.ts/index.ts, skill roadmap.mjs; docs README.md + SKILL.md. Note: developed alongside a concurrent session's v6 documents feature on the same files — both coexist cleanly.
+  - Epic: EPIC-006
 
 ## Completed
 
@@ -101,3 +121,21 @@ _No cards._
   - Summary: Visually mark a card as effectively blocked when any depends_on target isn't completed, distinct from the explicit 'blocked' status. Derived at render time, not stored.
   - Epic: EPIC-003
   - Depends on: ROAD-010, ROAD-012
+- **ROAD-013** — Server/API endpoint tests
+  - Summary: DONE: Added tests/server.test.js — 8 tests covering all 8 Express routes (snapshot, events, agentUpdate, epic create/update/delete, assign-epic, move). Zero new deps: boots startServer on an ephemeral port and drives it over real HTTP with global fetch. Asserts happy paths, the httpError->HTTP status mapping via the error middleware (400/404), the {error} envelope, and agent-actor attribution. Full suite green: 27/27 (19 model + 8 server).
+  - Epic: EPIC-004
+- **ROAD-014** — UI error and offline states
+  - Summary: Handle fetch failures in the client: load() ignores res.ok and the 2s poller swallows errors, so a downed server shows a blank board. Add an error/offline banner with retry.
+  - Epic: EPIC-004
+- **ROAD-016** — Agent epic rename
+  - Summary: Hardened the agent epic-rename path (model.updateEpic + CLI epic-update + PATCH /api/epics/:id). updateEpic now whitelists title/summary/sort_index (400 on unknown keys), logs only fields that actually changed, short-circuits no-op patches (no event/updated_at churn), and records renamed_from/renamed_to for an auditable rename trail. Added model + server tests. Browser remains read-only.
+  - Epic: EPIC-005
+  - Depends on: ROAD-009
+- **ROAD-015** — Migration and concurrency hardening
+  - Summary: Hardened the SQLite forward-migration path and concurrent-writer safety on the single WAL database. Migrations are now versioned via PRAGMA user_version with an append-only, idempotent step list applied in transactions on open; legacy unversioned DBs upgrade with no data loss. All mutations run in BEGIN IMMEDIATE transactions (atomic row+event+markdown), with busy_timeout=5000 and synchronous=NORMAL so concurrent writers queue instead of failing. Added tests/migration.test.js covering partial/legacy/idempotent schemas and transaction rollback; documented the concurrency model in README.
+  - Epic: EPIC-004
+- **ROAD-017** — Agent epic reorder
+  - Summary: Let agents reorder epics by setting sort_index (updateEpic already accepts it; add a clear reorder command/route). No manual drag in the browser.
+  - Epic: EPIC-005
+  - Depends on: ROAD-009
+  - Blocked reason: reorderEpics added across model/CLI/server/skill with tests; UI unchanged (read-only by design)

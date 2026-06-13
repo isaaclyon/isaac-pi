@@ -32,6 +32,38 @@ test('users cannot update non-Triage cards, but agents can', () => withStore((st
   assert.equal(updated.title, 'Agent edit');
 }));
 
+test('stores card document references, validates shape, and exports them', () => withStore((store, dir) => {
+  const card = store.createTriage({ title: 'Implementation' });
+  const documents = [
+    { title: 'Review notes', href: 'docs/review.md', kind: 'review', note: 'Approved with follow-ups' },
+    { title: 'Validation run', href: 'https://example.com/run/123' },
+  ];
+
+  const updated = store.agentUpdate(card.id, { documents });
+  assert.deepEqual(updated.documents, documents);
+  assert.deepEqual(store.agentUpdate(card.id, { summary: 'Updated summary' }).documents, documents);
+
+  const markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /Documents:/);
+  assert.match(markdown, /\[Review notes\]\(docs\/review\.md\) — review — Approved with follow-ups/);
+  assert.match(markdown, /\[Validation run\]\(https:\/\/example\.com\/run\/123\)/);
+
+  assert.throws(() => store.agentUpdate(card.id, { documents: 'not an array' }), /documents must be an array/);
+  assert.throws(() => store.agentUpdate(card.id, { documents: [{ title: 'Missing href' }] }), /href is required/);
+  assert.throws(() => store.agentUpdate(card.id, { documents: [{ title: 'Extra', href: 'x', extra: true }] }), /Unknown document field/);
+}));
+
+test('appends and removes card documents by href', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Proof bundle' });
+
+  const attached = store.attachDocument(card.id, { title: 'Test output', href: 'artifacts/test.txt', kind: 'proof' });
+  assert.deepEqual(attached.documents, [{ title: 'Test output', href: 'artifacts/test.txt', kind: 'proof' }]);
+  assert.equal(store.cardEvents(card.id)[0].payload.fields[0], 'documents');
+
+  const detached = store.detachDocument(card.id, 'artifacts/test.txt');
+  assert.deepEqual(detached.documents, []);
+}));
+
 test('blocked cards require a blocked reason', () => withStore((store) => {
   const card = store.createTriage({ title: 'Needs API' });
   assert.throws(() => store.move(card.id, 'blocked'), /blocked_reason/);
@@ -44,6 +76,24 @@ test('reorders all Triage cards exactly once', () => withStore((store) => {
   store.reorderTriage([b.id, a.id]);
   assert.deepEqual(store.cards().filter(c => c.status === 'triage').sort((x, y) => x.position - y.position).map(c => c.id), [b.id, a.id]);
   assert.throws(() => store.reorderTriage([a.id]), /every current Triage card/);
+}));
+
+test('reorders all epics exactly once and rejects partial lists', () => withStore((store) => {
+  const a = store.createEpic({ title: 'A' });
+  const b = store.createEpic({ title: 'B' });
+  const c = store.createEpic({ title: 'C' });
+
+  // A full permutation rewrites sort_index densely from 0 and reorders epics() accordingly.
+  const reordered = store.reorderEpics([c.id, a.id, b.id]);
+  assert.deepEqual(reordered.map(e => e.id), [c.id, a.id, b.id]);
+  assert.deepEqual(reordered.map(e => e.sort_index), [0, 1, 2]);
+  assert.deepEqual(store.epics().map(e => e.id), [c.id, a.id, b.id]);
+
+  // Must include every epic exactly once: a partial list or a duplicate is rejected, order unchanged.
+  assert.throws(() => store.reorderEpics([a.id, b.id]), /every current Epic/);
+  assert.throws(() => store.reorderEpics([a.id, a.id, b.id]), /every current Epic/);
+  assert.throws(() => store.reorderEpics('not-an-array'), /ids must be an array/);
+  assert.deepEqual(store.epics().map(e => e.id), [c.id, a.id, b.id]);
 }));
 
 test('dependencies and enablements must reference existing cards', () => withStore((store) => {
@@ -261,6 +311,124 @@ test('deleting an unknown epic throws 404', () => withStore((store) => {
   assert.throws(() => store.deleteEpic('EPIC-999'), /Unknown epic/);
 }));
 
+// Read epic-scoped events (card_id IS NULL) directly; cardEvents() only surfaces card history.
+function lastEpicEvent(store, epicId) {
+  const row = store.db
+    .prepare("SELECT event_type, payload FROM events WHERE card_id IS NULL AND json_extract(payload, '$.epic_id') = ? ORDER BY id DESC LIMIT 1")
+    .get(epicId);
+  return row ? { event_type: row.event_type, payload: JSON.parse(row.payload) } : null;
+}
+
+test('renaming an epic updates markdown and records the before/after title in the event', () => withStore((store, dir) => {
+  const epic = store.createEpic({ title: 'Old name', summary: 'Keep me' });
+  const renamed = store.updateEpic(epic.id, { title: 'New name' });
+  assert.equal(renamed.title, 'New name');
+  assert.equal(renamed.summary, 'Keep me'); // untouched fields survive
+
+  const event = lastEpicEvent(store, epic.id);
+  assert.equal(event.event_type, 'epic_updated');
+  assert.deepEqual(event.payload.fields, ['title']);
+  assert.equal(event.payload.renamed_from, 'Old name');
+  assert.equal(event.payload.renamed_to, 'New name');
+
+  const markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /New name/);
+  assert.doesNotMatch(markdown, /Old name/);
+}));
+
+test('summary- and sort_index-only updates log just the changed field without a rename payload', () => withStore((store) => {
+  const epic = store.createEpic({ title: 'Stable', summary: 'v1', sort_index: 3 });
+
+  store.updateEpic(epic.id, { summary: 'v2' });
+  let event = lastEpicEvent(store, epic.id);
+  assert.deepEqual(event.payload.fields, ['summary']);
+  assert.equal(event.payload.renamed_from, undefined);
+
+  const reordered = store.updateEpic(epic.id, { sort_index: 9 });
+  assert.equal(reordered.sort_index, 9);
+  event = lastEpicEvent(store, epic.id);
+  assert.deepEqual(event.payload.fields, ['sort_index']);
+}));
+
+test('a no-op epic update writes nothing — no event, no updated_at bump', () => withStore((store) => {
+  const epic = store.createEpic({ title: 'Inert', summary: 'same' });
+  const before = store.epic(epic.id).updated_at;
+  const result = store.updateEpic(epic.id, { title: 'Inert', summary: 'same' });
+  assert.equal(result.updated_at, before);
+  // Only the creation event exists; the no-op added none.
+  const count = store.db
+    .prepare("SELECT COUNT(*) AS n FROM events WHERE card_id IS NULL AND json_extract(payload, '$.epic_id') = ? AND event_type = 'epic_updated'")
+    .get(epic.id).n;
+  assert.equal(count, 0);
+}));
+
+test('updateEpic rejects unknown fields and blank titles, and 404s on unknown ids', () => withStore((store) => {
+  const epic = store.createEpic({ title: 'Guarded' });
+  assert.throws(() => store.updateEpic(epic.id, { name: 'typo' }), /Unknown epic field\(s\): name/);
+  assert.throws(() => store.updateEpic(epic.id, { title: '   ' }), /Title is required/);
+  assert.throws(() => store.updateEpic('EPIC-999', { title: 'x' }), /Unknown epic/);
+}));
+
+test('archiving an epic is reversible, non-destructive, and idempotent', () => withStore((store, dir) => {
+  const epic = store.createEpic({ title: 'Shipped epic', summary: 'All done' });
+  const card = store.createTriage({ title: 'A card' });
+  store.assignEpic(card.id, epic.id);
+
+  const archived = store.archiveEpic(epic.id);
+  assert.ok(archived.archived_at, 'archived_at is stamped');
+  assert.equal(lastEpicEvent(store, epic.id).event_type, 'epic_archived');
+  // Card is untouched — archiving is purely an epic-display concern.
+  assert.equal(store.card(card.id).epic_id, epic.id);
+  // The epic still exists in the full snapshot; it's just flagged.
+  assert.equal(store.epics().length, 1);
+
+  // Dropped from the active ## Epics list, surfaced under ## Archived Epics.
+  let markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /## Epics\n\n_No epics\._/);
+  assert.match(markdown, /## Archived Epics\n\n- \*\*EPIC-001\*\* — Shipped epic/);
+
+  // Idempotent: a second archive adds no event.
+  const before = store.epic(epic.id).archived_at;
+  store.archiveEpic(epic.id);
+  const count = store.db
+    .prepare("SELECT COUNT(*) AS n FROM events WHERE card_id IS NULL AND json_extract(payload, '$.epic_id') = ? AND event_type = 'epic_archived'")
+    .get(epic.id).n;
+  assert.equal(count, 1);
+  assert.equal(store.epic(epic.id).archived_at, before);
+
+  // Unarchive restores it to the active list and logs the inverse event.
+  const restored = store.unarchiveEpic(epic.id);
+  assert.equal(restored.archived_at, null);
+  assert.equal(lastEpicEvent(store, epic.id).event_type, 'epic_unarchived');
+  markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /## Epics\n\n- \*\*EPIC-001\*\* — Shipped epic/);
+  assert.match(markdown, /## Archived Epics\n\n_No archived epics\._/);
+}));
+
+test('archive/unarchive 404 on unknown ids', () => withStore((store) => {
+  assert.throws(() => store.archiveEpic('EPIC-999'), /Unknown epic/);
+  assert.throws(() => store.unarchiveEpic('EPIC-999'), /Unknown epic/);
+}));
+
+test('is_complete is true only when every card is completed, and marks the epic with ✓ in markdown', () => withStore((store, dir) => {
+  const epic = store.createEpic({ title: 'Two-card epic' });
+  // Empty epic: never complete.
+  assert.equal(store.epic(epic.id).is_complete, false);
+
+  const a = store.createTriage({ title: 'A' });
+  const b = store.createTriage({ title: 'B' });
+  store.assignEpic(a.id, epic.id);
+  store.assignEpic(b.id, epic.id);
+  store.move(a.id, 'completed');
+  // Partial: one of two done.
+  assert.equal(store.epic(epic.id).is_complete, false);
+  assert.doesNotMatch(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /Two-card epic ✓/);
+
+  store.move(b.id, 'completed');
+  assert.equal(store.epic(epic.id).is_complete, true);
+  assert.match(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /\*\*EPIC-001\*\* — Two-card epic ✓/);
+}));
+
 test('returns per-card event history newest-first and excludes unrelated events', () => withStore((store) => {
   const card = store.createTriage({ title: 'Trace me' });
   store.move(card.id, 'in_progress');
@@ -275,6 +443,71 @@ test('returns per-card event history newest-first and excludes unrelated events'
   assert.ok(events.every(e => e.event_type !== 'epic_created' && e.event_type !== 'markdown_exported'));
 
   assert.throws(() => store.cardEvents('ROAD-999'), /Unknown card/);
+}));
+
+test('claims a card: sets owner/note/at, logs an event, hydrates', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Claimable' });
+  const claimed = store.claimCard(card.id, 'session-abc', { note: 'on it' });
+  assert.equal(claimed.claimed_by, 'session-abc');
+  assert.equal(claimed.claim_note, 'on it');
+  assert.ok(claimed.claimed_at);
+  const events = store.cardEvents(card.id);
+  assert.equal(events[0].event_type, 'card_claimed');
+  assert.deepEqual(events[0].payload, { owner: 'session-abc', note: 'on it' });
+}));
+
+test('claim requires a non-empty owner', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Needs owner' });
+  assert.throws(() => store.claimCard(card.id, ''), /requires an owner/);
+  assert.throws(() => store.claimCard(card.id, '   '), /requires an owner/);
+}));
+
+test('re-claiming your own card refreshes without error; a different owner is rejected', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Contested' });
+  store.claimCard(card.id, 'alice', { note: 'first' });
+  // Same owner re-claim is an idempotent refresh and keeps the note when not re-specified.
+  assert.equal(store.claimCard(card.id, 'alice').claim_note, 'first');
+  // A different owner is rejected without force.
+  assert.throws(() => store.claimCard(card.id, 'bob'), /already claimed by alice/);
+  assert.equal(store.card(card.id).claimed_by, 'alice');
+}));
+
+test('force-claim steals a card and records stolen_from', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Stealable' });
+  store.claimCard(card.id, 'alice');
+  const stolen = store.claimCard(card.id, 'bob', { force: true });
+  assert.equal(stolen.claimed_by, 'bob');
+  const events = store.cardEvents(card.id);
+  assert.equal(events[0].event_type, 'card_claimed');
+  assert.equal(events[0].payload.stolen_from, 'alice');
+}));
+
+test('releases a claim, logs an event, and is a no-op when unclaimed', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Releasable' });
+  store.claimCard(card.id, 'alice');
+  const released = store.releaseCard(card.id, { owner: 'alice' });
+  assert.equal(released.claimed_by, null);
+  assert.equal(released.claimed_at, null);
+  assert.equal(store.cardEvents(card.id)[0].event_type, 'card_released');
+  // Releasing an already-unclaimed card logs nothing new.
+  const before = store.cardEvents(card.id).length;
+  store.releaseCard(card.id, { owner: 'alice' });
+  assert.equal(store.cardEvents(card.id).length, before);
+}));
+
+test('release guards the owner unless forced', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Guarded' });
+  store.claimCard(card.id, 'alice');
+  assert.throws(() => store.releaseCard(card.id, { owner: 'bob' }), /claimed by alice, not bob/);
+  assert.equal(store.releaseCard(card.id, { owner: 'bob', force: true }).claimed_by, null);
+}));
+
+test('claim state never leaks into the exported markdown', () => withStore((store, dir) => {
+  const card = store.createTriage({ title: 'Hidden claim' });
+  store.claimCard(card.id, 'session-secret', { note: 'private' });
+  const markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(markdown, /session-secret/);
+  assert.doesNotMatch(markdown, /Claimed/);
 }));
 
 test('migrates existing databases forward without losing cards', () => {
