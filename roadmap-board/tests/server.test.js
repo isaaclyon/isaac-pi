@@ -99,6 +99,21 @@ test('POST /api/epics creates an epic and 400s without a title', () => withServe
   assert.match(bad.json.error, /Title is required/);
 }));
 
+test('POST /api/epics/reorder sets the full epic order and 400s on partial lists', () => withServer(async ({ base, store }) => {
+  const a = store.createEpic({ title: 'A' });
+  const b = store.createEpic({ title: 'B' });
+  const c = store.createEpic({ title: 'C' });
+
+  const ok = await req(base, 'POST', '/api/epics/reorder', { ids: [c.id, a.id, b.id] });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.json.map(e => e.id), [c.id, a.id, b.id]);
+  assert.deepEqual(ok.json.map(e => e.sort_index), [0, 1, 2]);
+
+  const partial = await req(base, 'POST', '/api/epics/reorder', { ids: [a.id, b.id] });
+  assert.equal(partial.status, 400);
+  assert.match(partial.json.error, /every current Epic/);
+}));
+
 test('PATCH /api/epics/:id patches fields and validates inputs', () => withServer(async ({ base, store }) => {
   const epic = store.createEpic({ title: 'Original' });
 

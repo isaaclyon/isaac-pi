@@ -21,6 +21,7 @@ Commands:
   epic-add <title> [summary]        Add an Epic
   epic-update <id> <json>           Update Epic fields: title, summary, sort_index
   epic-delete <id>                  Delete an Epic; detaches its cards
+  reorder-epics <id,id,...>         Reorder all Epics (sets sort_index)
   update <id> <json>                Agent update fields: title, summary, depends_on, enables, blocked_reason
   user-update <id> <json>           User update Triage title/summary only
   assign-epic <cardId> <epicId>     Assign card to Epic
@@ -56,6 +57,7 @@ async function main() {
     else if (cmd === 'epic-add') result = store.createEpic({ title: args[0], summary: args[1] ?? '' }, 'agent');
     else if (cmd === 'epic-update') result = store.updateEpic(args[0], parseJson(args[1], {}), 'agent');
     else if (cmd === 'epic-delete') result = store.deleteEpic(args[0], 'agent');
+    else if (cmd === 'reorder-epics') result = store.reorderEpics((args[0] ?? '').split(',').filter(Boolean), 'agent');
     else if (cmd === 'user-update') result = store.updateTriage(args[0], parseJson(args[1], {}), 'user');
     else if (cmd === 'update') result = store.agentUpdate(args[0], parseJson(args[1], {}), 'agent');
     else if (cmd === 'assign-epic') result = store.assignEpic(args[0], args[1], 'agent');

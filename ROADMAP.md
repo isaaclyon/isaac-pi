@@ -22,8 +22,8 @@
   - Cards: ROAD-013, ROAD-014, ROAD-015
 - **EPIC-005** — Epic depth
   - Summary: Deepen the grouping layer with metadata and agent-only management. No target dates; no manual reorder.
-  - Progress: 1 / 3 (33%)
-  - Cards: ROAD-017, ROAD-018, ROAD-016
+  - Progress: 2 / 2 (100%)
+  - Cards: ROAD-016, ROAD-017
 
 ## Triage
 
@@ -31,13 +31,7 @@ _No cards._
 
 ## Backlog
 
-- **ROAD-017** — Agent epic reorder
-  - Summary: Let agents reorder epics by setting sort_index (updateEpic already accepts it; add a clear reorder command/route). No manual drag in the browser.
-  - Epic: EPIC-005
-  - Depends on: ROAD-009
-- **ROAD-018** — Epic color accents
-  - Summary: Give each epic an optional color used on its chips and the progress rail. Add a nullable color field on epics; render in main.jsx/styles.css.
-  - Epic: EPIC-005
+_No cards._
 
 ## Up next
 
@@ -101,3 +95,8 @@ _No cards._
 - **ROAD-015** — Migration and concurrency hardening
   - Summary: Hardened the SQLite forward-migration path and concurrent-writer safety on the single WAL database. Migrations are now versioned via PRAGMA user_version with an append-only, idempotent step list applied in transactions on open; legacy unversioned DBs upgrade with no data loss. All mutations run in BEGIN IMMEDIATE transactions (atomic row+event+markdown), with busy_timeout=5000 and synchronous=NORMAL so concurrent writers queue instead of failing. Added tests/migration.test.js covering partial/legacy/idempotent schemas and transaction rollback; documented the concurrency model in README.
   - Epic: EPIC-004
+- **ROAD-017** — Agent epic reorder
+  - Summary: Let agents reorder epics by setting sort_index (updateEpic already accepts it; add a clear reorder command/route). No manual drag in the browser.
+  - Epic: EPIC-005
+  - Depends on: ROAD-009
+  - Blocked reason: reorderEpics added across model/CLI/server/skill with tests; UI unchanged (read-only by design)

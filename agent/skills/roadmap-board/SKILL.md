@@ -53,6 +53,7 @@ If the board isn't found, run `init` in the project root (or set `ROADMAP_PROJEC
 | `epic-add <title> [summary]` | New epic. |
 | `epic-update <id> <json>` | Patch epic `title`, `summary`, `sort_index`. |
 | `epic-delete <id>` | Delete an epic; its cards are detached, not deleted. |
+| `reorder-epics <id,id,...>` | Reorder all epics by setting `sort_index` densely; must list every epic exactly once. |
 | `delete <id>` | Delete a card (agent may delete from any column). |
 | `reorder <id,id,...>` | Reorder all Triage cards. |
 

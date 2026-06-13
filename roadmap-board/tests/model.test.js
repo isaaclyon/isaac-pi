@@ -46,6 +46,24 @@ test('reorders all Triage cards exactly once', () => withStore((store) => {
   assert.throws(() => store.reorderTriage([a.id]), /every current Triage card/);
 }));
 
+test('reorders all epics exactly once and rejects partial lists', () => withStore((store) => {
+  const a = store.createEpic({ title: 'A' });
+  const b = store.createEpic({ title: 'B' });
+  const c = store.createEpic({ title: 'C' });
+
+  // A full permutation rewrites sort_index densely from 0 and reorders epics() accordingly.
+  const reordered = store.reorderEpics([c.id, a.id, b.id]);
+  assert.deepEqual(reordered.map(e => e.id), [c.id, a.id, b.id]);
+  assert.deepEqual(reordered.map(e => e.sort_index), [0, 1, 2]);
+  assert.deepEqual(store.epics().map(e => e.id), [c.id, a.id, b.id]);
+
+  // Must include every epic exactly once: a partial list or a duplicate is rejected, order unchanged.
+  assert.throws(() => store.reorderEpics([a.id, b.id]), /every current Epic/);
+  assert.throws(() => store.reorderEpics([a.id, a.id, b.id]), /every current Epic/);
+  assert.throws(() => store.reorderEpics('not-an-array'), /ids must be an array/);
+  assert.deepEqual(store.epics().map(e => e.id), [c.id, a.id, b.id]);
+}));
+
 test('dependencies and enablements must reference existing cards', () => withStore((store) => {
   const a = store.createTriage({ title: 'A' });
   const b = store.createTriage({ title: 'B' });

@@ -483,6 +483,28 @@ export class RoadmapStore {
     });
   }
 
+  // Set the full epic display order in one shot. `updateEpic` can already nudge a single
+  // sort_index, but reordering by hand forces the caller to invent non-colliding indices;
+  // this takes a complete permutation of the current epic ids and reassigns sort_index 0..n
+  // densely, mirroring reorderTriage's position rewrite. Demanding every epic exactly once
+  // keeps the result a total order with no gaps or ties (epics() resolves ties by id, so a
+  // partial list would otherwise leave the omitted epics with stale indices).
+  reorderEpics(ids, actor = 'agent') {
+    if (!Array.isArray(ids)) throw httpError(400, 'ids must be an array');
+    return this.tx(() => {
+      const epicIds = this.epics().map(e => e.id);
+      if (new Set(ids).size !== ids.length || ids.length !== epicIds.length || !epicIds.every(id => ids.includes(id))) {
+        throw httpError(400, 'Reorder must include every current Epic exactly once');
+      }
+      const stmt = this.db.prepare('UPDATE epics SET sort_index = ?, updated_at = ? WHERE id = ?');
+      const t = now();
+      ids.forEach((id, i) => stmt.run(i, t, id));
+      this.event(null, 'epics_reordered', actor, { ids });
+      this.exportMarkdown('system');
+      return this.epics();
+    });
+  }
+
   validateCardIds(ids, selfId) {
     if (!Array.isArray(ids)) throw httpError(400, 'Card links must be arrays of Card IDs');
     return ids.map(id => {

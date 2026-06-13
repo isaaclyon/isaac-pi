@@ -24,7 +24,7 @@ const STATUSES = ['triage', 'backlog', 'up_next', 'in_progress', 'blocked', 'rev
 // Verbs that mutate or read an existing board (require a resolved project root + an initialized DB).
 const PASSTHROUGH = new Set([
   'add', 'update', 'user-update', 'move', 'delete', 'reorder', 'events', 'export',
-  'epic-add', 'epic-update', 'epic-delete', 'assign-epic', 'clear-epic',
+  'epic-add', 'epic-update', 'epic-delete', 'reorder-epics', 'assign-epic', 'clear-epic',
 ]);
 // Verbs that work without an existing board.
 const BOOTSTRAP = new Set(['init', 'paths']);
@@ -100,6 +100,7 @@ function usage() {
       'epic-add <title> [summary]': 'Create an epic.',
       'epic-update <id> <json>': 'Patch epic title|summary|sort_index.',
       'epic-delete <id>': 'Delete epic; detaches its cards.',
+      'reorder-epics <id,id,...>': 'Reorder all Epics (sets sort_index).',
       'delete <id>': 'Delete a card (agent: any column).',
       'reorder <id,id,...>': 'Reorder all Triage cards.',
     },
