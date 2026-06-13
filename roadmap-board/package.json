@@ -1,0 +1,24 @@
+{
+  "name": "roadmap-board-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "roadmap-board": "./src/server/cli.js"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "serve": "ROADMAP_PROJECT_ROOT=.. node src/server/server.js",
+    "build": "vite build",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "express": "latest",
+    "vite": "latest",
+    "typescript": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {}
+}
