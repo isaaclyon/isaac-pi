@@ -40,17 +40,26 @@ onto that journey. Treat the stages as the contract for what to do at each step:
 
 | Stage | Prompt intent | What you do | Board move |
 | --- | --- | --- | --- |
-| **Brainstorm** | Sharpen a rough idea, do **not** plan or execute | Rewrite the card `summary` in place to make the idea clear | none (stays in Triage/Backlog) |
-| **Plan** | Inspect the repo, produce an implementation plan, do **not** execute | Write the plan into `summary`; wire `depends_on`/`enables`; `assign-epic` | `backlog` → `up_next` |
-| **Execute** | Implement, validate, update the board, export | Do the work, then record outcome in `summary` | `up_next` → `in_progress` → `review` |
-| **Review** | Assess the implementation against the card before completion | Verify it matches the card; note gaps in `summary` | `review` → `completed` (or back) |
+| **Brainstorm** | Sharpen a rough idea, do **not** plan or execute | Rewrite the card `summary` in place to make the idea clear and concise | none (stays in Triage/Backlog) |
+| **Plan** | Inspect the repo, produce an implementation plan, do **not** execute | **Attach the plan as a document**; wire `depends_on`/`enables`; `assign-epic` | `backlog` → `up_next` |
+| **Execute** | Implement, validate, update the board, export | Do the work, then **attach the outcome/notes as a document** | `up_next` → `in_progress` → `review` |
+| **Review** | Assess the implementation against the card before completion | Verify it matches the card; **attach review notes as a document** | `review` → `completed` (or back) |
 
 A fifth template, **refine**, applies one specific `{{direction}}` to a card in place (used by the
 board UI's inline edits) — same shape as Brainstorm but targeted.
 
-**Where the plan and notes live:** the card has no separate plan/review-notes field — the MVP schema
-is deliberately minimal. The `summary` *is* the working document; append the plan, then the outcome,
-as the card advances. The audit trail of moves/edits lives in `events <id>`.
+**Where the plan and notes live:** keep `summary` a **concise description** of the card — what the
+work is and why — not a running log. Plans, execution outcomes, and review notes belong in
+**documents**, attached with `attach-doc` (or the `documents` array on `update`) so the description
+stays readable and each artifact is addressable on its own:
+
+- **Prose plans / outcomes / review notes** — write them to a file in the repo (e.g.
+  `docs/roadmap/<id>-plan.md`), commit it, then attach it (`kind` like `plan`, `outcome`, `review`).
+- **External artifacts** — attach a PR, design doc, dashboard, or issue by URL directly
+  (`kind` like `pr`, `design`, `issue`).
+
+Each document is `{title, href, kind?, note?}`; `note` is a one-line gloss, not the full body. The
+audit trail of moves/edits lives in `events <id>`.
 
 **Status flow is convention, not enforced.** `move` validates the column name but there is **no
 transition graph** — any column can move to any other. You own sane progression. The intended path:
@@ -134,14 +143,17 @@ R="node <skill-dir>/scripts/roadmap.mjs"
 $R ready                                          # what can I pick up now?
 $R get ROAD-006                                   # read the card + history before acting
 
-# Plan: record the plan in the summary, wire deps, group under an epic
-$R update ROAD-006 '{"summary":"Plan: …","depends_on":["ROAD-001"]}'
+# Plan: keep summary a concise description, attach the plan as a document, wire deps, group under an epic
+$R update ROAD-006 '{"summary":"Short description of the work.","depends_on":["ROAD-001"]}'
+# write the plan to a file and commit it, then attach it (prose → repo file)
+$R attach-doc ROAD-006 "Implementation plan" docs/roadmap/ROAD-006-plan.md plan "3 phases; wired ROAD-001"
 $R assign-epic ROAD-006 EPIC-002
 $R move ROAD-006 up_next
 
-# Execute: take it, do the work, capture the outcome
+# Execute: take it, do the work, attach the outcome (and any external artifacts by URL)
 $R move ROAD-006 in_progress
-$R update ROAD-006 '{"summary":"Done: … (see <file>:<line>)"}'
+$R attach-doc ROAD-006 "Build notes" docs/roadmap/ROAD-006-outcome.md outcome "see src/foo.js:42"
+$R attach-doc ROAD-006 "PR #142" https://github.com/owner/repo/pull/142 pr
 $R move ROAD-006 review                           # hand off for review
 
 # Review → complete (auto-exports ROADMAP.md), then commit the snapshot with your code
