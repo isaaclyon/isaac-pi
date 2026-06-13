@@ -389,10 +389,11 @@ function ConnBanner({ message, onRetry, full = false }) {
 }
 
 function Card({ card, epic, onOpen }) {
-  const documents = card.documents ?? [];
+  const documents = Array.isArray(card.documents) ? card.documents : [];
   return <article
     className="card"
     data-card-id={card.id}
+    data-claimed={card.claimed_by ? 'true' : undefined}
     role="button"
     tabIndex={0}
     onClick={onOpen}
@@ -403,12 +404,16 @@ function Card({ card, epic, onOpen }) {
         <span className="card-id">{card.id}</span>
         {epic && <span className="epic-chip" title={epic.title}>{epic.id}</span>}
       </div>
-      {card.claimed_by && <span className="claim-chip" title={claimTitle(card)}>🔒 {shortOwner(card.claimed_by)}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}</span>}
       {documents.length > 0 && <span className="doc-chip" title={`${documents.length} document${documents.length === 1 ? '' : 's'}`}>Docs {documents.length}</span>}
       {card.ready && <span className="ready-chip" title="All dependencies completed">Ready</span>}
       {card.dependency_blocked && <span className="blocked-chip" title="Waiting on incomplete dependencies">Waiting</span>}
     </div>
     <h3 className="card-title">{card.title}</h3>
+    {card.claimed_by && <p className="claim-line" title={claimTitle(card)}>
+      <span aria-hidden="true">🔒</span>
+      <span>{shortOwner(card.claimed_by)}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}</span>
+      {card.claim_note && <span className="claim-line-note">— {card.claim_note}</span>}
+    </p>}
     {card.summary && <p className="card-summary">{card.summary}</p>}
     {(card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason) && <dl>
       {card.depends_on.length > 0 && <><dt>Depends on</dt><dd>{card.depends_on.join(', ')}</dd></>}
@@ -620,7 +625,7 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
   }
 
   const hasProps = epic || card.claimed_by || card.ready || card.dependency_blocked || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
-  const documents = card.documents ?? [];
+  const documents = Array.isArray(card.documents) ? card.documents : [];
 
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-label={`${card.id}: ${card.title}`} tabIndex={-1} ref={panelRef} onClick={e => e.stopPropagation()}>
