@@ -10,7 +10,7 @@
   - Cards: ROAD-001, ROAD-019, ROAD-005, ROAD-002
 - **EPIC-002** — Frictionless agent loop
   - Summary: Close the gap between the board and the agent: native API access, deep links, history, and the missing epic delete.
-  - Progress: 2 / 3 (67%)
+  - Progress: 3 / 3 (100%)
   - Cards: ROAD-009, ROAD-008, ROAD-006
 - **EPIC-003** — Dependencies & sequencing
   - Summary: Turn the existing depends_on/enables data into planning value: ready-next, blocked-by-dependency, cycle safety.
@@ -73,9 +73,7 @@ _No cards._
 
 ## Review
 
-- **ROAD-006** — Portable roadmap board skill
-  - Summary: Ship a portable Claude Code skill (not MCP, no server) that drives the board through cli.js. A self-contained resolver locates the target board (.pi/roadmap/roadmap.sqlite, walking up from cwd with a ROADMAP_PROJECT_ROOT override) and the CLI, then thin helper scripts wrap the existing write verbs (update/move/assign/epic CRUD/delete/reorder/events) and add token-light reads: get <id> (card + its events) and a filtered list (by status/epic) instead of the full snapshot dump. Surface valid statuses and parsed validation errors. Mutations already auto-export ROADMAP.md, so no manual export step. Requires Node 22+ (node:sqlite).
-  - Epic: EPIC-002
+_No cards._
 
 ## Completed
 
@@ -96,4 +94,7 @@ _No cards._
   - Epic: EPIC-002
 - **ROAD-008** — Surface the events audit trail
   - Summary: Render per-card history in the modal from the events table (event_type, actor_type, created_at). Data is already captured on every mutation but never shown; add a read endpoint or include it in the snapshot.
+  - Epic: EPIC-002
+- **ROAD-006** — Portable roadmap board skill
+  - Summary: Ship a portable Claude Code skill (not MCP, no server) that drives the board through cli.js. A self-contained resolver locates the target board (.pi/roadmap/roadmap.sqlite, walking up from cwd with a ROADMAP_PROJECT_ROOT override) and the CLI, then thin helper scripts wrap the existing write verbs (update/move/assign/epic CRUD/delete/reorder/events) and add token-light reads: get <id> (card + its events) and a filtered list (by status/epic) instead of the full snapshot dump. Surface valid statuses and parsed validation errors. Mutations already auto-export ROADMAP.md, so no manual export step. Requires Node 22+ (node:sqlite).
   - Epic: EPIC-002
