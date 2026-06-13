@@ -98,6 +98,9 @@ const MIGRATIONS = [
     ensureMeta(db, 'next_card_number', '1');
     ensureMeta(db, 'next_epic_number', '1');
   },
+  function v4_epic_archived_at(db) {
+    ensureColumn(db, 'epics', 'archived_at', 'ALTER TABLE epics ADD COLUMN archived_at TEXT');
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -283,10 +286,15 @@ export class RoadmapStore {
     const percentComplete = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
     return {
       ...row,
+      archived_at: row.archived_at ?? null,
       card_ids: cards.map(card => card.id),
       done_count: doneCount,
       total_count: totalCount,
       percent_complete: percentComplete,
+      // Derived "Done": every card landed in Completed, and there's at least one. Distinct from
+      // archived_at — an epic can be complete without being archived (the cue to archive it) or
+      // archived without being complete (work abandoned mid-flight).
+      is_complete: totalCount > 0 && percentComplete === 100,
     };
   }
 
@@ -406,6 +414,32 @@ export class RoadmapStore {
       this.event(null, 'epic_deleted', actor, { epic_id: epic.id, detached });
       this.exportMarkdown('system');
       return { id: epic.id, deleted: true, detached };
+    });
+  }
+
+  // Reversible, non-destructive retirement: stamp archived_at so the epic drops out of active
+  // views (rail, ## Epics, default `epics` read) while its row, cards, and history stay intact.
+  // Cards are deliberately untouched — archiving is an epic-display concern, not a card mutation.
+  // Idempotent: re-archiving an already-archived epic is a no-op and logs no duplicate event.
+  archiveEpic(id, actor = 'agent') {
+    return this.tx(() => {
+      const epic = this.epic(id);
+      if (epic.archived_at) return epic;
+      this.db.prepare('UPDATE epics SET archived_at = ?, updated_at = ? WHERE id = ?').run(now(), now(), id);
+      this.event(null, 'epic_archived', actor, { epic_id: id });
+      this.exportMarkdown('system');
+      return this.epic(id);
+    });
+  }
+
+  unarchiveEpic(id, actor = 'agent') {
+    return this.tx(() => {
+      const epic = this.epic(id);
+      if (!epic.archived_at) return epic;
+      this.db.prepare('UPDATE epics SET archived_at = NULL, updated_at = ? WHERE id = ?').run(now(), id);
+      this.event(null, 'epic_unarchived', actor, { epic_id: id });
+      this.exportMarkdown('system');
+      return this.epic(id);
     });
   }
 
@@ -554,15 +588,32 @@ export class RoadmapStore {
     const byStatus = new Map(COLUMNS.map(c => [c.key, []]));
     for (const card of cards) byStatus.get(card.status)?.push(card);
 
+    const activeEpics = epics.filter(epic => !epic.archived_at);
+    const archivedEpics = epics.filter(epic => epic.archived_at);
+
     const lines = ['# Roadmap', '', '> Generated from `.pi/roadmap/roadmap.sqlite`. Do not edit directly.', '', '## Epics', ''];
-    if (epics.length === 0) lines.push('_No epics._', '');
+    if (activeEpics.length === 0) lines.push('_No epics._', '');
     else {
-      for (const epic of epics) {
-        lines.push(`- **${epic.id}** — ${epic.title}`);
+      for (const epic of activeEpics) {
+        // A trailing ✓ flags a fully-completed epic — the visual cue that it's ready to archive.
+        lines.push(`- **${epic.id}** — ${epic.title}${epic.is_complete ? ' ✓' : ''}`);
         if (epic.summary) lines.push(`  - Summary: ${epic.summary}`);
         lines.push(`  - Progress: ${epic.done_count} / ${epic.total_count} (${epic.percent_complete}%)`);
         if (epic.card_ids.length) lines.push(`  - Cards: ${epic.card_ids.join(', ')}`);
         else lines.push('  - Cards: _No cards yet._');
+      }
+      lines.push('');
+    }
+
+    // Archived epics live in their own trailing section — markdown's equivalent of the UI's
+    // collapsed group. Data is preserved, just kept out of the active list.
+    lines.push('## Archived Epics', '');
+    if (archivedEpics.length === 0) lines.push('_No archived epics._', '');
+    else {
+      for (const epic of archivedEpics) {
+        lines.push(`- **${epic.id}** — ${epic.title}`);
+        lines.push(`  - Progress: ${epic.done_count} / ${epic.total_count} (${epic.percent_complete}%)`);
+        if (epic.card_ids.length) lines.push(`  - Cards: ${epic.card_ids.join(', ')}`);
       }
       lines.push('');
     }

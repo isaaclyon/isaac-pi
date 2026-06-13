@@ -4,30 +4,40 @@
 
 ## Epics
 
+- **EPIC-006** — Agent work visibility
+  - Summary: Make agent work visible on the roadmap by connecting cards to active Pi sessions and showing what those sessions are doing over time.
+  - Progress: 0 / 2 (0%)
+  - Cards: ROAD-024, ROAD-025
+
+## Archived Epics
+
 - **EPIC-001** — Board UX polish
-  - Summary: Refinements to the read-only board UI: theming, keyboard navigation, search, first-load, and accessibility.
   - Progress: 4 / 4 (100%)
   - Cards: ROAD-001, ROAD-019, ROAD-005, ROAD-002
 - **EPIC-002** — Frictionless agent loop
-  - Summary: Close the gap between the board and the agent: native API access, deep links, history, and the missing epic delete.
   - Progress: 3 / 3 (100%)
   - Cards: ROAD-009, ROAD-008, ROAD-006
 - **EPIC-003** — Dependencies & sequencing
-  - Summary: Turn the existing depends_on/enables data into planning value: ready-next, blocked-by-dependency, cycle safety.
   - Progress: 3 / 3 (100%)
   - Cards: ROAD-012, ROAD-010, ROAD-011
 - **EPIC-004** — Robustness & tests
-  - Summary: Keep the board from failing silently as it becomes load-bearing: API tests, UI error states, migration hardening.
   - Progress: 3 / 3 (100%)
   - Cards: ROAD-013, ROAD-014, ROAD-015
 - **EPIC-005** — Epic depth
-  - Summary: Deepen the grouping layer with metadata and agent-only management. No target dates; no manual reorder.
   - Progress: 2 / 2 (100%)
   - Cards: ROAD-016, ROAD-017
 
 ## Triage
 
-_No cards._
+- **ROAD-023** — Attach documents to roadmap cards
+  - Summary: Allow roadmap cards to reference supporting documents and artifacts, such as attaching a review to an implementation card, adding follow-up idea notes, or preserving proof/validation artifacts alongside the card.
+- **ROAD-024** — Support active ownership claims on roadmap cards
+  - Summary: Let Pi sessions claim roadmap cards so concurrent agents can see which session is actively using a card. Claims should be visible in the board and stored as metadata, enabling discussion of whether this becomes a focused feature or a larger ownership/coordination epic.
+  - Epic: EPIC-006
+- **ROAD-025** — Show a live agent activity timeline
+  - Summary: Provide a chronological feed of active Pi session activity so the roadmap can show what agents are doing now and what just happened, including current steps, notable tool/status events, stalls, and final results. This should complement card ownership claims by making claimed work observable over time.
+  - Epic: EPIC-006
+  - Depends on: ROAD-024
 
 ## Backlog
 

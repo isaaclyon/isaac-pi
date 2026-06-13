@@ -129,6 +129,14 @@ button.ghost:hover { background: var(--surface-sunk); color: var(--text); }
 .epic-copy h3 { font-size: 14px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .epic-copy p { font-size: 12.5px; margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .id-tag { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 600; }
+.epic-id-cell { align-items: center; display: flex; gap: 6px; }
+.done-chip { background: var(--ready-tint); border: 1px solid var(--ready-line); border-radius: 999px; color: var(--ready-fg); display: inline-flex; font-size: 10px; font-weight: 700; padding: 1px 7px; }
+.epic-archived { border-top: 1px solid var(--divider); margin-top: 12px; padding-top: 12px; }
+.epic-archived-head { align-items: center; display: flex; gap: 8px; margin-bottom: 8px; }
+.epic-archived-head h3 { color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; margin: 0; text-transform: uppercase; }
+.epic-archived-head .collapse { margin-left: auto; }
+.epic-archived .epic-row.is-dimmed { opacity: 0.5; }
+.epic-archived .epic-meter span { background: var(--text-faint); }
 .epic-progress-copy { align-items: baseline; display: flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
 .epic-progress-copy strong { font-size: 13px; }
 .epic-progress-copy span { color: var(--text-muted); font-size: 12.5px; }

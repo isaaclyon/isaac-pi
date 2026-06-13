@@ -337,6 +337,66 @@ test('updateEpic rejects unknown fields and blank titles, and 404s on unknown id
   assert.throws(() => store.updateEpic('EPIC-999', { title: 'x' }), /Unknown epic/);
 }));
 
+test('archiving an epic is reversible, non-destructive, and idempotent', () => withStore((store, dir) => {
+  const epic = store.createEpic({ title: 'Shipped epic', summary: 'All done' });
+  const card = store.createTriage({ title: 'A card' });
+  store.assignEpic(card.id, epic.id);
+
+  const archived = store.archiveEpic(epic.id);
+  assert.ok(archived.archived_at, 'archived_at is stamped');
+  assert.equal(lastEpicEvent(store, epic.id).event_type, 'epic_archived');
+  // Card is untouched — archiving is purely an epic-display concern.
+  assert.equal(store.card(card.id).epic_id, epic.id);
+  // The epic still exists in the full snapshot; it's just flagged.
+  assert.equal(store.epics().length, 1);
+
+  // Dropped from the active ## Epics list, surfaced under ## Archived Epics.
+  let markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /## Epics\n\n_No epics\._/);
+  assert.match(markdown, /## Archived Epics\n\n- \*\*EPIC-001\*\* — Shipped epic/);
+
+  // Idempotent: a second archive adds no event.
+  const before = store.epic(epic.id).archived_at;
+  store.archiveEpic(epic.id);
+  const count = store.db
+    .prepare("SELECT COUNT(*) AS n FROM events WHERE card_id IS NULL AND json_extract(payload, '$.epic_id') = ? AND event_type = 'epic_archived'")
+    .get(epic.id).n;
+  assert.equal(count, 1);
+  assert.equal(store.epic(epic.id).archived_at, before);
+
+  // Unarchive restores it to the active list and logs the inverse event.
+  const restored = store.unarchiveEpic(epic.id);
+  assert.equal(restored.archived_at, null);
+  assert.equal(lastEpicEvent(store, epic.id).event_type, 'epic_unarchived');
+  markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /## Epics\n\n- \*\*EPIC-001\*\* — Shipped epic/);
+  assert.match(markdown, /## Archived Epics\n\n_No archived epics\._/);
+}));
+
+test('archive/unarchive 404 on unknown ids', () => withStore((store) => {
+  assert.throws(() => store.archiveEpic('EPIC-999'), /Unknown epic/);
+  assert.throws(() => store.unarchiveEpic('EPIC-999'), /Unknown epic/);
+}));
+
+test('is_complete is true only when every card is completed, and marks the epic with ✓ in markdown', () => withStore((store, dir) => {
+  const epic = store.createEpic({ title: 'Two-card epic' });
+  // Empty epic: never complete.
+  assert.equal(store.epic(epic.id).is_complete, false);
+
+  const a = store.createTriage({ title: 'A' });
+  const b = store.createTriage({ title: 'B' });
+  store.assignEpic(a.id, epic.id);
+  store.assignEpic(b.id, epic.id);
+  store.move(a.id, 'completed');
+  // Partial: one of two done.
+  assert.equal(store.epic(epic.id).is_complete, false);
+  assert.doesNotMatch(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /Two-card epic ✓/);
+
+  store.move(b.id, 'completed');
+  assert.equal(store.epic(epic.id).is_complete, true);
+  assert.match(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /\*\*EPIC-001\*\* — Two-card epic ✓/);
+}));
+
 test('returns per-card event history newest-first and excludes unrelated events', () => withStore((store) => {
   const card = store.createTriage({ title: 'Trace me' });
   store.move(card.id, 'in_progress');

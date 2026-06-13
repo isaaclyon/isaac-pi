@@ -24,7 +24,8 @@ const STATUSES = ['triage', 'backlog', 'up_next', 'in_progress', 'blocked', 'rev
 // Verbs that mutate or read an existing board (require a resolved project root + an initialized DB).
 const PASSTHROUGH = new Set([
   'add', 'update', 'user-update', 'move', 'delete', 'reorder', 'events', 'export',
-  'epic-add', 'epic-update', 'epic-delete', 'reorder-epics', 'assign-epic', 'clear-epic',
+  'epic-add', 'epic-update', 'epic-delete', 'epic-archive', 'epic-unarchive', 'reorder-epics',
+  'assign-epic', 'clear-epic',
 ]);
 // Verbs that work without an existing board.
 const BOOTSTRAP = new Set(['init', 'paths']);
@@ -89,7 +90,7 @@ function usage() {
       'list [--status S] [--epic E|none]': 'Slim card list (id,title,status,epic_id), optionally filtered.',
       'ready [--epic E|none]': 'Slim list of cards whose dependencies are all completed (and that aren\'t completed).',
       'blocked-deps [--epic E|none]': 'Slim list of cards waiting on an incomplete dependency (derived; independent of the blocked status).',
-      'epics': 'Slim epic list with derived progress.',
+      'epics [--archived|--all]': 'Slim epic list with derived progress + is_complete/archived. Active-only by default; --archived for archived, --all for both.',
     },
     writes: {
       'add <title> [summary]': 'Create a Triage card (user actor).',
@@ -100,6 +101,8 @@ function usage() {
       'epic-add <title> [summary]': 'Create an epic.',
       'epic-update <id> <json>': 'Patch epic title|summary|sort_index.',
       'epic-delete <id>': 'Delete epic; detaches its cards.',
+      'epic-archive <id>': 'Archive epic (reversible; keeps cards & history).',
+      'epic-unarchive <id>': 'Restore an archived epic.',
       'reorder-epics <id,id,...>': 'Reorder all Epics (sets sort_index).',
       'delete <id>': 'Delete a card (agent: any column).',
       'reorder <id,id,...>': 'Reorder all Triage cards.',
@@ -123,6 +126,8 @@ function parseFlags(args) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--status') flags.status = args[++i];
     else if (args[i] === '--epic') flags.epic = args[++i];
+    else if (args[i] === '--archived') flags.archived = true;
+    else if (args[i] === '--all') flags.all = true;
   }
   return flags;
 }
@@ -195,10 +200,15 @@ function main() {
   }
 
   if (cmd === 'epics') {
-    const epics = snapshot(cliPath, projectRoot).epics;
+    // Default view is active-only; --archived shows just archived, --all shows both. is_complete
+    // surfaces the derived "Done" state so callers can spot epics ready to archive.
+    const { archived, all } = parseFlags(args);
+    let epics = snapshot(cliPath, projectRoot).epics;
+    if (!all) epics = epics.filter(e => (archived ? !!e.archived_at : !e.archived_at));
     return print(epics.map(e => ({
       id: e.id, title: e.title, sort_index: e.sort_index,
       done_count: e.done_count, total_count: e.total_count, percent_complete: e.percent_complete,
+      is_complete: e.is_complete, archived: !!e.archived_at,
       card_ids: e.card_ids,
     })));
   }

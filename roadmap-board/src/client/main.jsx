@@ -36,6 +36,7 @@ function App() {
   const [data, setData] = useState({ columns: [], prompts: {}, epics: [], cards: [] });
   const [toast, setToast] = useState(null);
   const [collapsedCompleted, setCollapsedCompleted] = useState(true);
+  const [collapsedArchived, setCollapsedArchived] = useState(true);
   const [openId, setOpenId] = useState(null);
   const [openEpicId, setOpenEpicId] = useState(null);
   const [focusEpicId, setFocusEpicId] = useState(null);
@@ -147,6 +148,10 @@ function App() {
   const readyCount = useMemo(() => data.cards.filter(c => c.ready).length, [data.cards]);
 
   const epicsById = useMemo(() => Object.fromEntries(data.epics.map(epic => [epic.id, epic])), [data.epics]);
+  // Active epics fill the rail; archived ones drop into a collapsed group at the bottom. Archiving is
+  // a CLI/skill action — the board stays read-only — so the UI only reflects archived_at, never sets it.
+  const activeEpics = useMemo(() => data.epics.filter(epic => !epic.archived_at), [data.epics]);
+  const archivedEpics = useMemo(() => data.epics.filter(epic => epic.archived_at), [data.epics]);
   const statusLabels = useMemo(() => Object.fromEntries(data.columns.map(c => [c.key, c.label])), [data.columns]);
   const openCard = useMemo(() => data.cards.find(c => c.id === openId) ?? null, [data.cards, openId]);
   const openEpic = useMemo(() => data.epics.find(e => e.id === openEpicId) ?? null, [data.epics, openEpicId]);
@@ -254,10 +259,10 @@ function App() {
     <section className="epic-rail" aria-label="Epic progress">
       <div className="epic-rail-head">
         <h2>Epics</h2>
-        <span className="count">{data.epics.length}</span>
+        <span className="count">{activeEpics.length}</span>
         {focusEpicId && <button type="button" className="epic-clear" onClick={() => setFocusEpicId(null)}>Showing {focusEpicId} · clear</button>}
       </div>
-      {data.epics.length === 0 ? <p className="muted">No epics yet.</p> : data.epics.map(epic =>
+      {activeEpics.length === 0 ? <p className="muted">No epics yet.</p> : activeEpics.map(epic =>
         <EpicRow
           key={epic.id}
           epic={epic}
@@ -267,6 +272,25 @@ function App() {
           onOpen={() => setOpenEpicId(epic.id)}
         />
       )}
+      {archivedEpics.length > 0 && <div className="epic-archived">
+        <div className="epic-archived-head">
+          <h3>Archived</h3>
+          <span className="count">{archivedEpics.length}</span>
+          <button type="button" className="collapse" onClick={() => setCollapsedArchived(v => !v)}>{collapsedArchived ? 'Show' : 'Hide'}</button>
+        </div>
+        {collapsedArchived
+          ? <p className="muted">{archivedEpics.length} archived epic{archivedEpics.length === 1 ? '' : 's'} hidden.</p>
+          : archivedEpics.map(epic =>
+            <EpicRow
+              key={epic.id}
+              epic={epic}
+              active={focusEpicId === epic.id}
+              dimmed={!!focusEpicId && focusEpicId !== epic.id}
+              onSelect={() => setFocusEpicId(id => id === epic.id ? null : epic.id)}
+              onOpen={() => setOpenEpicId(epic.id)}
+            />
+          )}
+      </div>}
     </section>
 
     <div className="board-scroll">
@@ -394,7 +418,10 @@ function EpicRow({ epic, active, dimmed, onSelect, onOpen }) {
     <div className="epic-meter" role="progressbar" aria-valuenow={epic.percent_complete} aria-valuemin={0} aria-valuemax={100} aria-label={`${epic.title} progress`}>
       <span style={{ width: `${epic.percent_complete}%` }} />
     </div>
-    <span className="id-tag">{epic.id}</span>
+    <span className="epic-id-cell">
+      <span className="id-tag">{epic.id}</span>
+      {epic.is_complete && <span className="done-chip" title="All cards completed">Done</span>}
+    </span>
     <div className="epic-copy">
       <h3>{epic.title}</h3>
       {epic.summary && <p>{epic.summary}</p>}
