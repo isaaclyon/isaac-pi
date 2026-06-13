@@ -7,7 +7,9 @@
     "roadmap-board": "./src/server/cli.js"
   },
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "concurrently --names api,ui --prefix-colors blue,magenta \"npm:dev:api\" \"npm:dev:ui\"",
+    "dev:api": "ROADMAP_PROJECT_ROOT=.. node --watch src/server/server.js",
+    "dev:ui": "vite --host 127.0.0.1",
     "serve": "ROADMAP_PROJECT_ROOT=.. node src/server/server.js",
     "build": "vite build",
     "test": "node --test tests/*.test.js"
@@ -20,5 +22,7 @@
     "react": "latest",
     "react-dom": "latest"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "concurrently": "latest"
+  }
 }
