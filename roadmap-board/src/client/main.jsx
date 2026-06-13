@@ -249,6 +249,7 @@ function App() {
       card={openCard}
       epic={epicsById[openCard.epic_id] ?? null}
       statusLabel={statusLabels[openCard.status] ?? openCard.status}
+      statusLabels={statusLabels}
       onCopy={action => copyPrompt(action, openCard)}
       onRefine={direction => copyRefine(openCard, direction)}
       onClose={() => setOpenId(null)}
@@ -415,11 +416,56 @@ function EpicModal({ epic, cards, statusLabels, onOpenCard, onClose }) {
   </div>;
 }
 
-function CardModal({ card, epic, statusLabel, onCopy, onRefine, onClose }) {
+// Turn a raw event row into a human sentence. Payload is left raw by the model so the client can
+// resolve status keys through the same statusLabels map the board uses; unknown shapes fall back to
+// the event_type so a new event kind degrades to something readable rather than blank.
+function describeEvent(event, statusLabels) {
+  const label = key => statusLabels[key] ?? key;
+  const p = event.payload ?? {};
+  switch (event.event_type) {
+    case 'card_created': return `Created in ${label(p.status)}`;
+    case 'card_moved': return `Moved from ${label(p.from)} to ${label(p.to)}`;
+    case 'card_deleted': return `Deleted from ${label(p.status)}`;
+    case 'card_updated': {
+      const fields = p.fields ?? [];
+      if (fields.length === 1 && fields[0] === 'epic_id') {
+        if (p.epic_id) return `Assigned to ${p.epic_id}`;
+        if (p.unassigned_epic) return `Removed from ${p.unassigned_epic}`;
+        return 'Removed from epic';
+      }
+      if (p.unlinked) return `Unlinked ${p.unlinked}`;
+      return fields.length ? `Updated ${fields.join(', ')}` : 'Updated';
+    }
+    default: return event.event_type.replace(/_/g, ' ');
+  }
+}
+
+// Absolute, locale-formatted timestamp; full ISO is kept on the <time> title for exact ordering.
+function formatEventTime(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, onClose }) {
   const [direction, setDirection] = useState('');
+  const [events, setEvents] = useState(null); // null = loading, [] = none/unavailable, [...] = loaded
   const panelRef = useRef(null);
 
   useEffect(() => { setDirection(''); }, [card.id]);
+
+  // Lazy-load history when the card changes. Kept off the snapshot so the 2s board poll stays cheap
+  // as the events table grows. A fetch failure degrades to an empty list (full offline UX is ROAD-014).
+  useEffect(() => {
+    let alive = true;
+    setEvents(null);
+    fetch(`/api/cards/${card.id}/events`)
+      .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
+      .then(rows => { if (alive) setEvents(rows); })
+      .catch(() => { if (alive) setEvents([]); });
+    return () => { alive = false; };
+  }, [card.id]);
+
   useDialogA11y(panelRef, onClose);
 
   function refine(e) {
@@ -453,6 +499,19 @@ function CardModal({ card, epic, statusLabel, onCopy, onRefine, onClose }) {
 
         <p className="modal-section-label">Description</p>
         {card.summary ? <p className="modal-summary">{card.summary}</p> : <p className="empty">No description yet.</p>}
+
+        <p className="modal-section-label">History</p>
+        {events === null ? <p className="empty">Loading history…</p>
+          : events.length === 0 ? <p className="empty">No history yet.</p>
+            : <ul className="card-history">
+              {events.map(event =>
+                <li key={event.id}>
+                  <span className={`history-actor actor-${event.actor_type}`}>{event.actor_type}</span>
+                  <span className="history-text">{describeEvent(event, statusLabels)}</span>
+                  <time className="history-time" dateTime={event.created_at} title={event.created_at}>{formatEventTime(event.created_at)}</time>
+                </li>
+              )}
+            </ul>}
       </div>
 
       <footer className="modal-actions">

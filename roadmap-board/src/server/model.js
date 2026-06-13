@@ -186,6 +186,14 @@ export class RoadmapStore {
     };
   }
 
+  cardEvents(id) {
+    this.card(id);
+    return this.db
+      .prepare('SELECT id, event_type, actor_type, payload, created_at FROM events WHERE card_id = ? ORDER BY id DESC')
+      .all(id)
+      .map(row => ({ ...row, payload: JSON.parse(row.payload || '{}') }));
+  }
+
   event(cardId, eventType, actorType, payload = {}) {
     assertActor(actorType);
     this.db.prepare('INSERT INTO events (card_id, event_type, actor_type, payload, created_at) VALUES (?, ?, ?, ?, ?)')

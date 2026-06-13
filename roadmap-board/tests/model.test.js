@@ -143,6 +143,22 @@ test('deleting an unknown epic throws 404', () => withStore((store) => {
   assert.throws(() => store.deleteEpic('EPIC-999'), /Unknown epic/);
 }));
 
+test('returns per-card event history newest-first and excludes unrelated events', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Trace me' });
+  store.move(card.id, 'in_progress');
+  store.agentUpdate(card.id, { summary: 'Now with detail' });
+  store.createEpic({ title: 'Unrelated epic' }); // card_id = NULL, must not appear
+
+  const events = store.cardEvents(card.id);
+  assert.deepEqual(events.map(e => e.event_type), ['card_updated', 'card_moved', 'card_created']);
+  assert.equal(events.at(-1).payload.status, 'triage');
+  assert.equal(events[1].payload.from, 'triage');
+  assert.equal(events[1].payload.to, 'in_progress');
+  assert.ok(events.every(e => e.event_type !== 'epic_created' && e.event_type !== 'markdown_exported'));
+
+  assert.throws(() => store.cardEvents('ROAD-999'), /Unknown card/);
+}));
+
 test('migrates existing databases forward without losing cards', () => {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-board-migrate-'));
   const dbPath = join(dir, '.pi', 'roadmap', 'roadmap.sqlite');

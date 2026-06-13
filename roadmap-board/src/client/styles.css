@@ -198,6 +198,15 @@ dd { margin: 0 0 4px; }
 .epic-modal-cards button:hover { background: var(--brand-tint); border-color: var(--accent-line); }
 .epic-modal-cards button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .epic-modal-card-title { color: var(--text); font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Card history timeline */
+.card-history { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0; padding: 0; }
+.card-history li { align-items: baseline; display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--divider); }
+.card-history li:first-child { border-top: none; }
+.history-actor { background: var(--surface-sunk); border-radius: 999px; color: var(--text-muted); flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 8px; text-transform: uppercase; }
+.history-actor.actor-agent { background: var(--brand-tint); color: var(--brand); }
+.history-text { color: var(--text); flex: 1; font-size: 13.5px; min-width: 0; }
+.history-time { color: var(--text-faint); flex: none; font-size: 12px; white-space: nowrap; }
+
 @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
 
