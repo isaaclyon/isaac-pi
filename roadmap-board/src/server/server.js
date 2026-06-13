@@ -1,6 +1,11 @@
 import express from 'express';
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openRoadmap } from './model.js';
+
+const packageRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 export async function startServer({ projectRoot = process.cwd(), port = 4177 } = {}) {
   const store = openRoadmap(projectRoot);
@@ -16,6 +21,9 @@ export async function startServer({ projectRoot = process.cwd(), port = 4177 } =
 
   app.use((error, _req, res, _next) => res.status(error.status ?? 500).json({ error: error.message }));
 
+  const dist = join(packageRoot, 'dist');
+  if (existsSync(dist)) app.use(express.static(dist));
+
   const server = createServer(app);
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   console.log(`Roadmap Board running at http://127.0.0.1:${port}`);
@@ -23,7 +31,10 @@ export async function startServer({ projectRoot = process.cwd(), port = 4177 } =
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  startServer({ port: Number(process.env.PORT || 4177) }).catch(error => {
+  startServer({
+    projectRoot: process.env.ROADMAP_PROJECT_ROOT || process.cwd(),
+    port: Number(process.env.PORT || 4177),
+  }).catch(error => {
     console.error(error);
     process.exit(1);
   });

@@ -21,13 +21,15 @@ node roadmap-board/src/server/cli.js move ROAD-001 in_progress
 node roadmap-board/src/server/cli.js serve --port 4177
 ```
 
-For development, run the API and Vite separately:
+For development, run the API and Vite separately. The API must point at the project root whose `.pi/roadmap/` and `ROADMAP.md` you want to use:
 
 ```sh
 cd roadmap-board
-npm run serve
+ROADMAP_PROJECT_ROOT=.. npm run serve
 npm run dev
 ```
+
+After `npm run build`, `node roadmap-board/src/server/cli.js serve --port 4177` serves both the API and built React UI from the project root.
 
 ## Fresh clones and worktrees
 
