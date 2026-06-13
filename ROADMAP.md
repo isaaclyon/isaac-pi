@@ -8,9 +8,9 @@
   - Summary: Make agent work visible on the roadmap by connecting cards to active Pi sessions and showing what those sessions are doing over time.
   - Progress: 0 / 2 (0%)
   - Cards: ROAD-024, ROAD-025
-- **EPIC-007** — Card Data Enhancement
+- **EPIC-007** — Card Data Enhancement ✓
   - Summary: Enhance roadmap card data with richer metadata and supporting artifacts.
-  - Progress: 0 / 1 (0%)
+  - Progress: 1 / 1 (100%)
   - Cards: ROAD-023
 
 ## Archived Epics
@@ -56,22 +56,6 @@ _No cards._
 
 ## Review
 
-- **ROAD-023** — Attach documents to roadmap cards
-  - Summary: Done: roadmap cards now support ordered supporting document references (title + href, optional kind/note) without storing uploaded blobs.
-
-Implemented:
-- Schema/model: added cards.documents JSON storage with forward migration, hydration defaults, strict validation, markdown export, and attachDocument/detachDocument helpers in roadmap-board/src/server/model.js.
-- CLI/API: agent updates accept documents; CLI supports attach-doc/detach-doc; the portable roadmap skill passes those commands through.
-- UI: card previews show document count chips and card modals render a Documents section with links/details in roadmap-board/src/client/main.jsx and styles.css.
-- Docs/tests: README and skill usage mention document references; model/server/migration tests cover storage, validation, export, API, helper methods, and legacy DB migration.
-
-Validation:
-- npm test (53 passing)
-- npm run build
-
-Notes:
-- Existing claim/ownership changes for ROAD-024 were already present in the working tree and were preserved.
-  - Epic: EPIC-007
 - **ROAD-024** — Support active ownership claims on roadmap cards
   - Summary: Let concurrent Pi sessions claim a card so agents see who is actively working it. Focused feature (not the larger coordination epic yet).
 
@@ -139,3 +123,19 @@ DONE — all 8 steps shipped. Claims are advisory coordination (never a lock): c
   - Epic: EPIC-005
   - Depends on: ROAD-009
   - Blocked reason: reorderEpics added across model/CLI/server/skill with tests; UI unchanged (read-only by design)
+- **ROAD-023** — Attach documents to roadmap cards
+  - Summary: Done: roadmap cards now support ordered supporting document references (title + href, optional kind/note) without storing uploaded blobs.
+
+Implemented:
+- Schema/model: added cards.documents JSON storage with forward migration, hydration defaults, strict validation, markdown export, and attachDocument/detachDocument helpers in roadmap-board/src/server/model.js.
+- CLI/API: agent updates accept documents; CLI supports attach-doc/detach-doc; the portable roadmap skill passes those commands through.
+- UI: card previews show document count chips and card modals render a Documents section with links/details in roadmap-board/src/client/main.jsx and styles.css.
+- Docs/tests: README and skill usage mention document references; model/server/migration tests cover storage, validation, export, API, helper methods, and legacy DB migration.
+
+Validation:
+- npm test (53 passing)
+- npm run build
+
+Notes:
+- Existing claim/ownership changes for ROAD-024 were already present in the working tree and were preserved.
+  - Epic: EPIC-007
