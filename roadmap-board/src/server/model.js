@@ -260,6 +260,21 @@ export class RoadmapStore {
     return this.card(card.id);
   }
 
+  deleteEpic(id, actor = 'agent') {
+    const epic = this.epic(id);
+    const children = this.db.prepare('SELECT id FROM cards WHERE epic_id = ?').all(epic.id);
+    const t = now();
+    for (const row of children) {
+      this.db.prepare('UPDATE cards SET epic_id = NULL, updated_at = ? WHERE id = ?').run(t, row.id);
+      this.event(row.id, 'card_updated', actor, { fields: ['epic_id'], unassigned_epic: epic.id });
+    }
+    this.db.prepare('DELETE FROM epics WHERE id = ?').run(epic.id);
+    const detached = children.map(row => row.id);
+    this.event(null, 'epic_deleted', actor, { epic_id: epic.id, detached });
+    this.exportMarkdown('system');
+    return { id: epic.id, deleted: true, detached };
+  }
+
   agentUpdate(id, patch, actor = 'agent') {
     const card = this.card(id);
     const next = {

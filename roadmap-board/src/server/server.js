@@ -16,6 +16,7 @@ export async function startServer({ projectRoot = process.cwd(), port = 4177 } =
   app.patch('/api/cards/:id/agent', (req, res, next) => { try { res.json(store.agentUpdate(req.params.id, req.body, 'agent')); } catch (e) { next(e); } });
   app.post('/api/epics', (req, res, next) => { try { res.json(store.createEpic(req.body, 'agent')); } catch (e) { next(e); } });
   app.patch('/api/epics/:id', (req, res, next) => { try { res.json(store.updateEpic(req.params.id, req.body, 'agent')); } catch (e) { next(e); } });
+  app.delete('/api/epics/:id', (req, res, next) => { try { res.json(store.deleteEpic(req.params.id, 'agent')); } catch (e) { next(e); } });
   app.post('/api/cards/:id/epic', (req, res, next) => { try { res.json(store.assignEpic(req.params.id, req.body.epic_id ?? null, 'agent')); } catch (e) { next(e); } });
   app.post('/api/cards/:id/move', (req, res, next) => { try { res.json(store.move(req.params.id, req.body.status, { blocked_reason: req.body.blocked_reason }, 'agent')); } catch (e) { next(e); } });
 

@@ -118,6 +118,31 @@ test('assigns and clears epic membership and exports epic details to markdown', 
   assert.match(markdown, /Epic: EPIC-001/);
 }));
 
+test('deleting an epic detaches its cards and removes it from markdown', () => withStore((store, dir) => {
+  const epic = store.createEpic({ title: 'Doomed epic', summary: 'Going away' });
+  const cardA = store.createTriage({ title: 'A' });
+  const cardB = store.createTriage({ title: 'B' });
+  store.assignEpic(cardA.id, epic.id);
+  store.assignEpic(cardB.id, epic.id);
+
+  const result = store.deleteEpic(epic.id);
+  assert.equal(result.deleted, true);
+  assert.equal(result.id, epic.id);
+  assert.deepEqual(result.detached.sort(), [cardA.id, cardB.id]);
+
+  assert.deepEqual(store.epics(), []);
+  assert.equal(store.card(cardA.id).epic_id, null);
+  assert.equal(store.card(cardB.id).epic_id, null);
+
+  const markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(markdown, /Doomed epic/);
+  assert.match(markdown, /## Epics\n\n_No epics\._/);
+}));
+
+test('deleting an unknown epic throws 404', () => withStore((store) => {
+  assert.throws(() => store.deleteEpic('EPIC-999'), /Unknown epic/);
+}));
+
 test('migrates existing databases forward without losing cards', () => {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-board-migrate-'));
   const dbPath = join(dir, '.pi', 'roadmap', 'roadmap.sqlite');

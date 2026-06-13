@@ -10,7 +10,7 @@
   - Cards: ROAD-001, ROAD-019, ROAD-005, ROAD-002
 - **EPIC-002** — Frictionless agent loop
   - Summary: Close the gap between the board and the agent: native API access, deep links, history, and the missing epic delete.
-  - Progress: 0 / 3 (0%)
+  - Progress: 1 / 3 (33%)
   - Cards: ROAD-006, ROAD-009, ROAD-008
 - **EPIC-003** — Dependencies & sequencing
   - Summary: Turn the existing depends_on/enables data into planning value: ready-next, blocked-by-dependency, cycle safety.
@@ -70,9 +70,7 @@ _No cards._
 
 ## In progress
 
-- **ROAD-009** — Agent epic delete
-  - Summary: Add deleteEpic to model.js (clear child cards' epic_id, log an event, re-export markdown), plus a CLI command and DELETE /api/epics/:id route. Fills the gap found while clearing the board.
-  - Epic: EPIC-002
+_No cards._
 
 ## Blocked
 
@@ -96,3 +94,6 @@ _No cards._
 - **ROAD-002** — Keyboard navigation across cards
   - Summary: Arrow keys move focus between cards within and across columns; Enter opens the card modal. Build on the existing role=button/tabIndex on .card. Modal already closes on Escape.
   - Epic: EPIC-001
+- **ROAD-009** — Agent epic delete
+  - Summary: Add deleteEpic to model.js (clear child cards' epic_id, log an event, re-export markdown), plus a CLI command and DELETE /api/epics/:id route. Fills the gap found while clearing the board.
+  - Epic: EPIC-002
