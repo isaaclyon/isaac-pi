@@ -24,11 +24,16 @@ Commands:
   epic-archive <id>                 Archive an Epic (reversible; keeps cards & history)
   epic-unarchive <id>               Restore an archived Epic
   reorder-epics <id,id,...>         Reorder all Epics (sets sort_index)
-  update <id> <json>                Agent update fields: title, summary, depends_on, enables, blocked_reason
+  update <id> <json>                Agent update fields: title, summary, depends_on, enables, blocked_reason, documents
   user-update <id> <json>           User update Triage title/summary only
+  attach-doc <id> <title> <href> [kind] [note]
+                                    Attach a supporting document reference to a card
+  detach-doc <id> <href>            Remove document references from a card by href
   assign-epic <cardId> <epicId>     Assign card to Epic
   clear-epic <cardId>               Remove card from Epic
   move <id> <status> [reason]       Agent move card; blocked requires reason
+  claim <id> [owner] [note]         Claim a card (owner defaults to $ROADMAP_SESSION_ID); --force to steal
+  release <id> [owner]              Release a card's claim; --force to override owner check
   delete <id>                       Delete a card (agent: any column)
   reorder <id,id,...>               Reorder all Triage cards
   export                            Regenerate ROADMAP.md
@@ -64,9 +69,21 @@ async function main() {
     else if (cmd === 'reorder-epics') result = store.reorderEpics((args[0] ?? '').split(',').filter(Boolean), 'agent');
     else if (cmd === 'user-update') result = store.updateTriage(args[0], parseJson(args[1], {}), 'user');
     else if (cmd === 'update') result = store.agentUpdate(args[0], parseJson(args[1], {}), 'agent');
+    else if (cmd === 'attach-doc') result = store.attachDocument(args[0], { title: args[1], href: args[2], kind: args[3], note: args[4] }, 'agent');
+    else if (cmd === 'detach-doc') result = store.detachDocument(args[0], args[1], 'agent');
     else if (cmd === 'assign-epic') result = store.assignEpic(args[0], args[1], 'agent');
     else if (cmd === 'clear-epic') result = store.assignEpic(args[0], null, 'agent');
     else if (cmd === 'move') result = store.move(args[0], args[1], { blocked_reason: args[2] }, 'agent');
+    else if (cmd === 'claim') {
+      const force = args.includes('--force');
+      const [id, owner, note] = args.filter(a => a !== '--force');
+      result = store.claimCard(id, owner ?? process.env.ROADMAP_SESSION_ID, { note, force }, 'agent');
+    }
+    else if (cmd === 'release') {
+      const force = args.includes('--force');
+      const [id, owner] = args.filter(a => a !== '--force');
+      result = store.releaseCard(id, { owner, force }, 'agent');
+    }
     else if (cmd === 'delete') result = store.deleteCard(args[0], 'agent');
     else if (cmd === 'reorder') result = store.reorderTriage((args[0] ?? '').split(',').filter(Boolean), 'user');
     else if (cmd === 'export') result = { markdown: store.exportMarkdown('system') };

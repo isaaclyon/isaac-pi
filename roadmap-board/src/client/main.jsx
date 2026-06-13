@@ -22,6 +22,34 @@ function readThemePref() {
   return 'system';
 }
 
+// Session/owner ids can be long opaque uuids; show a readable prefix on the chip and keep the full
+// value on the title attribute for hover/inspection. Short human labels pass through untouched.
+function shortOwner(owner) {
+  if (!owner) return '';
+  return owner.length > 12 ? `${owner.slice(0, 8)}…` : owner;
+}
+
+// Compact relative age for a claim ("just now", "5m", "3h", "2d"). Claims are live state, so an
+// absolute timestamp would read as stale; the elapsed time answers "is this claim still warm?".
+function formatClaimAge(iso) {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.round(hrs / 24)}d`;
+}
+
+function claimTitle(card) {
+  const parts = [`Claimed by ${card.claimed_by}`];
+  if (card.claimed_at) parts.push(`since ${new Date(card.claimed_at).toLocaleString()}`);
+  if (card.claim_note) parts.push(`— ${card.claim_note}`);
+  return parts.join(' ');
+}
+
 const EMPTY_HINTS = {
   triage: 'No triage cards yet — an agent adds them.',
   backlog: 'Nothing parked here yet.',
@@ -361,6 +389,7 @@ function ConnBanner({ message, onRetry, full = false }) {
 }
 
 function Card({ card, epic, onOpen }) {
+  const documents = card.documents ?? [];
   return <article
     className="card"
     data-card-id={card.id}
@@ -374,6 +403,8 @@ function Card({ card, epic, onOpen }) {
         <span className="card-id">{card.id}</span>
         {epic && <span className="epic-chip" title={epic.title}>{epic.id}</span>}
       </div>
+      {card.claimed_by && <span className="claim-chip" title={claimTitle(card)}>🔒 {shortOwner(card.claimed_by)}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}</span>}
+      {documents.length > 0 && <span className="doc-chip" title={`${documents.length} document${documents.length === 1 ? '' : 's'}`}>Docs {documents.length}</span>}
       {card.ready && <span className="ready-chip" title="All dependencies completed">Ready</span>}
       {card.dependency_blocked && <span className="blocked-chip" title="Waiting on incomplete dependencies">Waiting</span>}
     </div>
@@ -532,6 +563,8 @@ function describeEvent(event, statusLabels) {
     case 'card_created': return `Created in ${label(p.status)}`;
     case 'card_moved': return `Moved from ${label(p.from)} to ${label(p.to)}`;
     case 'card_deleted': return `Deleted from ${label(p.status)}`;
+    case 'card_claimed': return p.stolen_from ? `Claimed by ${p.owner} (stole from ${p.stolen_from})` : `Claimed by ${p.owner}`;
+    case 'card_released': return p.owner ? `Released by ${p.owner}` : 'Released';
     case 'card_updated': {
       const fields = p.fields ?? [];
       if (fields.length === 1 && fields[0] === 'epic_id') {
@@ -551,6 +584,10 @@ function formatEventTime(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function isUrl(href) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(href);
 }
 
 function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, onClose }) {
@@ -582,7 +619,8 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
     setDirection('');
   }
 
-  const hasProps = epic || card.ready || card.dependency_blocked || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
+  const hasProps = epic || card.claimed_by || card.ready || card.dependency_blocked || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
+  const documents = card.documents ?? [];
 
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-label={`${card.id}: ${card.title}`} tabIndex={-1} ref={panelRef} onClick={e => e.stopPropagation()}>
@@ -599,6 +637,7 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
 
         {hasProps && <dl className="modal-props">
           {epic && <><dt>Epic</dt><dd><span className="epic-chip" title={epic.title}>{epic.id}</span><span className="prop-text">{epic.title}</span></dd></>}
+          {card.claimed_by && <><dt>Claimed</dt><dd><span className="claim-chip" title={claimTitle(card)}>🔒 {shortOwner(card.claimed_by)}</span><span className="prop-text">{card.claimed_by}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}{card.claim_note ? ` — ${card.claim_note}` : ''}</span></dd></>}
           {card.ready && <><dt>Ready</dt><dd><span className="ready-chip">Ready</span><span className="prop-text">All dependencies completed</span></dd></>}
           {card.dependency_blocked && <><dt>Waiting</dt><dd><span className="blocked-chip">Waiting</span><span className="prop-text">Waiting on incomplete dependencies</span></dd></>}
           {card.depends_on.length > 0 && <><dt>Depends on</dt><dd className="prop-text">{card.depends_on.join(', ')}</dd></>}
@@ -608,6 +647,16 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
 
         <p className="modal-section-label">Description</p>
         {card.summary ? <p className="modal-summary">{card.summary}</p> : <p className="empty">No description yet.</p>}
+
+        <p className="modal-section-label">Documents</p>
+        {documents.length === 0 ? <p className="empty">No documents attached.</p> : <ul className="card-documents">
+          {documents.map((document, index) => <li key={`${document.href}-${index}`}>
+            <a href={document.href} target={isUrl(document.href) ? '_blank' : undefined} rel={isUrl(document.href) ? 'noreferrer' : undefined}>{document.title}</a>
+            {document.kind && <span className="doc-kind">{document.kind}</span>}
+            {document.note && <span className="doc-note">{document.note}</span>}
+            {!isUrl(document.href) && <code>{document.href}</code>}
+          </li>)}
+        </ul>}
 
         <p className="modal-section-label">History</p>
         {events === null ? <p className="empty">Loading history…</p>

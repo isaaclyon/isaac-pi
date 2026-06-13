@@ -113,6 +113,14 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		if (attached && sessionId) {
+			// Drop this session's active claims so a clean exit doesn't leave cards looking owned by a
+			// gone session. Best-effort: a crash skips this, and stale claims stay visible (with their
+			// age) for a human or a force-claim to clear.
+			try {
+				await releaseSessionClaims(attached, sessionId);
+			} catch {
+				/* best-effort claim cleanup */
+			}
 			try {
 				await detachServer(attached.root, sessionId);
 			} catch {
@@ -122,11 +130,20 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 		attached = undefined;
 	});
 
+	/** Release every card currently claimed by `owner` (this session) via the validating CLI. */
+	async function releaseSessionClaims(target: { root: string; cliPath: string }, owner: string): Promise<void> {
+		const snap = await snapshot(target);
+		const mine = snap.cards.filter((c) => c.claimed_by === owner);
+		for (const card of mine) {
+			await runCli(target.root, target.cliPath, ["release", card.id, owner]);
+		}
+	}
+
 	// --- /road command ----------------------------------------------------
 
 	pi.registerCommand("road", {
 		description:
-			"Roadmap board. Usage: /road [summary] | ready [--epic E] | get <id> | blocked | open | init | triage|new <idea> | brainstorm|plan|execute|review <id>",
+			"Roadmap board. Usage: /road [summary] | ready [--epic E] | get <id> | blocked | claim|release <id> | open | init | triage|new <idea> | brainstorm|plan|execute|review <id>",
 		handler: async (args, ctx) => {
 			const trimmed = args.trim();
 			const tokens = trimmed.split(/\s+/).filter(Boolean);
@@ -185,6 +202,25 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 				if (sub === "blocked") {
 					const cards = (await runCli(target.root, target.cliPath, ["blocked-deps"])) as BoardCard[];
 					ctx.ui.notify(cards.length ? cards.map(slim).join("\n") : "No dependency-blocked cards.", "info");
+					return;
+				}
+
+				if (sub === "claim" || sub === "release") {
+					const id = tokens.find((t) => t !== "--force");
+					if (!id) {
+						ctx.ui.notify(`Usage: /road ${sub} <id> [--force]`, "warning");
+						return;
+					}
+					// The live Pi session is the claim owner, so a session can only release its own
+					// claim (the model rejects a mismatched owner) unless --force is passed.
+					sessionId = sessionId ?? sessionIdFor(ctx);
+					const force = tokens.includes("--force");
+					const cliArgs = [sub, id, sessionId, ...(force ? ["--force"] : [])];
+					const card = (await runCli(target.root, target.cliPath, cliArgs)) as BoardCard;
+					ctx.ui.notify(
+						sub === "claim" ? `🔒 Claimed ${card.id} — ${card.title}` : `🔓 Released ${card.id}`,
+						"info",
+					);
 					return;
 				}
 

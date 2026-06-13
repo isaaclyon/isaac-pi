@@ -49,8 +49,9 @@ test('upgrades a partial pre-versioned schema, preserving existing rows', () => 
 
   const store = openRoadmap(dir);
   try {
-    // Schema is now complete: epic_id added, meta counters seeded, events/epics tables present.
+    // Schema is now complete: card metadata columns added, meta counters seeded, events/epics tables present.
     assert.ok(columnNames(store.db, 'cards').includes('epic_id'));
+    assert.ok(columnNames(store.db, 'cards').includes('documents'));
     assert.equal(store.db.prepare('SELECT value FROM meta WHERE key = ?').get('next_card_number').value, '1');
     assert.equal(store.db.prepare('SELECT value FROM meta WHERE key = ?').get('next_epic_number').value, '1');
     // Pre-existing row survived the upgrade untouched, with epic_id defaulting to null.
@@ -58,6 +59,7 @@ test('upgrades a partial pre-versioned schema, preserving existing rows', () => 
     assert.equal(card.title, 'Legacy card');
     assert.equal(card.status, 'in_progress');
     assert.equal(card.epic_id, null);
+    assert.deepEqual(card.documents, []);
     // The board is fully operational on top of the migrated schema.
     assert.equal(store.createTriage({ title: 'Post-migration card' }).id, 'ROAD-001');
   } finally {
@@ -97,10 +99,12 @@ test('stamps a full but unversioned legacy DB without duplicating columns or los
 
   const store = openRoadmap(dir);
   try {
-    // No duplicate epic_id column, existing meta counters untouched (not reset to 1).
+    // No duplicate metadata columns, existing meta counters untouched (not reset to 1).
     assert.equal(columnNames(store.db, 'cards').filter(n => n === 'epic_id').length, 1);
+    assert.equal(columnNames(store.db, 'cards').filter(n => n === 'documents').length, 1);
     assert.equal(store.db.prepare('SELECT value FROM meta WHERE key = ?').get('next_card_number').value, '12');
     assert.equal(store.card('ROAD-011').title, 'Pre-existing');
+    assert.deepEqual(store.card('ROAD-011').documents, []);
     // The preserved counter is honoured: the next card is ROAD-012, not a re-issued low id.
     assert.equal(store.createTriage({ title: 'Next' }).id, 'ROAD-012');
   } finally {
@@ -114,6 +118,7 @@ test('a fresh DB lands directly on the current schema version', () => {
   const store = openRoadmap(dir);
   try {
     assert.ok(columnNames(store.db, 'cards').includes('epic_id'));
+    assert.ok(columnNames(store.db, 'cards').includes('documents'));
   } finally {
     store.close();
   }

@@ -23,7 +23,7 @@ const STATUSES = ['triage', 'backlog', 'up_next', 'in_progress', 'blocked', 'rev
 
 // Verbs that mutate or read an existing board (require a resolved project root + an initialized DB).
 const PASSTHROUGH = new Set([
-  'add', 'update', 'user-update', 'move', 'delete', 'reorder', 'events', 'export',
+  'add', 'update', 'user-update', 'attach-doc', 'detach-doc', 'move', 'claim', 'release', 'delete', 'reorder', 'events', 'export',
   'epic-add', 'epic-update', 'epic-delete', 'epic-archive', 'epic-unarchive', 'reorder-epics',
   'assign-epic', 'clear-epic',
 ]);
@@ -94,8 +94,12 @@ function usage() {
     },
     writes: {
       'add <title> [summary]': 'Create a Triage card (user actor).',
-      'update <id> <json>': 'Patch title|summary|depends_on|enables|blocked_reason.',
+      'update <id> <json>': 'Patch title|summary|depends_on|enables|blocked_reason|documents.',
+      'attach-doc <id> <title> <href> [kind] [note]': 'Attach a supporting document reference to a card.',
+      'detach-doc <id> <href>': 'Remove document references from a card by href.',
       'move <id> <status> [reason]': 'Move card; status=blocked requires a reason.',
+      'claim <id> [owner] [note]': 'Claim a card (owner defaults to $ROADMAP_SESSION_ID); --force to steal.',
+      'release <id> [owner]': 'Release a card\'s claim; --force to override the owner check.',
       'assign-epic <cardId> <epicId>': 'Attach card to epic.',
       'clear-epic <cardId>': 'Detach card from its epic.',
       'epic-add <title> [summary]': 'Create an epic.',

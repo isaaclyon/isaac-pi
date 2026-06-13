@@ -5,8 +5,10 @@ import {
 	attachRef,
 	type BoardSnapshot,
 	boardDbPath,
+	buildBoardSummary,
 	buildNotifyLine,
 	buildWidgetLines,
+	claimedCards,
 	countReady,
 	detachRef,
 	fillTemplate,
@@ -19,6 +21,7 @@ import {
 	resolveProjectRoot,
 	type RootResolveDeps,
 	type ServerState,
+	shortOwner,
 	shouldReuseServer,
 } from "./core.ts";
 
@@ -190,4 +193,33 @@ test("progressBar clamps and fills proportionally", () => {
 	assert.equal(progressBar(100, 10), "██████████");
 	assert.equal(progressBar(50, 10), "█████░░░░░");
 	assert.equal(progressBar(150, 4), "████");
+});
+
+test("shortOwner abbreviates long opaque ids but passes short labels through", () => {
+	assert.equal(shortOwner("alice"), "alice");
+	assert.equal(shortOwner("019ec248-05df-7506"), "019ec248…");
+	assert.equal(shortOwner(null), "");
+	assert.equal(shortOwner(undefined), "");
+});
+
+test("claimedCards selects only cards with an active claim", () => {
+	const cards = [
+		{ id: "A", title: "a", status: "in_progress", epic_id: null, claimed_by: "sess-1" },
+		{ id: "B", title: "b", status: "backlog", epic_id: null, claimed_by: null },
+		{ id: "C", title: "c", status: "up_next", epic_id: null },
+	];
+	assert.deepEqual(claimedCards(cards).map((c) => c.id), ["A"]);
+});
+
+test("buildBoardSummary lists claimed cards with their owner", () => {
+	const snap: BoardSnapshot = {
+		cards: [
+			{ id: "ROAD-024", title: "Ownership claims", status: "in_progress", epic_id: null, claimed_by: "019ec248-05df-7506" },
+			{ id: "ROAD-025", title: "Timeline", status: "backlog", epic_id: null },
+		],
+		epics: [],
+	};
+	const summary = buildBoardSummary(snap);
+	assert.match(summary, /Claimed:/);
+	assert.match(summary, /🔒 ROAD-024 · 019ec248… · Ownership claims/);
 });

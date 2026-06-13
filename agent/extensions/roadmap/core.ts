@@ -216,6 +216,8 @@ export interface BoardCard {
 	epic_id: string | null;
 	ready?: boolean;
 	dependency_blocked?: boolean;
+	claimed_by?: string | null;
+	claimed_at?: string | null;
 }
 
 export interface BoardEpic {
@@ -250,6 +252,17 @@ export function findActiveCard(cards: BoardCard[]): BoardCard | undefined {
 export function findEpic(epics: BoardEpic[], epicId: string | null | undefined): BoardEpic | undefined {
 	if (!epicId) return undefined;
 	return epics.find((e) => e.id === epicId);
+}
+
+/** Cards with an active ownership claim — the coordination view for concurrent sessions. */
+export function claimedCards(cards: BoardCard[]): BoardCard[] {
+	return cards.filter((c) => !!c.claimed_by);
+}
+
+/** A readable prefix for an opaque owner/session id; short human labels pass through. */
+export function shortOwner(owner: string | null | undefined, len = 8): string {
+	if (!owner) return "";
+	return owner.length > 12 ? `${owner.slice(0, len)}…` : owner;
 }
 
 /** The one-line session-start notice: URL + ready count + active card. */
@@ -291,6 +304,11 @@ export function buildBoardSummary(snapshot: BoardSnapshot): string {
 	const active = findActiveCard(snapshot.cards);
 	if (active) lines.push(`In progress: ${active.id} · ${active.title}`);
 	lines.push(`Ready: ${countReady(snapshot.cards)}  ·  Dependency-blocked: ${countDependencyBlocked(snapshot.cards)}`);
+	const claimed = claimedCards(snapshot.cards);
+	if (claimed.length) {
+		lines.push("Claimed:");
+		for (const c of claimed) lines.push(`  🔒 ${c.id} · ${shortOwner(c.claimed_by)} · ${c.title}`);
+	}
 	if (snapshot.epics.length) {
 		lines.push("Epics:");
 		for (const epic of snapshot.epics) {

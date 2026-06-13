@@ -87,6 +87,19 @@ test('PATCH /api/cards/:id/agent persists edits as the agent and maps validation
   assert.match(cycle.json.error, /dependency cycle/);
 }));
 
+test('PATCH /api/cards/:id/agent persists and validates document references', () => withServer(async ({ base, store }) => {
+  const card = store.createTriage({ title: 'Documented work' });
+  const documents = [{ title: 'Proof', href: 'docs/proof.md', kind: 'validation' }];
+
+  const ok = await req(base, 'PATCH', `/api/cards/${card.id}/agent`, { documents });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.json.documents, documents);
+
+  const invalid = await req(base, 'PATCH', `/api/cards/${card.id}/agent`, { documents: [{ title: 'Missing href' }] });
+  assert.equal(invalid.status, 400);
+  assert.match(invalid.json.error, /href is required/);
+}));
+
 test('POST /api/epics creates an epic and 400s without a title', () => withServer(async ({ base }) => {
   const ok = await req(base, 'POST', '/api/epics', { title: 'Robustness', summary: 'Tests' });
   assert.equal(ok.status, 200);
@@ -190,5 +203,34 @@ test('POST /api/cards/:id/move transitions columns and enforces move rules', () 
   assert.match(noReason.json.error, /require a blocked_reason/);
 
   const missing = await req(base, 'POST', '/api/cards/ROAD-999/move', { status: 'up_next' });
+  assert.equal(missing.status, 404);
+}));
+
+test('POST /api/cards/:id/claim and /release manage ownership and enforce the owner guard', () => withServer(async ({ base, store }) => {
+  const card = store.createTriage({ title: 'Coordinated' });
+
+  const claimed = await req(base, 'POST', `/api/cards/${card.id}/claim`, { owner: 'alice', note: 'mine' });
+  assert.equal(claimed.status, 200);
+  assert.equal(claimed.json.claimed_by, 'alice');
+  assert.equal(claimed.json.claim_note, 'mine');
+  assert.equal(store.cardEvents(card.id)[0].actor_type, 'agent');
+
+  // A second owner is rejected with 409 unless forced.
+  const conflict = await req(base, 'POST', `/api/cards/${card.id}/claim`, { owner: 'bob' });
+  assert.equal(conflict.status, 409);
+  assert.match(conflict.json.error, /already claimed by alice/);
+
+  const stolen = await req(base, 'POST', `/api/cards/${card.id}/claim`, { owner: 'bob', force: true });
+  assert.equal(stolen.status, 200);
+  assert.equal(stolen.json.claimed_by, 'bob');
+
+  // The owner guard blocks a mismatched release; force overrides it.
+  const guarded = await req(base, 'POST', `/api/cards/${card.id}/release`, { owner: 'alice' });
+  assert.equal(guarded.status, 409);
+  const released = await req(base, 'POST', `/api/cards/${card.id}/release`, { owner: 'alice', force: true });
+  assert.equal(released.status, 200);
+  assert.equal(released.json.claimed_by, null);
+
+  const missing = await req(base, 'POST', '/api/cards/ROAD-999/claim', { owner: 'alice' });
   assert.equal(missing.status, 404);
 }));

@@ -21,6 +21,8 @@ export async function startServer({ projectRoot = process.cwd(), port = 4177 } =
   app.delete('/api/epics/:id', (req, res, next) => { try { res.json(store.deleteEpic(req.params.id, 'agent')); } catch (e) { next(e); } });
   app.post('/api/cards/:id/epic', (req, res, next) => { try { res.json(store.assignEpic(req.params.id, req.body.epic_id ?? null, 'agent')); } catch (e) { next(e); } });
   app.post('/api/cards/:id/move', (req, res, next) => { try { res.json(store.move(req.params.id, req.body.status, { blocked_reason: req.body.blocked_reason }, 'agent')); } catch (e) { next(e); } });
+  app.post('/api/cards/:id/claim', (req, res, next) => { try { res.json(store.claimCard(req.params.id, req.body.owner, { note: req.body.note, force: req.body.force }, 'agent')); } catch (e) { next(e); } });
+  app.post('/api/cards/:id/release', (req, res, next) => { try { res.json(store.releaseCard(req.params.id, { owner: req.body.owner, force: req.body.force }, 'agent')); } catch (e) { next(e); } });
 
   app.use((error, _req, res, _next) => res.status(error.status ?? 500).json({ error: error.message }));
 

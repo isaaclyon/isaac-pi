@@ -79,9 +79,11 @@ not from a full board dump.
 | Command | Notes |
 | --- | --- |
 | `add <title> [summary]` | New Triage card (logged as the **user** actor). |
-| `update <id> <json>` | Agent patch of `title`, `summary`, `depends_on`, `enables`, `blocked_reason`. IDs in `depends_on`/`enables` must exist and can't be self-links. This is your main editing verb. |
+| `update <id> <json>` | Agent patch of `title`, `summary`, `depends_on`, `enables`, `blocked_reason`, `documents`. IDs in `depends_on`/`enables` must exist and can't be self-links. `documents` is an ordered array of `{title, href, kind?, note?}` references. This is your main editing verb. |
 | `user-update <id> <json>` | User patch of `title`/`summary` only, and **only while the card is in Triage** (mirrors the human's edit lane). Prefer `update` for agent work. |
+| `attach-doc <id> <title> <href> [kind] [note]` / `detach-doc <id> <href>` | Attach or remove supporting document/artifact references by href. |
 | `move <id> <status> [reason]` | Move between columns. `move <id> blocked <reason>` **requires** a reason. |
+| `claim <id> [owner] [note]` / `release <id> [owner]` | Advisory ownership claim so concurrent agents see who's holding a card. `owner` defaults to `$ROADMAP_SESSION_ID`; claiming a card held by someone else needs `--force` (logs `stolen_from`), as does releasing a mismatched owner. Claims are transient — they live in the DB/UI/events but are **not** exported to `ROADMAP.md`. |
 | `assign-epic <cardId> <epicId>` / `clear-epic <cardId>` | Attach / detach an epic. |
 | `epic-add <title> [summary]` | New epic. |
 | `epic-update <id> <json>` | Patch epic `title`, `summary`, `sort_index`. |
@@ -110,6 +112,11 @@ JSON args are a single quoted object, e.g. `update ROAD-006 '{"summary":"…","d
   all are completed; `dependency_blocked` is the inverse. Both are orthogonal to the **`blocked`
   status column** (a manual side state that needs a `blocked_reason`). Don't set `blocked` for a
   dependency wait — that's already surfaced by `blocked-deps`.
+- **Claims are advisory, not locks.** `claim`/`release` annotate a card with the session actively
+  holding it so concurrent agents can coordinate; they never block a write. The owner is an opaque
+  string (session id by default), the guard is overridable with `--force`, and the state is transient
+  — it stays in the DB, the live board, and the event log, but is deliberately kept out of the
+  committed `ROADMAP.md` so stale session ids never churn the shared snapshot.
 
 ## Notes
 

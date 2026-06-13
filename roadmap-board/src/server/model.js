@@ -101,6 +101,18 @@ const MIGRATIONS = [
   function v4_epic_archived_at(db) {
     ensureColumn(db, 'epics', 'archived_at', 'ALTER TABLE epics ADD COLUMN archived_at TEXT');
   },
+  function v5_card_claims(db) {
+    // Active ownership claim: which session/agent is working a card right now. Three nullable
+    // columns (no claim = all NULL) rather than a side table, because a card has at most one
+    // active claim and the state flows trivially through hydrateCard/snapshot. The audit trail
+    // of who claimed/released when lives in the events log, not here.
+    ensureColumn(db, 'cards', 'claimed_by', 'ALTER TABLE cards ADD COLUMN claimed_by TEXT');
+    ensureColumn(db, 'cards', 'claimed_at', 'ALTER TABLE cards ADD COLUMN claimed_at TEXT');
+    ensureColumn(db, 'cards', 'claim_note', 'ALTER TABLE cards ADD COLUMN claim_note TEXT');
+  },
+  function v6_card_documents(db) {
+    ensureColumn(db, 'cards', 'documents', "ALTER TABLE cards ADD COLUMN documents TEXT NOT NULL DEFAULT '[]'");
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -156,6 +168,24 @@ function normalizeSortIndex(value) {
   const number = Number(value);
   if (!Number.isInteger(number)) throw httpError(400, 'sort_index must be an integer');
   return number;
+}
+function normalizeDocuments(value) {
+  if (!Array.isArray(value)) throw httpError(400, 'documents must be an array');
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw httpError(400, `documents[${index}] must be an object`);
+    const unknown = Object.keys(entry).filter(key => !['title', 'href', 'kind', 'note'].includes(key));
+    if (unknown.length) throw httpError(400, `Unknown document field(s): ${unknown.join(', ')}`);
+    const title = normalizeText(entry.title);
+    const href = normalizeText(entry.href);
+    if (!title) throw httpError(400, `documents[${index}].title is required`);
+    if (!href) throw httpError(400, `documents[${index}].href is required`);
+    const document = { title, href };
+    const kind = normalizeText(entry.kind);
+    const note = normalizeText(entry.note);
+    if (kind) document.kind = kind;
+    if (note) document.note = note;
+    return document;
+  });
 }
 export function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
 
@@ -227,6 +257,10 @@ export class RoadmapStore {
       epic_id: row.epic_id ?? null,
       depends_on: parseList(row.depends_on),
       enables: parseList(row.enables),
+      documents: parseList(row.documents),
+      claimed_by: row.claimed_by ?? null,
+      claimed_at: row.claimed_at ?? null,
+      claim_note: row.claim_note ?? null,
     };
     card.ready = statusById ? this.isReady(card, statusById) : false;
     card.dependency_blocked = statusById ? this.isDependencyBlocked(card, statusById) : false;
@@ -452,14 +486,31 @@ export class RoadmapStore {
         depends_on: patch.depends_on === undefined ? card.depends_on : this.validateCardIds(patch.depends_on, id),
         enables: patch.enables === undefined ? card.enables : this.validateCardIds(patch.enables, id),
         blocked_reason: patch.blocked_reason === undefined ? card.blocked_reason : normalizeText(patch.blocked_reason),
+        documents: patch.documents === undefined ? card.documents : normalizeDocuments(patch.documents),
       };
       if (!next.title) throw httpError(400, 'Title is required');
       this.assertNoCycle(id, next.depends_on, next.enables);
-      this.db.prepare('UPDATE cards SET title = ?, summary = ?, depends_on = ?, enables = ?, blocked_reason = ?, updated_at = ? WHERE id = ?')
-        .run(next.title, next.summary, stringifyList(next.depends_on), stringifyList(next.enables), next.blocked_reason, now(), id);
+      this.db.prepare('UPDATE cards SET title = ?, summary = ?, depends_on = ?, enables = ?, blocked_reason = ?, documents = ?, updated_at = ? WHERE id = ?')
+        .run(next.title, next.summary, stringifyList(next.depends_on), stringifyList(next.enables), next.blocked_reason, stringifyList(next.documents), now(), id);
       this.event(id, 'card_updated', actor, { fields: Object.keys(patch) });
       this.exportMarkdown('system');
       return this.card(id);
+    });
+  }
+
+  attachDocument(id, document, actor = 'agent') {
+    return this.tx(() => {
+      const card = this.card(id);
+      return this.agentUpdate(id, { documents: [...card.documents, normalizeDocuments([document])[0]] }, actor);
+    });
+  }
+
+  detachDocument(id, href, actor = 'agent') {
+    const target = normalizeText(href);
+    if (!target) throw httpError(400, 'Document href is required');
+    return this.tx(() => {
+      const card = this.card(id);
+      return this.agentUpdate(id, { documents: card.documents.filter(document => document.href !== target) }, actor);
     });
   }
 
@@ -472,6 +523,54 @@ export class RoadmapStore {
       this.db.prepare('UPDATE cards SET status = ?, position = ?, blocked_reason = ?, updated_at = ? WHERE id = ?')
         .run(status, this.maxPosition(status) + 1, reason, now(), id);
       this.event(id, 'card_moved', actor, { from: card.status, to: status });
+      this.exportMarkdown('system');
+      return this.card(id);
+    });
+  }
+
+  // Active ownership claim. `owner` is an opaque identity string — a Pi session id when driven by
+  // the extension, or any human-meaningful label from the CLI/skill. One active claim per card:
+  // claiming a card already held by a *different* owner is rejected unless `force` (a deliberate
+  // steal, recorded as stolen_from), so two concurrent agents can't silently clobber each other.
+  // Re-claiming your own card is an idempotent refresh of claimed_at/note. Claims are transient
+  // per-session state and are deliberately left out of the exported ROADMAP.md (see _exportMarkdown).
+  claimCard(id, owner, { note, force = false } = {}, actor = 'agent') {
+    const nextOwner = normalizeText(owner);
+    if (!nextOwner) throw httpError(400, 'A claim requires an owner');
+    return this.tx(() => {
+      const card = this.card(id);
+      if (card.claimed_by && card.claimed_by !== nextOwner && !force) {
+        throw httpError(409, `${id} is already claimed by ${card.claimed_by}. Release it first or claim with force.`);
+      }
+      const stolenFrom = card.claimed_by && card.claimed_by !== nextOwner ? card.claimed_by : null;
+      const nextNote = note === undefined ? (card.claimed_by === nextOwner ? card.claim_note : '') : normalizeText(note);
+      this.db.prepare('UPDATE cards SET claimed_by = ?, claimed_at = ?, claim_note = ?, updated_at = ? WHERE id = ?')
+        .run(nextOwner, now(), nextNote ?? '', now(), id);
+      const payload = { owner: nextOwner };
+      if (nextNote) payload.note = nextNote;
+      if (stolenFrom) payload.stolen_from = stolenFrom;
+      this.event(id, 'card_claimed', actor, payload);
+      this.exportMarkdown('system');
+      return this.card(id);
+    });
+  }
+
+  // Drop a card's active claim. A no-op (no event) when the card is unclaimed, so release is safe to
+  // call blindly. When `owner` is supplied it must match the current holder unless `force` — this is
+  // what stops one session from yanking another's claim, while an agent housekeeping call can pass no
+  // owner to clear unconditionally.
+  releaseCard(id, { owner, force = false } = {}, actor = 'agent') {
+    const claimant = owner === undefined ? undefined : normalizeText(owner);
+    return this.tx(() => {
+      const card = this.card(id);
+      if (!card.claimed_by) return card;
+      if (claimant && card.claimed_by !== claimant && !force) {
+        throw httpError(409, `${id} is claimed by ${card.claimed_by}, not ${claimant}. Release with force to override.`);
+      }
+      const released = card.claimed_by;
+      this.db.prepare('UPDATE cards SET claimed_by = NULL, claimed_at = NULL, claim_note = NULL, updated_at = ? WHERE id = ?')
+        .run(now(), id);
+      this.event(id, 'card_released', actor, { owner: released });
       this.exportMarkdown('system');
       return this.card(id);
     });
@@ -626,9 +725,19 @@ export class RoadmapStore {
         continue;
       }
       for (const card of statusCards) {
+        // Note: claim state (claimed_by/claimed_at/claim_note) is deliberately NOT exported. It is
+        // transient per-session ownership (like the gitignored .server.json), surfaced in the live
+        // UI and the event log; writing it here would churn the committed snapshot with stale ids.
         lines.push(`- **${card.id}** — ${card.title}`);
         if (card.summary) lines.push(`  - Summary: ${card.summary}`);
         if (card.epic_id) lines.push(`  - Epic: ${card.epic_id}`);
+        if (card.documents.length) {
+          lines.push('  - Documents:');
+          for (const document of card.documents) {
+            const details = [document.kind, document.note].filter(Boolean).join(' — ');
+            lines.push(`    - [${document.title}](${document.href})${details ? ` — ${details}` : ''}`);
+          }
+        }
         if (card.depends_on.length) lines.push(`  - Depends on: ${card.depends_on.join(', ')}`);
         if (card.enables.length) lines.push(`  - Enables: ${card.enables.join(', ')}`);
         if (card.blocked_reason) lines.push(`  - Blocked reason: ${card.blocked_reason}`);

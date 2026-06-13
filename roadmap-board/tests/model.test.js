@@ -32,6 +32,38 @@ test('users cannot update non-Triage cards, but agents can', () => withStore((st
   assert.equal(updated.title, 'Agent edit');
 }));
 
+test('stores card document references, validates shape, and exports them', () => withStore((store, dir) => {
+  const card = store.createTriage({ title: 'Implementation' });
+  const documents = [
+    { title: 'Review notes', href: 'docs/review.md', kind: 'review', note: 'Approved with follow-ups' },
+    { title: 'Validation run', href: 'https://example.com/run/123' },
+  ];
+
+  const updated = store.agentUpdate(card.id, { documents });
+  assert.deepEqual(updated.documents, documents);
+  assert.deepEqual(store.agentUpdate(card.id, { summary: 'Updated summary' }).documents, documents);
+
+  const markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(markdown, /Documents:/);
+  assert.match(markdown, /\[Review notes\]\(docs\/review\.md\) — review — Approved with follow-ups/);
+  assert.match(markdown, /\[Validation run\]\(https:\/\/example\.com\/run\/123\)/);
+
+  assert.throws(() => store.agentUpdate(card.id, { documents: 'not an array' }), /documents must be an array/);
+  assert.throws(() => store.agentUpdate(card.id, { documents: [{ title: 'Missing href' }] }), /href is required/);
+  assert.throws(() => store.agentUpdate(card.id, { documents: [{ title: 'Extra', href: 'x', extra: true }] }), /Unknown document field/);
+}));
+
+test('appends and removes card documents by href', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Proof bundle' });
+
+  const attached = store.attachDocument(card.id, { title: 'Test output', href: 'artifacts/test.txt', kind: 'proof' });
+  assert.deepEqual(attached.documents, [{ title: 'Test output', href: 'artifacts/test.txt', kind: 'proof' }]);
+  assert.equal(store.cardEvents(card.id)[0].payload.fields[0], 'documents');
+
+  const detached = store.detachDocument(card.id, 'artifacts/test.txt');
+  assert.deepEqual(detached.documents, []);
+}));
+
 test('blocked cards require a blocked reason', () => withStore((store) => {
   const card = store.createTriage({ title: 'Needs API' });
   assert.throws(() => store.move(card.id, 'blocked'), /blocked_reason/);
@@ -411,6 +443,71 @@ test('returns per-card event history newest-first and excludes unrelated events'
   assert.ok(events.every(e => e.event_type !== 'epic_created' && e.event_type !== 'markdown_exported'));
 
   assert.throws(() => store.cardEvents('ROAD-999'), /Unknown card/);
+}));
+
+test('claims a card: sets owner/note/at, logs an event, hydrates', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Claimable' });
+  const claimed = store.claimCard(card.id, 'session-abc', { note: 'on it' });
+  assert.equal(claimed.claimed_by, 'session-abc');
+  assert.equal(claimed.claim_note, 'on it');
+  assert.ok(claimed.claimed_at);
+  const events = store.cardEvents(card.id);
+  assert.equal(events[0].event_type, 'card_claimed');
+  assert.deepEqual(events[0].payload, { owner: 'session-abc', note: 'on it' });
+}));
+
+test('claim requires a non-empty owner', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Needs owner' });
+  assert.throws(() => store.claimCard(card.id, ''), /requires an owner/);
+  assert.throws(() => store.claimCard(card.id, '   '), /requires an owner/);
+}));
+
+test('re-claiming your own card refreshes without error; a different owner is rejected', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Contested' });
+  store.claimCard(card.id, 'alice', { note: 'first' });
+  // Same owner re-claim is an idempotent refresh and keeps the note when not re-specified.
+  assert.equal(store.claimCard(card.id, 'alice').claim_note, 'first');
+  // A different owner is rejected without force.
+  assert.throws(() => store.claimCard(card.id, 'bob'), /already claimed by alice/);
+  assert.equal(store.card(card.id).claimed_by, 'alice');
+}));
+
+test('force-claim steals a card and records stolen_from', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Stealable' });
+  store.claimCard(card.id, 'alice');
+  const stolen = store.claimCard(card.id, 'bob', { force: true });
+  assert.equal(stolen.claimed_by, 'bob');
+  const events = store.cardEvents(card.id);
+  assert.equal(events[0].event_type, 'card_claimed');
+  assert.equal(events[0].payload.stolen_from, 'alice');
+}));
+
+test('releases a claim, logs an event, and is a no-op when unclaimed', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Releasable' });
+  store.claimCard(card.id, 'alice');
+  const released = store.releaseCard(card.id, { owner: 'alice' });
+  assert.equal(released.claimed_by, null);
+  assert.equal(released.claimed_at, null);
+  assert.equal(store.cardEvents(card.id)[0].event_type, 'card_released');
+  // Releasing an already-unclaimed card logs nothing new.
+  const before = store.cardEvents(card.id).length;
+  store.releaseCard(card.id, { owner: 'alice' });
+  assert.equal(store.cardEvents(card.id).length, before);
+}));
+
+test('release guards the owner unless forced', () => withStore((store) => {
+  const card = store.createTriage({ title: 'Guarded' });
+  store.claimCard(card.id, 'alice');
+  assert.throws(() => store.releaseCard(card.id, { owner: 'bob' }), /claimed by alice, not bob/);
+  assert.equal(store.releaseCard(card.id, { owner: 'bob', force: true }).claimed_by, null);
+}));
+
+test('claim state never leaks into the exported markdown', () => withStore((store, dir) => {
+  const card = store.createTriage({ title: 'Hidden claim' });
+  store.claimCard(card.id, 'session-secret', { note: 'private' });
+  const markdown = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(markdown, /session-secret/);
+  assert.doesNotMatch(markdown, /Claimed/);
 }));
 
 test('migrates existing databases forward without losing cards', () => {
