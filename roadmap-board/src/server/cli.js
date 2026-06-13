@@ -14,6 +14,8 @@ Commands:
   init                              Create local DB, prompt config, and ROADMAP.md
   serve [--port 4177]               Start local React/API server
   list                              Print all cards as JSON
+  ready                             Print cards whose dependencies are all completed
+  blocked-deps                      Print cards waiting on an incomplete dependency
   events <id>                       Print a card's event history as JSON
   add <title> [summary]             Add a user Triage card
   epic-add <title> [summary]        Add an Epic
@@ -47,6 +49,8 @@ async function main() {
     let result;
     if (cmd === 'init') result = store.init();
     else if (cmd === 'list') result = store.snapshot();
+    else if (cmd === 'ready') result = store.readyCards();
+    else if (cmd === 'blocked-deps') result = store.dependencyBlockedCards();
     else if (cmd === 'events') result = store.cardEvents(args[0]);
     else if (cmd === 'add') result = store.createTriage({ title: args[0], summary: args[1] ?? '' }, 'user');
     else if (cmd === 'epic-add') result = store.createEpic({ title: args[0], summary: args[1] ?? '' }, 'agent');

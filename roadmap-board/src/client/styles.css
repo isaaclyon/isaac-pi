@@ -18,6 +18,12 @@
   --brand-tint: #eef3ff;
   --brand-tint-hover: #dce9ff;
   --accent-line: #d3e2ff;
+  --ready-tint: #e8f6ee;
+  --ready-line: #b6e2c6;
+  --ready-fg: #1b7f43;
+  --blocked-tint: #fdf0e3;
+  --blocked-line: #f3d3a6;
+  --blocked-fg: #9a5a14;
   --track-bg: #e8ebf3;
   --toast-bg: #172033;
   --toast-fg: #ffffff;
@@ -50,6 +56,12 @@
   --brand-tint: #1a2542;
   --brand-tint-hover: #243358;
   --accent-line: #2d406b;
+  --ready-tint: #15301f;
+  --ready-line: #2c5739;
+  --ready-fg: #5fd093;
+  --blocked-tint: #3a2a14;
+  --blocked-line: #5e431f;
+  --blocked-fg: #e0a350;
   --track-bg: #232c3e;
   --toast-bg: #e6eaf2;
   --toast-fg: #0e131f;
@@ -72,8 +84,13 @@ header { margin-bottom: 20px; }
 h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
 .lede { color: var(--text-muted); font-size: 14px; margin: 4px 0 0; }
 p { color: var(--text-muted); }
+.header-controls { align-items: center; display: flex; flex: none; gap: 8px; }
 .theme-toggle { align-items: center; display: inline-flex; flex: none; gap: 7px; white-space: nowrap; }
 .theme-toggle .theme-icon { font-size: 14px; line-height: 1; }
+.ready-toggle { align-items: center; display: inline-flex; gap: 7px; white-space: nowrap; }
+.ready-toggle.is-active { background: var(--ready-tint); border-color: var(--ready-line); color: var(--ready-fg); }
+.ready-toggle.is-active:hover { background: var(--ready-tint); }
+.ready-toggle.is-active .count { background: var(--ready-line); color: var(--ready-fg); }
 
 /* Generic controls */
 input, textarea { border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; padding: 9px 10px; width: 100%; }
@@ -153,6 +170,8 @@ h2 { align-items: center; display: flex; font-size: 12px; font-weight: 700; gap:
 .card-top-left { align-items: center; display: flex; gap: 6px; }
 .card-id { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .epic-chip { background: var(--brand-tint); border: 1px solid var(--accent-line); border-radius: 999px; color: var(--brand); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 7px; }
+.ready-chip { background: var(--ready-tint); border: 1px solid var(--ready-line); border-radius: 999px; color: var(--ready-fg); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 8px; }
+.blocked-chip { background: var(--blocked-tint); border: 1px solid var(--blocked-line); border-radius: 999px; color: var(--blocked-fg); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 8px; }
 
 .card-title { font-size: 14.5px; font-weight: 650; line-height: 1.3; margin: 6px 0 0; overflow-wrap: break-word; }
 .card-summary { color: var(--text-summary); font-size: 13px; line-height: 1.45; margin: 6px 0 0; overflow-wrap: break-word; }

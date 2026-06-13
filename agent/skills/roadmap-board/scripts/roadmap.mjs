@@ -87,6 +87,8 @@ function usage() {
     reads: {
       'get <id>': 'One card (full fields) plus its event history.',
       'list [--status S] [--epic E|none]': 'Slim card list (id,title,status,epic_id), optionally filtered.',
+      'ready [--epic E|none]': 'Slim list of cards whose dependencies are all completed (and that aren\'t completed).',
+      'blocked-deps [--epic E|none]': 'Slim list of cards waiting on an incomplete dependency (derived; independent of the blocked status).',
       'epics': 'Slim epic list with derived progress.',
     },
     writes: {
@@ -161,6 +163,28 @@ function main() {
     if (status && !STATUSES.includes(status)) fail(`Invalid status: ${status}. Valid: ${STATUSES.join(', ')}`);
     let cards = snapshot(cliPath, projectRoot).cards;
     if (status) cards = cards.filter(c => c.status === status);
+    if (epic === 'none') cards = cards.filter(c => !c.epic_id);
+    else if (epic) cards = cards.filter(c => c.epic_id === epic);
+    return print({
+      count: cards.length,
+      cards: cards.map(c => ({ id: c.id, title: c.title, status: c.status, epic_id: c.epic_id })),
+    });
+  }
+
+  if (cmd === 'ready') {
+    const { epic } = parseFlags(args);
+    let cards = snapshot(cliPath, projectRoot).cards.filter(c => c.ready);
+    if (epic === 'none') cards = cards.filter(c => !c.epic_id);
+    else if (epic) cards = cards.filter(c => c.epic_id === epic);
+    return print({
+      count: cards.length,
+      cards: cards.map(c => ({ id: c.id, title: c.title, status: c.status, epic_id: c.epic_id })),
+    });
+  }
+
+  if (cmd === 'blocked-deps') {
+    const { epic } = parseFlags(args);
+    let cards = snapshot(cliPath, projectRoot).cards.filter(c => c.dependency_blocked);
     if (epic === 'none') cards = cards.filter(c => !c.epic_id);
     else if (epic) cards = cards.filter(c => c.epic_id === epic);
     return print({

@@ -37,6 +37,8 @@ If the board isn't found, run `init` in the project root (or set `ROADMAP_PROJEC
 | --- | --- |
 | `get <id>` | One card with full fields **plus** its event history. Use this to read a card before refining/planning/executing it. |
 | `list [--status S] [--epic E\|none]` | Slim list (`id, title, status, epic_id`), optionally filtered by column and/or epic (`--epic none` = unassigned). |
+| `ready [--epic E\|none]` | Slim list of cards that are unblocked: they have dependencies and all of them are completed (and the card itself isn't). The "what can I pick up next" query. |
+| `blocked-deps [--epic E\|none]` | Slim list of cards waiting on an incomplete dependency (the inverse of `ready`). Derived at render time, independent of the explicit `blocked` status. |
 | `epics` | Slim epic list with derived `done/total` progress. |
 | `events <id>` | Just a card's event history (audit trail). |
 

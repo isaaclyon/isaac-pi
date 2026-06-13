@@ -137,22 +137,62 @@ export class RoadmapStore {
   snapshot() { return { columns: COLUMNS, prompts: this.prompts(), epics: this.epics(), cards: this.cards() }; }
 
   cards() {
-    return this.db.prepare('SELECT * FROM cards ORDER BY status, position, created_at').all().map(row => this.hydrateCard(row));
+    const statusById = this.statusById();
+    return this.db.prepare('SELECT * FROM cards ORDER BY status, position, created_at').all().map(row => this.hydrateCard(row, statusById));
   }
 
   card(id) {
     const row = this.db.prepare('SELECT * FROM cards WHERE id = ?').get(id);
     if (!row) throw httpError(404, `Unknown card: ${id}`);
-    return this.hydrateCard(row);
+    return this.hydrateCard(row, this.statusById());
   }
 
-  hydrateCard(row) {
-    return {
+  // Map of every card id -> status. Readiness is a cross-card signal (a card's state
+  // depends on the status of its dependency targets), so we resolve the whole board's
+  // statuses once instead of issuing a query per dependency.
+  statusById() {
+    return new Map(this.db.prepare('SELECT id, status FROM cards').all().map(row => [row.id, row.status]));
+  }
+
+  hydrateCard(row, statusById) {
+    const card = {
       ...row,
       epic_id: row.epic_id ?? null,
       depends_on: parseList(row.depends_on),
       enables: parseList(row.enables),
     };
+    card.ready = statusById ? this.isReady(card, statusById) : false;
+    card.dependency_blocked = statusById ? this.isDependencyBlocked(card, statusById) : false;
+    return card;
+  }
+
+  // "Ready next" = the card was gated by dependencies and all of them are now completed,
+  // while the card itself isn't completed. Cards with no dependencies are never ready —
+  // they were never waiting on anything (this is the inverse of the dependency-blocked
+  // signal). A dangling/unknown dependency id resolves to undefined !== 'completed', so
+  // it correctly keeps the card unready.
+  isReady(card, statusById) {
+    if (card.status === 'completed' || card.depends_on.length === 0) return false;
+    return card.depends_on.every(id => statusById.get(id) === 'completed');
+  }
+
+  // Inverse of readiness, and deliberately orthogonal to the `blocked` *status* column: a card is
+  // dependency-blocked when it has dependencies, at least one isn't completed, and the card itself
+  // isn't completed. A card can be dependency-blocked in any column (backlog, up next, in progress)
+  // while a card in the Blocked column may carry an unrelated manual reason — the two are distinct
+  // signals. A dangling/unknown dependency id resolves to undefined !== 'completed', so it keeps the
+  // card blocked, matching how isReady treats unknown ids.
+  isDependencyBlocked(card, statusById) {
+    if (card.status === 'completed' || card.depends_on.length === 0) return false;
+    return card.depends_on.some(id => statusById.get(id) !== 'completed');
+  }
+
+  readyCards() {
+    return this.cards().filter(card => card.ready);
+  }
+
+  dependencyBlockedCards() {
+    return this.cards().filter(card => card.dependency_blocked);
   }
 
   epics() {
@@ -293,6 +333,7 @@ export class RoadmapStore {
       blocked_reason: patch.blocked_reason === undefined ? card.blocked_reason : normalizeText(patch.blocked_reason),
     };
     if (!next.title) throw httpError(400, 'Title is required');
+    this.assertNoCycle(id, next.depends_on, next.enables);
     this.db.prepare('UPDATE cards SET title = ?, summary = ?, depends_on = ?, enables = ?, blocked_reason = ?, updated_at = ? WHERE id = ?')
       .run(next.title, next.summary, stringifyList(next.depends_on), stringifyList(next.enables), next.blocked_reason, now(), id);
     this.event(id, 'card_updated', actor, { fields: Object.keys(patch) });
@@ -356,6 +397,35 @@ export class RoadmapStore {
       this.card(value);
       return value;
     });
+  }
+
+  // Reject links that would close a dependency cycle. depends_on and enables are
+  // inverse edges of one directed graph (u -> v means "u depends on v"): C.depends_on
+  // contributes C -> d, and C.enables contributes e -> C. A cycle means a circular
+  // dependency that can never be satisfied. We use the proposed links for `id` and the
+  // stored links for every other card, then check whether `id` can reach itself —
+  // scoping the guard to the edited card so unrelated legacy data can't block an edit.
+  assertNoCycle(id, dependsOn, enables) {
+    const edges = new Map();
+    const addEdge = (from, to) => {
+      if (!edges.has(from)) edges.set(from, new Set());
+      edges.get(from).add(to);
+    };
+    for (const card of this.cards()) {
+      const deps = card.id === id ? dependsOn : card.depends_on;
+      const unlocks = card.id === id ? enables : card.enables;
+      for (const target of deps) addEdge(card.id, target);
+      for (const target of unlocks) addEdge(target, card.id);
+    }
+    const seen = new Set();
+    const stack = [...(edges.get(id) ?? [])];
+    while (stack.length) {
+      const node = stack.pop();
+      if (node === id) throw httpError(400, 'Card links would create a dependency cycle');
+      if (seen.has(node)) continue;
+      seen.add(node);
+      for (const next of edges.get(node) ?? []) stack.push(next);
+    }
   }
 
   exportMarkdown(actor = 'system') {
