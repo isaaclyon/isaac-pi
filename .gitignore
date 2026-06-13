@@ -23,6 +23,13 @@ agent/npm/
 .pi/roadmap/roadmap.sqlite*
 !.pi/roadmap/prompts.json
 
+# SQLite WAL/SHM sidecars (transient; reconstructed on open)
+*.sqlite-shm
+*.sqlite-wal
+
+# Scratch/temp artifacts
+.tmp-lsp-py/
+
 # Dependencies/build outputs
 node_modules/
 *.log

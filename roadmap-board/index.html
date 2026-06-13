@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Roadmap Board</title>
+    <script>
+      // Resolve the theme before first paint to avoid a flash of the wrong theme.
+      // The persisted value is the *preference* ('light' | 'dark' | 'system'); <html data-theme>
+      // always carries the resolved 'light' | 'dark' so the CSS only ever sees two values.
+      (function () {
+        try {
+          var p = localStorage.getItem('roadmap-theme');
+          var os = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          document.documentElement.dataset.theme = (p === 'light' || p === 'dark') ? p : os;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

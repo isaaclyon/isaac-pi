@@ -12,8 +12,16 @@ _Avoid_: Global board, project manager
 A durable unit of proposed or planned work with a stable identifier and structured fields.
 _Avoid_: Ticket, issue, task
 
+**Epic**:
+A broader roadmap grouping that collects related **Roadmap Cards** and exposes derived progress.
+_Avoid_: Project, release, theme tag
+
 **Card ID**:
 A human-readable immutable identifier for a Roadmap Card, formatted like ROAD-001.
+_Avoid_: Slug, database row ID
+
+**Epic ID**:
+A human-readable immutable identifier for an **Epic**, formatted like EPIC-001.
 _Avoid_: Slug, database row ID
 
 **Triage**:
@@ -44,6 +52,10 @@ _Avoid_: Dependency, status note
 A structured relationship where completing one Roadmap Card makes another Roadmap Card easier or possible.
 _Avoid_: Benefit, unlock
 
+**Epic Progress**:
+The derived `done / total` and percentage for an **Epic**, based only on its child **Roadmap Cards**.
+_Avoid_: Manual slider value, estimate
+
 **Prompt Action**:
 A copyable instruction template for asking an agent to work with a specific Roadmap Card.
 _Avoid_: Button, command
@@ -64,8 +76,13 @@ _Avoid_: Full audit log, changelog
 
 - A **Roadmap Board** belongs to exactly one project or workspace.
 - A **Roadmap Board** contains many **Roadmap Cards**.
+- A **Roadmap Board** contains many **Epics**.
 - Each **Roadmap Card** has exactly one immutable **Card ID**.
+- Each **Epic** has exactly one immutable **Epic ID**.
+- A **Roadmap Card** may belong to zero or one **Epic**.
 - A **Dependency** or **Enablement** links one **Roadmap Card** to another by **Card ID**.
+- **Epic Progress** is derived from child **Roadmap Cards**, not edited directly.
+- **Epics** are ordered by a stable manual sort index rather than by dependency links.
 - A **Roadmap Card** in Blocked must have a **Blocked Reason**.
 - A **Prompt Action** includes the target **Card ID** when copied.
 - **Brainstorm** is a **Prompt Action** for sharpening an idea before planning.
@@ -79,6 +96,8 @@ _Avoid_: Full audit log, changelog
 - A **Roadmap Card** created in **Triage** requires only a title; users may edit its title and summary while it remains in **Triage**.
 - A **Generated Roadmap** reflects the current **Roadmap Board** but is not the board's source of truth.
 - A **Generated Roadmap** uses compact card details: Card ID, title, summary, dependencies, enablements, and blocked reason when present.
+- A **Generated Roadmap** includes an **Epics** section with each **Epic's** progress and child card list.
+- A **Generated Roadmap** shows a card's **Epic ID** when the card belongs to an **Epic**.
 - The **Generated Roadmap** is refreshed after every validated write to the **Roadmap Board**.
 - The **Generated Roadmap** is intended to be committed; the board's local storage is not.
 - A fresh clone without local board storage treats the **Generated Roadmap** as a read-only snapshot, not a source to rehydrate from.
@@ -105,6 +124,9 @@ _Avoid_: Full audit log, changelog
 - Prompt actions were resolved as a fixed action set with editable template text.
 - User-created **Triage** cards require only a title.
 - The MVP **Roadmap Card** schema excludes plan notes, review notes, and history fields.
+- **Epics** were resolved as first-class records rather than card subtypes or free-form labels.
+- **Epic Progress** was resolved as derived from child card completion rather than manually edited.
+- **Epics** were resolved to use stable manual ordering, with no epic-level dependency graph in the MVP.
 - SQLite history was resolved as minimal **Roadmap Events**, not full audit diffs.
 - Event attribution was resolved as actor type only, not full identity.
 - Agent status movement was resolved as loose valid-column moves rather than strict transitions.

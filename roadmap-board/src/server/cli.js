@@ -14,10 +14,17 @@ Commands:
   init                              Create local DB, prompt config, and ROADMAP.md
   serve [--port 4177]               Start local React/API server
   list                              Print all cards as JSON
+  events <id>                       Print a card's event history as JSON
   add <title> [summary]             Add a user Triage card
+  epic-add <title> [summary]        Add an Epic
+  epic-update <id> <json>           Update Epic fields: title, summary, sort_index
+  epic-delete <id>                  Delete an Epic; detaches its cards
   update <id> <json>                Agent update fields: title, summary, depends_on, enables, blocked_reason
   user-update <id> <json>           User update Triage title/summary only
+  assign-epic <cardId> <epicId>     Assign card to Epic
+  clear-epic <cardId>               Remove card from Epic
   move <id> <status> [reason]       Agent move card; blocked requires reason
+  delete <id>                       Delete a card (agent: any column)
   reorder <id,id,...>               Reorder all Triage cards
   export                            Regenerate ROADMAP.md
   paths                             Print resolved paths
@@ -40,10 +47,17 @@ async function main() {
     let result;
     if (cmd === 'init') result = store.init();
     else if (cmd === 'list') result = store.snapshot();
+    else if (cmd === 'events') result = store.cardEvents(args[0]);
     else if (cmd === 'add') result = store.createTriage({ title: args[0], summary: args[1] ?? '' }, 'user');
+    else if (cmd === 'epic-add') result = store.createEpic({ title: args[0], summary: args[1] ?? '' }, 'agent');
+    else if (cmd === 'epic-update') result = store.updateEpic(args[0], parseJson(args[1], {}), 'agent');
+    else if (cmd === 'epic-delete') result = store.deleteEpic(args[0], 'agent');
     else if (cmd === 'user-update') result = store.updateTriage(args[0], parseJson(args[1], {}), 'user');
     else if (cmd === 'update') result = store.agentUpdate(args[0], parseJson(args[1], {}), 'agent');
+    else if (cmd === 'assign-epic') result = store.assignEpic(args[0], args[1], 'agent');
+    else if (cmd === 'clear-epic') result = store.assignEpic(args[0], null, 'agent');
     else if (cmd === 'move') result = store.move(args[0], args[1], { blocked_reason: args[2] }, 'agent');
+    else if (cmd === 'delete') result = store.deleteCard(args[0], 'agent');
     else if (cmd === 'reorder') result = store.reorderTriage((args[0] ?? '').split(',').filter(Boolean), 'user');
     else if (cmd === 'export') result = { markdown: store.exportMarkdown('system') };
     else throw new Error(`Unknown command: ${cmd}`);
