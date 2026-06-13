@@ -16,9 +16,15 @@ agent/git/**
 !agent/git/
 !agent/git/.gitignore
 agent/npm/
-.pi/
+
+# Roadmap Board shared config vs local state
+.pi/*
+!.pi/roadmap/
+.pi/roadmap/roadmap.sqlite*
+!.pi/roadmap/prompts.json
 
 # Dependencies/build outputs
 node_modules/
 *.log
 .DS_Store
+roadmap-board/dist/
