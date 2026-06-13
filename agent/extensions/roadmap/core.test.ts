@@ -81,12 +81,15 @@ test("parseServerState tolerates missing / corrupt / partial content", () => {
 	assert.equal(parseServerState(""), null);
 	assert.equal(parseServerState("{not json"), null);
 	assert.equal(parseServerState(JSON.stringify({ port: 1 })), null); // no pid
-	const ok = parseServerState(JSON.stringify({ pid: 5, port: 4177, startedAt: "t", refs: ["a", 1, "b"] }));
-	assert.deepEqual(ok, { pid: 5, port: 4177, startedAt: "t", refs: ["a", "b"] });
+	const ok = parseServerState(JSON.stringify({ pid: 5, port: 4177, startedAt: "t", codeVersion: "v1", refs: ["a", 1, "b"] }));
+	assert.deepEqual(ok, { pid: 5, port: 4177, startedAt: "t", codeVersion: "v1", refs: ["a", "b"] });
+	// Pre-stamping state files have no codeVersion → defaults to "" (reads as stale under the version gate).
+	const legacy = parseServerState(JSON.stringify({ pid: 5, port: 4177, startedAt: "t", refs: [] }));
+	assert.equal(legacy?.codeVersion, "");
 });
 
 test("attachRef is idempotent; detachRef removes one id", () => {
-	const state: ServerState = { pid: 1, port: 2, startedAt: "t", refs: ["a"] };
+	const state: ServerState = { pid: 1, port: 2, startedAt: "t", codeVersion: "v1", refs: ["a"] };
 	assert.deepEqual(attachRef(state, "b").refs, ["a", "b"]);
 	assert.deepEqual(attachRef(state, "a").refs, ["a"]);
 	assert.deepEqual(detachRef(attachRef(state, "b"), "a").refs, ["b"]);
@@ -94,11 +97,25 @@ test("attachRef is idempotent; detachRef removes one id", () => {
 });
 
 test("shouldReuseServer requires live pid AND healthy port", () => {
-	const state: ServerState = { pid: 1, port: 2, startedAt: "t", refs: [] };
+	const state: ServerState = { pid: 1, port: 2, startedAt: "t", codeVersion: "v1", refs: [] };
 	assert.equal(shouldReuseServer(null, { pidAlive: true, portHealthy: true }), false);
 	assert.equal(shouldReuseServer(state, { pidAlive: true, portHealthy: true }), true);
 	assert.equal(shouldReuseServer(state, { pidAlive: false, portHealthy: true }), false);
 	assert.equal(shouldReuseServer(state, { pidAlive: true, portHealthy: false }), false);
+});
+
+test("shouldReuseServer retires a server running stale code", () => {
+	const state: ServerState = { pid: 1, port: 2, startedAt: "t", codeVersion: "v1", refs: [] };
+	// Matching fingerprint → reuse the healthy server.
+	assert.equal(shouldReuseServer(state, { pidAlive: true, portHealthy: true, currentVersion: "v1" }), true);
+	// Source changed since spawn → respawn even though pid+port are healthy.
+	assert.equal(shouldReuseServer(state, { pidAlive: true, portHealthy: true, currentVersion: "v2" }), false);
+	// Pre-stamping (blank) recorded version against a known current version → stale.
+	const legacy: ServerState = { ...state, codeVersion: "" };
+	assert.equal(shouldReuseServer(legacy, { pidAlive: true, portHealthy: true, currentVersion: "v1" }), false);
+	// Fingerprint unavailable (null) → version gate skipped, fall back to pid+port health.
+	assert.equal(shouldReuseServer(legacy, { pidAlive: true, portHealthy: true, currentVersion: null }), true);
+	assert.equal(shouldReuseServer(state, { pidAlive: true, portHealthy: true, currentVersion: null }), true);
 });
 
 // --- free port -------------------------------------------------------------

@@ -116,6 +116,12 @@ export interface ServerState {
 	pid: number;
 	port: number;
 	startedAt: string;
+	/**
+	 * Fingerprint of the server source the process was spawned from. Reuse compares
+	 * this against the current on-disk fingerprint so a long-lived but code-stale
+	 * server is retired instead of reused. Blank for pre-stamping state files.
+	 */
+	codeVersion: string;
 	refs: string[];
 }
 
@@ -136,6 +142,7 @@ export function parseServerState(text: string | null | undefined): ServerState |
 		pid: candidate.pid,
 		port: candidate.port,
 		startedAt: typeof candidate.startedAt === "string" ? candidate.startedAt : "",
+		codeVersion: typeof candidate.codeVersion === "string" ? candidate.codeVersion : "",
 		refs,
 	};
 }
@@ -153,15 +160,25 @@ export function detachRef(state: ServerState, sessionId: string): ServerState {
 
 /**
  * Decide whether a recorded server can be reused. Reuse only when we have state,
- * its pid is alive, and the recorded port answers a health probe. A dead pid or
- * an unanswered port is treated as stale → respawn (self-healing after a crash).
+ * its pid is alive, the recorded port answers a health probe, and — when we can
+ * fingerprint the current server source — it was spawned from that same source.
+ * A dead pid, an unanswered port, or a code-version mismatch is treated as stale
+ * → respawn (self-healing after a crash, and auto-replacement after a code change).
+ *
+ * `currentVersion` is the on-disk source fingerprint, or null when it can't be
+ * computed; null skips the version gate so a fingerprinting failure never wedges
+ * session start into an endless respawn loop. A blank recorded `codeVersion`
+ * (pre-stamping state) reads as stale whenever a current version is available.
  */
 export function shouldReuseServer(
 	state: ServerState | null,
-	probes: { pidAlive: boolean; portHealthy: boolean },
+	probes: { pidAlive: boolean; portHealthy: boolean; currentVersion?: string | null },
 ): boolean {
 	if (!state) return false;
-	return probes.pidAlive && probes.portHealthy;
+	if (!probes.pidAlive || !probes.portHealthy) return false;
+	const current = probes.currentVersion;
+	if (current != null && (!state.codeVersion || state.codeVersion !== current)) return false;
+	return true;
 }
 
 // ---------------------------------------------------------------------------

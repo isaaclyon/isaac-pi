@@ -10,7 +10,18 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, closeSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+	existsSync,
+	mkdirSync,
+	openSync,
+	closeSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { request } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -187,6 +198,35 @@ function writeState(root: string, state: ServerState): void {
 // Spawn + health wait
 // ---------------------------------------------------------------------------
 
+/**
+ * Fingerprint the server source the next spawn would run: a hash over the bytes
+ * of every `.js` file in the CLI's directory (cli.js, server.js, model.js). Stamped
+ * into state at spawn and re-derived on reuse so a server running pre-edit code is
+ * detected and replaced. Returns null when the source can't be read, which makes
+ * `shouldReuseServer` skip the version gate rather than thrash. The served client
+ * bundle is intentionally excluded — it's read from disk per request, so client
+ * edits need no respawn; only the server's own JS does.
+ */
+export function computeCodeVersion(cliPath: string): string | null {
+	try {
+		const dir = dirname(cliPath);
+		const files = readdirSync(dir)
+			.filter((f) => f.endsWith(".js"))
+			.sort();
+		if (files.length === 0) return null;
+		const hash = createHash("sha256");
+		for (const file of files) {
+			hash.update(file);
+			hash.update("\0");
+			hash.update(readFileSync(join(dir, file)));
+			hash.update("\0");
+		}
+		return hash.digest("hex").slice(0, 16);
+	} catch {
+		return null;
+	}
+}
+
 function spawnServer(cliPath: string, root: string, port: number): number {
 	const child = spawn("node", ["--no-warnings", cliPath, "serve", "--port", String(port)], {
 		cwd: root,
@@ -228,9 +268,12 @@ export async function ensureServer(root: string, cliPath: string, sessionId: str
 	await acquireLock(root);
 	try {
 		const existing = readState(root);
+		const currentVersion = computeCodeVersion(cliPath);
+		const existingAlive = existing ? pidAlive(existing.pid) : false;
 		const reuse = shouldReuseServer(existing, {
-			pidAlive: existing ? pidAlive(existing.pid) : false,
+			pidAlive: existingAlive,
 			portHealthy: existing ? await probeHealth(existing.port) : false,
+			currentVersion,
 		});
 
 		if (reuse && existing) {
@@ -244,6 +287,17 @@ export async function ensureServer(root: string, cliPath: string, sessionId: str
 			};
 		}
 
+		// Not reusing. If the recorded server is still alive (e.g. healthy but running
+		// stale code), retire it before respawning so we don't orphan a second process
+		// on a second port — the failure mode this version gate exists to prevent.
+		if (existing && existingAlive) {
+			try {
+				process.kill(existing.pid);
+			} catch {
+				/* already gone */
+			}
+		}
+
 		const port = await pickFreePort();
 		const pid = spawnServer(cliPath, root, port);
 		const healthy = await waitForHealth(port, SPAWN_READY_MS);
@@ -255,7 +309,17 @@ export async function ensureServer(root: string, cliPath: string, sessionId: str
 			}
 			throw new Error(`Roadmap server did not become healthy on port ${port}`);
 		}
-		const state: ServerState = { pid, port, startedAt: new Date().toISOString(), refs: [sessionId] };
+		// Inherit the retired server's refset so sessions still attached to it stay
+		// covered by the replacement, then ensure our own session is in it.
+		const inherited = existing ? existing.refs : [];
+		const refs = inherited.includes(sessionId) ? inherited : [...inherited, sessionId];
+		const state: ServerState = {
+			pid,
+			port,
+			startedAt: new Date().toISOString(),
+			codeVersion: currentVersion ?? "",
+			refs,
+		};
 		writeState(root, state);
 		return { port, url: `http://127.0.0.1:${port}`, reused: false, snapshot: await fetchSnapshot(port) };
 	} finally {
