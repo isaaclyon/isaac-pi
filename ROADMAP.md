@@ -11,7 +11,7 @@
 - **EPIC-002** — Frictionless agent loop
   - Summary: Close the gap between the board and the agent: native API access, deep links, history, and the missing epic delete.
   - Progress: 2 / 3 (67%)
-  - Cards: ROAD-006, ROAD-009, ROAD-008
+  - Cards: ROAD-009, ROAD-008, ROAD-006
 - **EPIC-003** — Dependencies & sequencing
   - Summary: Turn the existing depends_on/enables data into planning value: ready-next, blocked-by-dependency, cycle safety.
   - Progress: 0 / 3 (0%)
@@ -31,9 +31,6 @@ _No cards._
 
 ## Backlog
 
-- **ROAD-006** — Roadmap MCP server / Claude Code skill
-  - Summary: Wrap the existing HTTP API (GET /api/roadmap, PATCH /api/cards/:id/agent, POST /api/cards/:id/move, POST/PATCH /api/epics, POST /api/cards/:id/epic) as an MCP server or Claude Code skill so an agent reads and updates the board natively instead of curl/clipboard.
-  - Epic: EPIC-002
 - **ROAD-010** — Ready-next view
   - Summary: Surface cards whose depends_on targets are all completed (and that aren't completed themselves). Expose as a UI filter/badge and a CLI query. Uses existing depends_on data, no new schema.
   - Epic: EPIC-003
@@ -76,7 +73,9 @@ _No cards._
 
 ## Review
 
-_No cards._
+- **ROAD-006** — Portable roadmap board skill
+  - Summary: Ship a portable Claude Code skill (not MCP, no server) that drives the board through cli.js. A self-contained resolver locates the target board (.pi/roadmap/roadmap.sqlite, walking up from cwd with a ROADMAP_PROJECT_ROOT override) and the CLI, then thin helper scripts wrap the existing write verbs (update/move/assign/epic CRUD/delete/reorder/events) and add token-light reads: get <id> (card + its events) and a filtered list (by status/epic) instead of the full snapshot dump. Surface valid statuses and parsed validation errors. Mutations already auto-export ROADMAP.md, so no manual export step. Requires Node 22+ (node:sqlite).
+  - Epic: EPIC-002
 
 ## Completed
 
