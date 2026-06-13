@@ -18,8 +18,8 @@
   - Cards: ROAD-012, ROAD-010, ROAD-011
 - **EPIC-004** — Robustness & tests
   - Summary: Keep the board from failing silently as it becomes load-bearing: API tests, UI error states, migration hardening.
-  - Progress: 0 / 3 (0%)
-  - Cards: ROAD-013, ROAD-014, ROAD-015
+  - Progress: 1 / 3 (33%)
+  - Cards: ROAD-014, ROAD-015, ROAD-013
 - **EPIC-005** — Epic depth
   - Summary: Deepen the grouping layer with metadata and agent-only management. No target dates; no manual reorder.
   - Progress: 0 / 3 (0%)
@@ -31,9 +31,6 @@ _No cards._
 
 ## Backlog
 
-- **ROAD-013** — Server/API endpoint tests
-  - Summary: Add tests for the Express routes in server.js (snapshot, agentUpdate, move, epic create/update, assign). Only model.js is covered today.
-  - Epic: EPIC-004
 - **ROAD-014** — UI error and offline states
   - Summary: Handle fetch failures in the client: load() ignores res.ok and the 2s poller swallows errors, so a downed server shows a blank board. Add an error/offline banner with retry.
   - Epic: EPIC-004
@@ -101,3 +98,6 @@ _No cards._
   - Summary: Visually mark a card as effectively blocked when any depends_on target isn't completed, distinct from the explicit 'blocked' status. Derived at render time, not stored.
   - Epic: EPIC-003
   - Depends on: ROAD-010, ROAD-012
+- **ROAD-013** — Server/API endpoint tests
+  - Summary: DONE: Added tests/server.test.js — 8 tests covering all 8 Express routes (snapshot, events, agentUpdate, epic create/update/delete, assign-epic, move). Zero new deps: boots startServer on an ephemeral port and drives it over real HTTP with global fetch. Asserts happy paths, the httpError->HTTP status mapping via the error middleware (400/404), the {error} envelope, and agent-actor attribution. Full suite green: 27/27 (19 model + 8 server).
+  - Epic: EPIC-004
