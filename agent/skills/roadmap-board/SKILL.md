@@ -16,9 +16,14 @@ the roadmap extension is loaded, and a CLI fallback for everything else. This sk
 and lifecycle narrative** — what a card means, how it moves, and what the board enforces. The
 mechanics live in the tools/CLI below.
 
+> **Which interface are you?** The native `roadmap_*` tools only exist when the **pi agent roadmap
+> extension** is loaded. If you don't have those tools (e.g. you're Claude Code or a subagent), skip
+> the "Native tools" section below and drive the [CLI fallback](#cli--fallback-for-tool-less-contexts)
+> — it's the same validating core, just invoked as `node <skill-dir>/scripts/roadmap.mjs`.
+
 ## Interfaces
 
-### Native tools — preferred when available
+### Native tools — preferred when available (pi agent extension only)
 
 When the roadmap extension is loaded, six `roadmap_*` tools are the structured interface — no shell
 quoting, no path resolution, validated params. Reach for these first:
