@@ -1,6 +1,6 @@
 ---
 name: roadmap-board
-description: "Read and update the project's roadmap board natively from the agent — get a card, list/filter cards, move cards between columns, edit cards and epics, assign epics, and view a card's history. Use whenever asked to read, refine, plan, execute, or review a roadmap card (ROAD-xxx) or epic (EPIC-xxx), or to create/move/update/delete board items. Drives the board through its CLI; no running server, port, or MCP config required."
+description: "Read and update the project's roadmap board — get a card, list/filter cards, move cards between columns, edit cards and epics, assign epics, and view a card's history. Use whenever asked to read, refine, plan, execute, or review a roadmap card (ROAD-xxx) or epic (EPIC-xxx), or to create/move/update/delete board items. When the roadmap extension is loaded, prefer its native roadmap_* tools; otherwise this skill drives the same validating CLI — no running server, port, or MCP config required."
 compatibility: "Requires Node 22+ (the board CLI uses node:sqlite). Resolves the CLI by walking up from cwd for a roadmap-board checkout (or set ROADMAP_CLI), and resolves the board by walking up for .pi/roadmap/roadmap.sqlite (or set ROADMAP_PROJECT_ROOT)."
 allowed-tools: Bash(node:*)
 metadata:
@@ -10,18 +10,40 @@ metadata:
 
 # Roadmap Board
 
-Drive the per-project roadmap board (SQLite source of truth at `.pi/roadmap/roadmap.sqlite`,
-generated `ROADMAP.md`) without curl, clipboard, or a running server. A single helper script
-resolves which board you mean, shells out to the board's own validating CLI, and returns JSON.
+The per-project roadmap board is a SQLite source of truth (`.pi/roadmap/roadmap.sqlite`) with a
+generated, committed `ROADMAP.md`. It has two faces over one validating core: native LLM tools when
+the roadmap extension is loaded, and a CLI fallback for everything else. This skill is the **policy
+and lifecycle narrative** — what a card means, how it moves, and what the board enforces. The
+mechanics live in the tools/CLI below.
 
-## Invoke
+## Interfaces
+
+### Native tools — preferred when available
+
+When the roadmap extension is loaded, six `roadmap_*` tools are the structured interface — no shell
+quoting, no path resolution, validated params. Reach for these first:
+
+| Tool | What it does |
+| --- | --- |
+| `roadmap_get` | Read one card with full fields (summary, deps, documents, derived `ready`/`dependency_blocked`) **plus** its event history. Read a card with this before refining/planning/executing/reviewing it. |
+| `roadmap_list` | Query the board by `view`: `list` (all cards, filter by `status`/`epic`), `ready` (unblocked — start here), `blocked` (waiting on a dependency), `epics` (progress), `timeline` (live agent activity). |
+| `roadmap_update` | The main editing verb — patch `title`, `summary`, `depends_on`/`enables`, `blocked_reason`, or `documents` (replaces the whole ordered list). |
+| `roadmap_move` | Move a card between columns; moving to `blocked` requires a `reason`. |
+| `roadmap_claim` | Advisory ownership claim (or `release:true` to drop yours) so concurrent agents coordinate; `force` steals/overrides. Owner is this session. |
+| `roadmap_epic` | Manage epics via `op`: `add`, `update`, `assign`, `clear`, `delete`, `archive`, `unarchive`, `reorder`. |
+
+### CLI — fallback for tool-less contexts
+
+When the tools aren't loaded (a subagent, or a repo without the extension), drive the **same**
+validating core through the CLI:
 
 ```sh
 node <skill-dir>/scripts/roadmap.mjs <command> [...args]
 ```
 
-The script self-resolves all paths, so run it from anywhere. Relative to this skill the helper is
-`./scripts/roadmap.mjs`.
+The script self-resolves all paths, so run it from anywhere; relative to this skill it's
+`./scripts/roadmap.mjs`. Run `… help` for the full command list. JSON args are a single quoted
+object, e.g. `update ROAD-006 '{"summary":"…","depends_on":["ROAD-001"]}'`.
 
 **How it finds things** (both env vars override; useful for worktrees or out-of-tree boards):
 - **Board** — `$ROADMAP_PROJECT_ROOT`, else the nearest ancestor of `cwd` containing
@@ -30,6 +52,17 @@ The script self-resolves all paths, so run it from anywhere. Relative to this sk
   `roadmap-board/src/server/cli.js`, else the copy bundled in this repo.
 
 If the board isn't found, run `init` in the project root (or set `ROADMAP_PROJECT_ROOT`).
+
+A few operations live **only** on the CLI (no native tool, by design):
+- `add <title> [summary]` / `user-update <id> <json>` — Triage capture and Triage-only title/summary
+  edits: the **human's** intake lane. Leave these to the user; don't create cards yourself.
+- `attach-doc <id> <title> <href> [kind] [note]` / `detach-doc <id> <href>` — incremental single-doc
+  tweaks by href (the `roadmap_update` `documents` field replaces the whole list at once).
+- `delete <id>` — delete a card from any column (auto-strips its id from every other card's links).
+- `reorder <id,id,...>` — reorder all Triage cards.
+- `export` — force a `ROADMAP.md` re-export (every write auto-exports, so this is rarely needed).
+- `init` / `serve [--port 4177]` / `paths` — create a board, run the read-only viewer, print
+  resolved db/markdown/prompts paths.
 
 ## Lifecycle — how a card moves through the board
 
@@ -50,8 +83,8 @@ board UI's inline edits) — same shape as Brainstorm but targeted.
 
 **Where the plan and notes live:** keep `summary` a **concise description** of the card — what the
 work is and why — not a running log. Plans, execution outcomes, and review notes belong in
-**documents**, attached with `attach-doc` (or the `documents` array on `update`) so the description
-stays readable and each artifact is addressable on its own:
+**documents** — set via the `documents` array on `roadmap_update` (or `attach-doc` on the CLI for an
+incremental add) — so the description stays readable and each artifact is addressable on its own:
 
 - **Prose plans / outcomes / review notes** — write them to a file in the repo (e.g.
   `docs/roadmap/<id>-plan.md`), commit it, then attach it (`kind` like `plan`, `outcome`, `review`).
@@ -69,43 +102,11 @@ triage → backlog → up_next → in_progress → review → completed
                                     ↘ blocked (side state; requires a reason) ↗
 ```
 
-**Picking work:** `ready` is the "what can I start now" query (deps all completed). Start there,
-not from a full board dump.
+The full set of valid columns: `triage`, `backlog`, `up_next`, `in_progress`, `blocked`, `review`,
+`completed`.
 
-## Reads (token-light — prefer these over dumping the whole board)
-
-| Command | Returns |
-| --- | --- |
-| `get <id>` | One card with full fields (incl. derived `ready` / `dependency_blocked` booleans) **plus** its event history. Use this to read a card before refining/planning/executing it. |
-| `list [--status S] [--epic E\|none]` | Slim list (`id, title, status, epic_id`), optionally filtered by column and/or epic (`--epic none` = unassigned). |
-| `ready [--epic E\|none]` | Slim list of cards that are unblocked: they have dependencies and all of them are completed (and the card itself isn't). The "what can I pick up next" query. |
-| `blocked-deps [--epic E\|none]` | Slim list of cards waiting on an incomplete dependency (the inverse of `ready`). Derived at render time, independent of the explicit `blocked` status. |
-| `epics [--archived\|--all]` | Slim epic list with derived `done/total` progress, plus `is_complete` (all cards done) and `archived`. Returns **active** epics by default; `--archived` for archived only, `--all` for both. |
-| `events <id>` | Just a card's event history (audit trail). |
-| `timeline [--limit N] [--card C] [--session S]` | Live agent activity feed — current steps, tool/status events, stalls, results — newest-first. **The one read served over HTTP from the running server's RAM, not SQLite:** the live half is ephemeral, so it merges that with durable milestone events (claims/moves) and returns an annotated empty result when no server is up. `--card` scopes to one card; `--session` to one session. |
-
-## Writes (validated by the board; an event is logged and `ROADMAP.md` re-exported on every one)
-
-| Command | Notes |
-| --- | --- |
-| `add <title> [summary]` | New Triage card (logged as the **user** actor). |
-| `update <id> <json>` | Agent patch of `title`, `summary`, `depends_on`, `enables`, `blocked_reason`, `documents`. IDs in `depends_on`/`enables` must exist and can't be self-links. `documents` is an ordered array of `{title, href, kind?, note?}` references. This is your main editing verb. |
-| `user-update <id> <json>` | User patch of `title`/`summary` only, and **only while the card is in Triage** (mirrors the human's edit lane). Prefer `update` for agent work. |
-| `attach-doc <id> <title> <href> [kind] [note]` / `detach-doc <id> <href>` | Attach or remove supporting document/artifact references by href. |
-| `move <id> <status> [reason]` | Move between columns. `move <id> blocked <reason>` **requires** a reason. |
-| `claim <id> [owner] [note]` / `release <id> [owner]` | Advisory ownership claim so concurrent agents see who's holding a card. `owner` defaults to `$ROADMAP_SESSION_ID`; claiming a card held by someone else needs `--force` (logs `stolen_from`), as does releasing a mismatched owner. Claims are transient — they live in the DB/UI/events but are **not** exported to `ROADMAP.md`. |
-| `assign-epic <cardId> <epicId>` / `clear-epic <cardId>` | Attach / detach an epic. |
-| `epic-add <title> [summary]` | New epic. |
-| `epic-update <id> <json>` | Patch epic `title`, `summary`, `sort_index`. |
-| `epic-delete <id>` | Delete an epic; its cards are detached, not deleted. |
-| `epic-archive <id>` / `epic-unarchive <id>` | Archive (reversible) / restore an epic. Archiving hides it from active views (rail, `## Epics`, default `epics` read) while keeping its cards and history intact; cards are untouched. The non-destructive alternative to `epic-delete` for finished or abandoned epics. |
-| `reorder-epics <id,id,...>` | Reorder all epics by setting `sort_index` densely; must list every epic exactly once. |
-| `delete <id>` | Delete a card (agent may delete from any column). |
-| `reorder <id,id,...>` | Reorder all Triage cards. |
-
-JSON args are a single quoted object, e.g. `update ROAD-006 '{"summary":"…","depends_on":["ROAD-001"]}'`.
-
-**Valid statuses:** `triage`, `backlog`, `up_next`, `in_progress`, `blocked`, `review`, `completed`.
+**Picking work:** the `ready` view (`roadmap_list view:ready`) is the "what can I start now" query
+(deps all completed). Start there, not from a full board dump.
 
 ## The model the board enforces
 
@@ -121,7 +122,7 @@ JSON args are a single quoted object, e.g. `update ROAD-006 '{"summary":"…","d
 - **`ready` / `dependency_blocked` are derived, not stored.** A card is `ready` when it has deps and
   all are completed; `dependency_blocked` is the inverse. Both are orthogonal to the **`blocked`
   status column** (a manual side state that needs a `blocked_reason`). Don't set `blocked` for a
-  dependency wait — that's already surfaced by `blocked-deps`.
+  dependency wait — that's already surfaced by the `blocked` view (`roadmap_list view:blocked`).
 - **Claims are advisory, not locks.** `claim`/`release` annotate a card with the session actively
   holding it so concurrent agents can coordinate; they never block a write. The owner is an opaque
   string (session id by default), the guard is overridable with `--force`, and the state is transient
@@ -138,26 +139,21 @@ JSON args are a single quoted object, e.g. `update ROAD-006 '{"summary":"…","d
 
 ## Typical card flow (the full loop)
 
-```sh
-R="node <skill-dir>/scripts/roadmap.mjs"
+The lifecycle in native-tool terms (in a tool-less context, substitute the equivalent CLI command —
+see [CLI fallback](#cli--fallback-for-tool-less-contexts)):
 
-$R ready                                          # what can I pick up now?
-$R get ROAD-006                                   # read the card + history before acting
+1. **Pick & read.** `roadmap_list view:ready` → what can I start now? Then `roadmap_get id:ROAD-006`
+   → read the card and its history before acting.
+2. **Plan.** Write the prose plan to a repo file (`docs/roadmap/ROAD-006-plan.md`) and commit it,
+   then point the card at it: `roadmap_update id:ROAD-006 summary:"Short description." depends_on:["ROAD-001"]
+   documents:[{title:"Implementation plan", href:"docs/roadmap/ROAD-006-plan.md", kind:"plan"}]`. Group it
+   with `roadmap_epic op:assign cardId:ROAD-006 epicId:EPIC-002`, then `roadmap_move id:ROAD-006 status:up_next`.
+3. **Execute.** `roadmap_move id:ROAD-006 status:in_progress`, do the work, then record the outcome and
+   any external artifacts in `documents` (a build-notes file by path, a PR by URL). `roadmap_move
+   id:ROAD-006 status:review`.
+4. **Review → complete.** `roadmap_move id:ROAD-006 status:completed` (auto-exports `ROADMAP.md`), then
+   `git add ROADMAP.md && git commit` alongside your code — `ROADMAP.md` is the committed, shared snapshot.
 
-# Plan: keep summary a concise description, attach the plan as a document, wire deps, group under an epic
-$R update ROAD-006 '{"summary":"Short description of the work.","depends_on":["ROAD-001"]}'
-# write the plan to a file and commit it, then attach it (prose → repo file)
-$R attach-doc ROAD-006 "Implementation plan" docs/roadmap/ROAD-006-plan.md plan "3 phases; wired ROAD-001"
-$R assign-epic ROAD-006 EPIC-002
-$R move ROAD-006 up_next
-
-# Execute: take it, do the work, attach the outcome (and any external artifacts by URL)
-$R move ROAD-006 in_progress
-$R attach-doc ROAD-006 "Build notes" docs/roadmap/ROAD-006-outcome.md outcome "see src/foo.js:42"
-$R attach-doc ROAD-006 "PR #142" https://github.com/owner/repo/pull/142 pr
-$R move ROAD-006 review                           # hand off for review
-
-# Review → complete (auto-exports ROADMAP.md), then commit the snapshot with your code
-$R move ROAD-006 completed
-git add ROADMAP.md && git commit            # ROADMAP.md is the committed, shared snapshot
-```
+**Appending documents:** `roadmap_update documents:[…]` **replaces** the whole list, so when adding a
+doc to a card that already has some, include the prior entries too — or use the CLI's `attach-doc`
+for a one-off incremental add.
