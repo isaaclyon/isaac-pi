@@ -1,5 +1,5 @@
 {
-  "mode": "normal",
+  "mode": "path",
   "scope": {
     "allProviders": false,
     "additionalProviders": []
@@ -19,7 +19,7 @@
     "backgroundShellCloseShortcut": "alt+r"
   },
   "compaction": {
-    "responsesCompaction": true
+    "responsesCompaction": false
   },
   "openai": {
     "fast": true,

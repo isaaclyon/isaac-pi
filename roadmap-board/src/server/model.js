@@ -340,6 +340,47 @@ export class RoadmapStore {
       .map(row => ({ ...row, payload: JSON.parse(row.payload || '{}') }));
   }
 
+  // Recent board-milestone events across all cards — the durable half of the live activity
+  // timeline. Unlike cardEvents (scoped to one card), this is a global feed of the
+  // coordination-significant card mutations (claims, releases, moves), each joined to its
+  // card title for display. It is a pure read with no schema change; the server merges it
+  // with the ephemeral in-RAM activity ring in GET /api/timeline so the feed survives a
+  // respawn (which empties the ring) instead of going blank. Ordered newest-first by the
+  // events table's autoincrement id, which is stable even when created_at timestamps tie.
+  timelineEvents(limit = 50) {
+    return this.db
+      .prepare(
+        `SELECT e.id, e.card_id, e.event_type, e.actor_type, e.payload, e.created_at, c.title AS card_title
+           FROM events e
+           LEFT JOIN cards c ON c.id = e.card_id
+          WHERE e.card_id IS NOT NULL
+            AND e.event_type IN ('card_moved', 'card_claimed', 'card_released')
+          ORDER BY e.id DESC
+          LIMIT ?`
+      )
+      .all(limit)
+      .map(row => ({ ...row, payload: JSON.parse(row.payload || '{}') }));
+  }
+
+  // The card (if any) a session currently holds, by claim owner. The server uses this to
+  // attribute a live activity POST to the card the reporting session has claimed (the
+  // ROAD-024 link), so the timeline can be filtered per-card without the extension knowing
+  // which card it's on. Deliberately a thin {id, title} read — it sits on the activity
+  // write path — not a full hydrate. Returns null when the owner holds nothing.
+  cardClaimedBy(owner) {
+    if (!owner) return null;
+    const row = this.db
+      .prepare('SELECT id, title FROM cards WHERE claimed_by = ? ORDER BY claimed_at DESC LIMIT 1')
+      .get(owner);
+    return row ?? null;
+  }
+
+  // id -> title for every card, for enriching timeline items with a display title without
+  // building a full snapshot. Single cheap query; used by GET /api/timeline.
+  cardTitleMap() {
+    return new Map(this.db.prepare('SELECT id, title FROM cards').all().map(row => [row.id, row.title]));
+  }
+
   event(cardId, eventType, actorType, payload = {}) {
     assertActor(actorType);
     this.db.prepare('INSERT INTO events (card_id, event_type, actor_type, payload, created_at) VALUES (?, ?, ?, ?, ?)')

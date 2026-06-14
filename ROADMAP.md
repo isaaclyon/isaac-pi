@@ -4,9 +4,9 @@
 
 ## Epics
 
-- **EPIC-006** — Agent work visibility
+- **EPIC-006** — Agent work visibility ✓
   - Summary: Make agent work visible on the roadmap by connecting cards to active Pi sessions and showing what those sessions are doing over time.
-  - Progress: 0 / 2 (0%)
+  - Progress: 2 / 2 (100%)
   - Cards: ROAD-024, ROAD-025
 - **EPIC-007** — Card Data Enhancement ✓
   - Summary: Enhance roadmap card data with richer metadata and supporting artifacts.
@@ -33,10 +33,7 @@
 
 ## Triage
 
-- **ROAD-025** — Show a live agent activity timeline
-  - Summary: Provide a chronological feed of active Pi session activity so the roadmap can show what agents are doing now and what just happened, including current steps, notable tool/status events, stalls, and final results. This should complement card ownership claims by making claimed work observable over time.
-  - Epic: EPIC-006
-  - Depends on: ROAD-024
+_No cards._
 
 ## Backlog
 
@@ -56,21 +53,7 @@ _No cards._
 
 ## Review
 
-- **ROAD-024** — Support active ownership claims on roadmap cards
-  - Summary: Let concurrent Pi sessions claim a card so agents see who is actively working it. Focused feature (not the larger coordination epic yet).
-
-PLAN — one active claim per card, stored as card metadata, surfaced in the live board + event log, EXCLUDED from committed ROADMAP.md (transient per-session, like gitignored .server.json).
-1. model.js: migration v5 adds claimed_by/claimed_at/claim_note to cards. claimCard(id,owner,{note,force}) + releaseCard(id,{owner,force}). Reject claiming a card held by a different owner unless force (steal, logged); idempotent re-claim refreshes. release guards owner-match unless force. Events card_claimed/card_released feed ROAD-025 timeline. hydrateCard normalizes nulls; markdown export omits claim fields.
-2. cli.js: claim <id> <owner> [note] [--force]; release <id> [owner] [--force]; owner falls back to $ROADMAP_SESSION_ID.
-3. server.js: POST /api/cards/:id/claim + /release (parity).
-4. client main.jsx: claim chip on card + modal row (short owner + age, full id on hover); describeEvent for claim/release.
-5. styles.css: claim chip.
-6. extension index.ts: /road claim|release <id> using live sessionId; release this session claims on shutdown; surface claim in summary. core.ts helper(s) + core.test.ts.
-7. skill roadmap.mjs: add claim/release to PASSTHROUGH.
-8. Tests: model.test.js, server.test.js. Docs: README + SKILL.md.
-
-DONE — all 8 steps shipped. Claims are advisory coordination (never a lock): claimCard/releaseCard guard cross-owner overwrite with a 409 unless --force (force logs stolen_from); same-owner re-claim refreshes the note. State lives in SQLite + /api/roadmap feed + read-only UI chip (🔒 short-owner · age) + card_claimed/card_released events, and is deliberately excluded from ROADMAP.md (test asserts no claim text leaks into markdown). Extension releases a session's own claims on session_shutdown so a closed/crashed session never leaves cards held. Surfaces: cli.js claim/release (owner→$ROADMAP_SESSION_ID), server.js parity routes, /road claim|release, skill passthrough. Verified: 47 model+server tests pass, 20 core tests pass, E2E HTTP claim→snapshot round-trip confirmed. Files: model.js (migration v5, claimCard/releaseCard, hydrate, export omission), cli.js, server.js, client main.jsx + styles.css, extension core.ts/index.ts, skill roadmap.mjs; docs README.md + SKILL.md. Note: developed alongside a concurrent session's v6 documents feature on the same files — both coexist cleanly.
-  - Epic: EPIC-006
+_No cards._
 
 ## Completed
 
@@ -139,3 +122,25 @@ Validation:
 Notes:
 - Existing claim/ownership changes for ROAD-024 were already present in the working tree and were preserved.
   - Epic: EPIC-007
+- **ROAD-024** — Support active ownership claims on roadmap cards
+  - Summary: Let concurrent Pi sessions claim a card so agents see who is actively working it. Focused feature (not the larger coordination epic yet).
+
+PLAN — one active claim per card, stored as card metadata, surfaced in the live board + event log, EXCLUDED from committed ROADMAP.md (transient per-session, like gitignored .server.json).
+1. model.js: migration v5 adds claimed_by/claimed_at/claim_note to cards. claimCard(id,owner,{note,force}) + releaseCard(id,{owner,force}). Reject claiming a card held by a different owner unless force (steal, logged); idempotent re-claim refreshes. release guards owner-match unless force. Events card_claimed/card_released feed ROAD-025 timeline. hydrateCard normalizes nulls; markdown export omits claim fields.
+2. cli.js: claim <id> <owner> [note] [--force]; release <id> [owner] [--force]; owner falls back to $ROADMAP_SESSION_ID.
+3. server.js: POST /api/cards/:id/claim + /release (parity).
+4. client main.jsx: claim chip on card + modal row (short owner + age, full id on hover); describeEvent for claim/release.
+5. styles.css: claim chip.
+6. extension index.ts: /road claim|release <id> using live sessionId; release this session claims on shutdown; surface claim in summary. core.ts helper(s) + core.test.ts.
+7. skill roadmap.mjs: add claim/release to PASSTHROUGH.
+8. Tests: model.test.js, server.test.js. Docs: README + SKILL.md.
+
+DONE — all 8 steps shipped. Claims are advisory coordination (never a lock): claimCard/releaseCard guard cross-owner overwrite with a 409 unless --force (force logs stolen_from); same-owner re-claim refreshes the note. State lives in SQLite + /api/roadmap feed + read-only UI chip (🔒 short-owner · age) + card_claimed/card_released events, and is deliberately excluded from ROADMAP.md (test asserts no claim text leaks into markdown). Extension releases a session's own claims on session_shutdown so a closed/crashed session never leaves cards held. Surfaces: cli.js claim/release (owner→$ROADMAP_SESSION_ID), server.js parity routes, /road claim|release, skill passthrough. Verified: 47 model+server tests pass, 20 core tests pass, E2E HTTP claim→snapshot round-trip confirmed. Files: model.js (migration v5, claimCard/releaseCard, hydrate, export omission), cli.js, server.js, client main.jsx + styles.css, extension core.ts/index.ts, skill roadmap.mjs; docs README.md + SKILL.md. Note: developed alongside a concurrent session's v6 documents feature on the same files — both coexist cleanly.
+  - Epic: EPIC-006
+- **ROAD-025** — Show a live agent activity timeline
+  - Summary: Provide a chronological feed of active Pi session activity so the roadmap can show what agents are doing now and what just happened, including current steps, notable tool/status events, stalls, and final results. This should complement card ownership claims by making claimed work observable over time.
+  - Epic: EPIC-006
+  - Documents:
+    - [Implementation plan](docs/plans/2026-06-13-roadmap-activity-timeline/ExecPlan.md) — plan — Ephemeral ring buffer + HTTP-only timeline read; merges live activity with durable milestones; 11 planned steps
+    - [Execution outcome](docs/plans/2026-06-13-roadmap-activity-timeline/Outcome.md) — outcome — Build notes + post-exec updates: serve needs a built dist; dist already gitignored; 91 tests green
+  - Depends on: ROAD-024

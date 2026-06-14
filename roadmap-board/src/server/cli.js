@@ -1,10 +1,66 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
+import { request } from 'node:http';
+import { join } from 'node:path';
 import { openRoadmap, paths } from './model.js';
 import { startServer } from './server.js';
 
 function parseJson(value, fallback) {
   if (value === undefined) return fallback;
   return JSON.parse(value);
+}
+
+function flagValue(args, name) {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+// The live activity timeline (ROAD-025) is the one read that does NOT go through SQLite.
+// Its live half lives in the running server's RAM, which a short-lived CLI process (with
+// its own DB connection) cannot see — so it must ask the live server over HTTP, and
+// degrade to an annotated empty result when none is running.
+function readServerPort(cwd) {
+  try {
+    const state = JSON.parse(readFileSync(join(paths(cwd).dir, '.server.json'), 'utf8'));
+    return typeof state.port === 'number' ? state.port : null;
+  } catch {
+    return null;
+  }
+}
+
+function httpGetJson(port, path, timeoutMs = 2000) {
+  return new Promise(resolveJson => {
+    const req = request({ host: '127.0.0.1', port, path, method: 'GET', timeout: timeoutMs }, res => {
+      if (res.statusCode !== 200) { res.resume(); resolveJson(null); return; }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => (body += chunk));
+      res.on('end', () => { try { resolveJson(JSON.parse(body)); } catch { resolveJson(null); } });
+    });
+    req.on('timeout', () => { req.destroy(); resolveJson(null); });
+    req.on('error', () => resolveJson(null));
+    req.end();
+  });
+}
+
+async function timelineCommand(args) {
+  const empty = {
+    items: [],
+    started_at: null,
+    note: 'No roadmap server is running. The live activity feed lives in the server process; start one with `serve` (or open the board) to populate it.',
+  };
+  const port = readServerPort(process.cwd());
+  if (!port) { console.log(JSON.stringify(empty, null, 2)); return; }
+  const params = new URLSearchParams();
+  const limit = flagValue(args, '--limit');
+  const session = flagValue(args, '--session');
+  const card = flagValue(args, '--card');
+  if (limit) params.set('limit', limit);
+  if (session) params.set('session', session);
+  if (card) params.set('card', card);
+  const qs = params.toString();
+  const result = await httpGetJson(port, qs ? `/api/timeline?${qs}` : '/api/timeline');
+  console.log(JSON.stringify(result ?? empty, null, 2));
 }
 
 function usage() {
@@ -17,6 +73,9 @@ Commands:
   ready                             Print cards whose dependencies are all completed
   blocked-deps                      Print cards waiting on an incomplete dependency
   events <id>                       Print a card's event history as JSON
+  timeline [--limit N] [--session S] [--card C]
+                                    Live activity feed (reads the running server over HTTP;
+                                    empty when no server is up — the feed is in-memory)
   add <title> [summary]             Add a user Triage card
   epic-add <title> [summary]        Add an Epic
   epic-update <id> <json>           Update Epic fields: title, summary, sort_index
@@ -51,6 +110,7 @@ async function main() {
     return;
   }
   if (cmd === 'paths') { console.log(JSON.stringify(paths(process.cwd()), null, 2)); return; }
+  if (cmd === 'timeline') { await timelineCommand(args); return; }
 
   const store = openRoadmap(process.cwd());
   try {

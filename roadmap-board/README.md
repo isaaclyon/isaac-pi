@@ -11,6 +11,7 @@ A local, per-project roadmap board for Pi-driven work.
 - All card changes — create, edit, move, reorder, delete — flow through agents via the CLI/API validation layer
 - Cards can carry ordered supporting document references (`title`, `href`, optional `kind`/`note`); the board stores references, not uploaded file blobs
 - Cards can carry a transient **ownership claim** (`claimed_by`, `claimed_at`, optional note) so concurrent agents see which session is actively holding a card; claims live in the DB and UI but are intentionally excluded from the committed `ROADMAP.md`
+- A live **activity timeline** surfaces what agent sessions are doing right now — current steps, notable tool/status events, stalls, and final results — in a global drawer and per-card. It is ephemeral, in-memory session telemetry (never written to SQLite), merged with durable board milestones so the feed survives a server restart
 
 ## Usage
 
@@ -28,6 +29,8 @@ node roadmap-board/src/server/cli.js claim ROAD-001 alice "wiring up the API"  #
 node roadmap-board/src/server/cli.js release ROAD-001 alice                     # drop the claim
 node roadmap-board/src/server/cli.js ready        # cards whose dependencies are all completed
 node roadmap-board/src/server/cli.js blocked-deps # cards waiting on an incomplete dependency
+node roadmap-board/src/server/cli.js timeline --limit 20          # live activity feed (needs a running server)
+node roadmap-board/src/server/cli.js timeline --card ROAD-001     # activity scoped to one card
 node roadmap-board/src/server/cli.js serve --port 4177
 ```
 
@@ -67,6 +70,17 @@ The board is a single SQLite database in WAL mode. It is safe to run CLI command
 - **Claiming a held card is guarded.** A different owner claiming an already-claimed card gets a `409` unless they pass `--force` (which records `stolen_from` in the event log). Re-claiming as the same owner just refreshes the note. `release` has the symmetric guard: a mismatched owner needs `--force`.
 - **Claims are transient and excluded from `ROADMAP.md`.** Like the gitignored `.server.json`, claim state is per-session live coordination, not part of the committed snapshot — exporting it would churn the shared file with stale session ids. It lives in SQLite, the `/api/roadmap` feed, the read-only UI chip, and the event log only.
 - **Sessions release their own claims on shutdown.** The Pi extension's `session_shutdown` hook releases every card still claimed by the exiting session, so a crashed or closed session does not leave cards looking permanently held.
+
+### Live activity timeline
+
+The activity timeline answers "what is an agent doing *right now*?" — the live complement to ownership claims. As a Pi session runs, its roadmap extension reports each notable step (agent turns, tool starts/ends, model switches, session start/stop) to the server over HTTP; the server attributes the event to whatever card that session currently holds and appends it to an in-memory ring.
+
+- **Ephemeral by design — RAM, never SQLite.** Live activity is high-volume, short-lived telemetry: useful while a session runs, worthless once it's gone. It lives in a bounded ring buffer in the `serve` process (capped, oldest-evicted) so it never migrates the schema, churns the gitignored DB, or needs a retention policy. Two consequences follow directly:
+  1. **The `timeline` read goes over HTTP, not through SQLite.** A short-lived CLI/skill process opens its own DB connection and cannot see the server's RAM, so `timeline` reads `.pi/roadmap/.server.json` for the live port and asks the running server — degrading to an annotated empty result when none is up.
+  2. **A restart re-merges durable milestones.** A server respawn (code edit, last-session detach) empties the ring, so `GET /api/timeline` merges the live ring with recent board milestones (moves/claims/releases) from the event log. The feed degrades to history rather than going blank.
+- **Two surfaces, one feed.** The read-only UI shows a global **Activity** drawer (board-wide, newest-first, 2s poll) and a per-card **Live activity** section in the card modal (`?card=<id>`). A step still marked `running` past a threshold is rendered as **stalled**, surfacing a wedged session at a glance.
+- **Tool arguments are scrubbed at the source.** The extension shapes each event into a short, safe label *before* it leaves the session — an allowlist keeps bodies out of the feed (e.g. a Bash step shows its `description`, never the command; file tools show a basename, never contents). Nothing sensitive is stored or transmitted.
+- **Scoped reads.** `GET /api/timeline` (and `cli.js timeline`) accept `--limit`, `--card`, and `--session`. `--card` scopes both halves of the merge; `--session` returns that session's live activity only (sessions don't own milestones).
 
 ## Schema migrations
 

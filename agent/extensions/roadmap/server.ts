@@ -36,14 +36,18 @@ import {
 	type ServerState,
 	serverStatePath,
 	shouldReuseServer,
+	type TimelineItem,
 } from "./core.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_REL = join("roadmap-board", "src", "server", "cli.js");
 const HEALTH_PATH = "/api/roadmap";
+const ACTIVITY_PATH = "/api/activity";
+const TIMELINE_PATH = "/api/timeline";
 const LOCK_STALE_MS = 15_000;
 const LOCK_WAIT_MS = 5_000;
 const HEALTH_TIMEOUT_MS = 1_500;
+const ACTIVITY_TIMEOUT_MS = 1_000;
 const SPAWN_READY_MS = 10_000;
 
 // ---------------------------------------------------------------------------
@@ -136,6 +140,108 @@ export function fetchSnapshot(port: number): Promise<BoardSnapshot | null> {
 			resolveSnap(null);
 		});
 		req.on("error", () => resolveSnap(null));
+		req.end();
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Live activity timeline I/O (ROAD-025)
+// ---------------------------------------------------------------------------
+
+export interface ActivityBody {
+	session: string;
+	kind: string;
+	title: string;
+	status: string | null;
+}
+
+export interface TimelineResponse {
+	items: TimelineItem[];
+	started_at: string;
+}
+
+/**
+ * Fire-and-forget POST of one shaped activity record to the live board server. This runs
+ * inside the agent's lifecycle hooks (the hot path), so it MUST NOT slow or break the
+ * agent: callers do not await it, every error is swallowed, and the timeout is short. A
+ * missing, slow, or down server simply drops the event. The returned promise resolves
+ * (never rejects) once the request settles, so tests can await it; production ignores it.
+ */
+export function postActivity(port: number, body: ActivityBody): Promise<void> {
+	return new Promise((resolveDone) => {
+		let settled = false;
+		const done = () => {
+			if (!settled) {
+				settled = true;
+				resolveDone();
+			}
+		};
+		try {
+			const payload = JSON.stringify(body);
+			const req = request(
+				{
+					host: "127.0.0.1",
+					port,
+					path: ACTIVITY_PATH,
+					method: "POST",
+					timeout: ACTIVITY_TIMEOUT_MS,
+					headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload) },
+				},
+				(res) => {
+					res.resume(); // drain
+					res.on("end", done);
+				},
+			);
+			req.on("timeout", () => {
+				req.destroy();
+				done();
+			});
+			req.on("error", () => done());
+			req.write(payload);
+			req.end();
+		} catch {
+			done();
+		}
+	});
+}
+
+/** GET the merged timeline from the live server. Resolves null on any error/non-200. */
+export function fetchTimeline(
+	port: number,
+	opts: { limit?: number; card?: string; session?: string } = {},
+): Promise<TimelineResponse | null> {
+	const params = new URLSearchParams();
+	if (opts.limit) params.set("limit", String(opts.limit));
+	if (opts.card) params.set("card", opts.card);
+	if (opts.session) params.set("session", opts.session);
+	const qs = params.toString();
+	const path = qs ? `${TIMELINE_PATH}?${qs}` : TIMELINE_PATH;
+	return new Promise((resolveResp) => {
+		const req = request(
+			{ host: "127.0.0.1", port, path, method: "GET", timeout: HEALTH_TIMEOUT_MS },
+			(res) => {
+				if (res.statusCode !== 200) {
+					res.resume();
+					resolveResp(null);
+					return;
+				}
+				let body = "";
+				res.setEncoding("utf8");
+				res.on("data", (chunk) => (body += chunk));
+				res.on("end", () => {
+					try {
+						resolveResp(JSON.parse(body) as TimelineResponse);
+					} catch {
+						resolveResp(null);
+					}
+				});
+			},
+		);
+		req.on("timeout", () => {
+			req.destroy();
+			resolveResp(null);
+		});
+		req.on("error", () => resolveResp(null));
 		req.end();
 	});
 }

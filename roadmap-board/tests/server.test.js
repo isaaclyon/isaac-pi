@@ -234,3 +234,66 @@ test('POST /api/cards/:id/claim and /release manage ownership and enforce the ow
   const missing = await req(base, 'POST', '/api/cards/ROAD-999/claim', { owner: 'alice' });
   assert.equal(missing.status, 404);
 }));
+
+test('POST /api/activity records an event and attributes it to the session\'s claimed card', () => withServer(async ({ base, store }) => {
+  const card = store.createTriage({ title: 'Live work' });
+  store.claimCard(card.id, 'sess-1');
+
+  const ok = await req(base, 'POST', '/api/activity', { session: 'sess-1', kind: 'tool_execution_start', title: 'grep', status: 'running' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.kind, 'tool_execution_start');
+  assert.equal(ok.json.card_id, card.id);       // server attributed via the claim
+  assert.equal(ok.json.session, 'sess-1');
+  assert.ok(ok.json.seq >= 1 && typeof ok.json.ts === 'string');
+
+  // An unclaimed session's activity is global-only (no card attribution).
+  const orphan = await req(base, 'POST', '/api/activity', { session: 'nobody', kind: 'agent_start' });
+  assert.equal(orphan.status, 200);
+  assert.equal(orphan.json.card_id, null);
+
+  // kind is required.
+  const bad = await req(base, 'POST', '/api/activity', { session: 'sess-1', title: 'no kind' });
+  assert.equal(bad.status, 400);
+  assert.match(bad.json.error, /kind is required/);
+}));
+
+test('GET /api/timeline merges live activity with durable milestones, newest-first', () => withServer(async ({ base, store }) => {
+  const card = store.createTriage({ title: 'Traced' });
+  store.claimCard(card.id, 'sess-1');          // durable milestone: card_claimed
+  store.move(card.id, 'in_progress');          // durable milestone: card_moved
+
+  await req(base, 'POST', '/api/activity', { session: 'sess-1', kind: 'agent_start', title: 'started', status: 'running' });
+
+  const all = await req(base, 'GET', '/api/timeline');
+  assert.equal(all.status, 200);
+  assert.ok(typeof all.json.started_at === 'string');
+  const kinds = all.json.items.map(i => i.kind);
+  assert.ok(kinds.includes('agent_start'));    // live half
+  assert.ok(kinds.includes('card_moved'));     // durable half
+  assert.ok(kinds.includes('card_claimed'));
+  // The live activity event is the most recent thing that happened.
+  assert.equal(all.json.items[0].kind, 'agent_start');
+  // Live items carry their attributed card + enriched title.
+  const live = all.json.items.find(i => i.source === 'activity');
+  assert.equal(live.card_id, card.id);
+  assert.equal(live.card_title, 'Traced');
+}));
+
+test('GET /api/timeline?card scopes both halves; ?session is live-activity only', () => withServer(async ({ base, store }) => {
+  const a = store.createTriage({ title: 'Card A' });
+  const b = store.createTriage({ title: 'Card B' });
+  store.claimCard(a.id, 'sess-a');
+  store.claimCard(b.id, 'sess-b');
+  await req(base, 'POST', '/api/activity', { session: 'sess-a', kind: 'tool_execution_start', title: 'on A' });
+  await req(base, 'POST', '/api/activity', { session: 'sess-b', kind: 'tool_execution_start', title: 'on B' });
+
+  // Card-scoped: only A's live activity + A's milestones (card_claimed for A).
+  const cardView = await req(base, 'GET', `/api/timeline?card=${a.id}`);
+  assert.ok(cardView.json.items.every(i => i.card_id === a.id));
+  assert.ok(cardView.json.items.some(i => i.kind === 'card_claimed'));
+
+  // Session-scoped: only that session's live activity, no milestones.
+  const sessView = await req(base, 'GET', '/api/timeline?session=sess-a');
+  assert.ok(sessView.json.items.length >= 1);
+  assert.ok(sessView.json.items.every(i => i.source === 'activity' && i.session === 'sess-a'));
+}));
