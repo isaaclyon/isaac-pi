@@ -7,6 +7,8 @@ agent/sessions/
 agent/lcm/
 agent/update-cache.json
 agent/run-history.jsonl
+agent/pi-codex-conversion.json
+exa-usage.json
 agent/backups/
 agent.backup.*/
 automations/
