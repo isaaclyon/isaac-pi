@@ -22,8 +22,11 @@ interface DiffSnapshot {
 interface GateState {
   baselineFingerprint: string | undefined;
   lastReviewedFingerprint: string | undefined;
+  lastPromptedFingerprint: string | undefined;
   reviewRequired: boolean;
   pendingSnapshot: DiffSnapshot | undefined;
+  sawReviewerPass: boolean;
+  sawIntentValidatorPass: boolean;
 }
 
 const CODE_PATH_RE = /\.(py|ts|tsx|mts|cts|js|jsx|mjs|cjs|sql|swift|go|rs|java|kt|scala|rb|php|c|cc|cpp|cxx|h|hpp)$/i;
@@ -38,9 +41,22 @@ let promptState = createPromptState();
 let gateState: GateState = {
   baselineFingerprint: undefined,
   lastReviewedFingerprint: undefined,
+  lastPromptedFingerprint: undefined,
   reviewRequired: false,
   pendingSnapshot: undefined,
+  sawReviewerPass: false,
+  sawIntentValidatorPass: false,
 };
+
+const REVIEWER_AGENTS = new Set([
+  "architecture-reviewer",
+  "complexity-reviewer",
+  "correctness-reviewer",
+  "duplication-reviewer",
+  "ops-reviewer",
+  "visual-tester",
+  "yagni-reviewer",
+]);
 
 function isCodePath(path: string): boolean {
   return CODE_PATH_RE.test(path);
@@ -178,8 +194,11 @@ function persistGateState(pi: ExtensionAPI): void {
   pi.appendEntry(STATE_ENTRY_TYPE, {
     baselineFingerprint: gateState.baselineFingerprint,
     lastReviewedFingerprint: gateState.lastReviewedFingerprint,
+    lastPromptedFingerprint: gateState.lastPromptedFingerprint,
     reviewRequired: gateState.reviewRequired,
     pendingSnapshot: gateState.pendingSnapshot,
+    sawReviewerPass: gateState.sawReviewerPass,
+    sawIntentValidatorPass: gateState.sawIntentValidatorPass,
   });
 }
 
@@ -198,8 +217,11 @@ function restoreGateState(ctx: { cwd: string; sessionManager: { getEntries(): an
     gateState = {
       baselineFingerprint: typeof stateEntry.data.baselineFingerprint === "string" ? stateEntry.data.baselineFingerprint : undefined,
       lastReviewedFingerprint: typeof stateEntry.data.lastReviewedFingerprint === "string" ? stateEntry.data.lastReviewedFingerprint : undefined,
+      lastPromptedFingerprint: typeof stateEntry.data.lastPromptedFingerprint === "string" ? stateEntry.data.lastPromptedFingerprint : undefined,
       reviewRequired: stateEntry.data.reviewRequired === true,
       pendingSnapshot: stateEntry.data.pendingSnapshot,
+      sawReviewerPass: stateEntry.data.sawReviewerPass === true,
+      sawIntentValidatorPass: stateEntry.data.sawIntentValidatorPass === true,
     };
     return;
   }
@@ -208,8 +230,11 @@ function restoreGateState(ctx: { cwd: string; sessionManager: { getEntries(): an
   gateState = {
     baselineFingerprint: snapshot.fingerprint,
     lastReviewedFingerprint: snapshot.fingerprint,
+    lastPromptedFingerprint: snapshot.fingerprint,
     reviewRequired: false,
     pendingSnapshot: undefined,
+    sawReviewerPass: false,
+    sawIntentValidatorPass: false,
   };
 }
 
@@ -225,14 +250,37 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName === "goal_complete") {
+      if (!gateState.reviewRequired || !gateState.pendingSnapshot) return undefined;
+      return {
+        block: true,
+        reason: `Semantic completion gate: material code changes are still unreviewed (${gateState.pendingSnapshot.summary}). Before claiming completion, run a reviewer pass consistent with review-with-subagents and include intent-validator.`,
+      };
+    }
+
     if (event.toolName !== "subagent") return undefined;
     const input = event.input as { agent?: string; name?: string };
-    if (input.agent !== "intent-validator" && input.name !== "intent-validator") return undefined;
+    const agentName = input.agent ?? input.name;
+    if (!agentName) return undefined;
+
+    if (REVIEWER_AGENTS.has(agentName)) {
+      gateState.sawReviewerPass = true;
+      persistGateState(pi);
+      return undefined;
+    }
+
+    if (agentName !== "intent-validator") return undefined;
 
     const snapshot = computeDiffSnapshot(ctx.cwd);
-    gateState.lastReviewedFingerprint = snapshot.fingerprint;
-    gateState.reviewRequired = false;
-    gateState.pendingSnapshot = undefined;
+    gateState.sawIntentValidatorPass = true;
+    if (gateState.sawReviewerPass) {
+      gateState.lastReviewedFingerprint = snapshot.fingerprint;
+      gateState.lastPromptedFingerprint = snapshot.fingerprint;
+      gateState.reviewRequired = false;
+      gateState.pendingSnapshot = undefined;
+      gateState.sawReviewerPass = false;
+      gateState.sawIntentValidatorPass = false;
+    }
     persistGateState(pi);
     return undefined;
   });
@@ -265,6 +313,7 @@ export default function (pi: ExtensionAPI) {
 
     if (!snapshot.material || snapshot.fingerprint === gateState.lastReviewedFingerprint) {
       if (!snapshot.material) {
+        gateState.lastPromptedFingerprint = snapshot.fingerprint;
         gateState.reviewRequired = false;
         gateState.pendingSnapshot = undefined;
         persistGateState(pi);
@@ -274,14 +323,20 @@ export default function (pi: ExtensionAPI) {
 
     gateState.reviewRequired = true;
     gateState.pendingSnapshot = snapshot;
+    gateState.sawReviewerPass = false;
+    gateState.sawIntentValidatorPass = false;
     if (!gateState.baselineFingerprint) gateState.baselineFingerprint = snapshot.fingerprint;
     persistGateState(pi);
 
-    if (ctx.hasUI) {
-      ctx.ui.notify(
-        `Material work detected (${snapshot.summary}). Run review-with-subagents and include intent-validator before claiming completion.`,
-        snapshot.score >= 3 ? "error" : "warning",
-      );
+    if (gateState.lastPromptedFingerprint === snapshot.fingerprint) {
+      return;
     }
+
+    gateState.lastPromptedFingerprint = snapshot.fingerprint;
+    persistGateState(pi);
+    pi.sendUserMessage(
+      `Material work detected (${snapshot.summary}). Before claiming completion, use the review-with-subagents skill, run at least one reviewer subagent appropriate to the change, include intent-validator, then reassess whether completion is honest.`,
+    );
+
   });
 }
