@@ -9,12 +9,34 @@ const ACTION_LABELS = {
   review: 'Review',
 };
 
+// One icon language for the whole board: inline stroke SVGs that inherit currentColor, replacing
+// the OS-dependent emoji (🔒/☀︎/☾/🖥) that spoke a different visual register than everything else.
+function Icon({ children, size = 14, strokeWidth = 2, ...rest }) {
+  return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+    aria-hidden="true" {...rest}>{children}</svg>;
+}
+const SunIcon = p => <Icon {...p}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></Icon>;
+const MoonIcon = p => <Icon {...p}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></Icon>;
+const MonitorIcon = p => <Icon {...p}><rect x="3" y="4" width="18" height="13" rx="1.5" /><path d="M8 21h8M12 17v4" /></Icon>;
+const LockIcon = p => <Icon {...p} strokeWidth={2.1}><rect x="4.5" y="11" width="15" height="9" rx="1.6" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></Icon>;
+const DocIcon = p => <Icon {...p}><path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V8L14 3z" /><path d="M14 3v5h5" /></Icon>;
+// Activity-feed glyphs. ActivityIcon labels the header toggle (a pulse line); the rest are the
+// per-row status marks — SpinnerIcon is spun by CSS for in-flight steps, DotIcon (a filled dot) is
+// the neutral mark for settled milestones and info events.
+const ActivityIcon = p => <Icon {...p}><path d="M3 12h3.5l2 6 4-12 2 6H21" /></Icon>;
+const SpinnerIcon = p => <Icon {...p}><path d="M21 12a9 9 0 1 1-6.2-8.57" /></Icon>;
+const CheckIcon = p => <Icon {...p}><path d="M5 12.5l4.5 4.5L19 6.5" /></Icon>;
+const AlertIcon = p => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></Icon>;
+const ClockIcon = p => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 1.8" /></Icon>;
+const DotIcon = p => <Icon {...p} fill="currentColor" strokeWidth={0}><circle cx="12" cy="12" r="3.4" /></Icon>;
+
 // Theme is tri-state: the persisted *preference* is one of these; the resolved
 // 'light'/'dark' lives on <html data-theme> (set pre-paint by the inline script in index.html).
 const THEME_KEY = 'roadmap-theme';
 const THEME_ORDER = ['light', 'dark', 'system'];
 const THEME_NEXT = { light: 'dark', dark: 'system', system: 'light' };
-const THEME_ICON = { light: '☀︎', dark: '☾', system: '🖥' };
+const THEME_ICON = { light: SunIcon, dark: MoonIcon, system: MonitorIcon };
 const THEME_LABEL = { light: 'Light', dark: 'Dark', system: 'System' };
 
 function readThemePref() {
@@ -60,6 +82,14 @@ const EMPTY_HINTS = {
   completed: 'No completed cards yet.',
 };
 
+// The live-activity status (set by the extension's shaper) maps onto a small set of visual tones.
+// `done` and `ok` both read as success; anything unrecognised falls back to the neutral `info` mark.
+const ACTIVITY_TONE = { running: 'running', ok: 'ok', done: 'ok', error: 'error', info: 'info' };
+// A step still marked `running` after this long reads as *stalled* — the agent started it but nothing
+// has happened since, which is exactly the "stall" signal ROAD-025 calls for. Above the 2s poll and
+// well past typical tool latency, so a healthy in-flight step never trips it.
+const STALL_AFTER_MS = 90_000;
+
 function App() {
   const [data, setData] = useState({ columns: [], prompts: {}, epics: [], cards: [] });
   const [toast, setToast] = useState(null);
@@ -69,6 +99,7 @@ function App() {
   const [openEpicId, setOpenEpicId] = useState(null);
   const [focusEpicId, setFocusEpicId] = useState(null);
   const [readyOnly, setReadyOnly] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [themePref, setThemePref] = useState(readThemePref);
   // Connection health: null = healthy. A non-null string is the banner message. `loaded` flips true
   // after the first successful fetch and never back — it's how we tell "never reached the server"
@@ -269,12 +300,23 @@ function App() {
           </button>
           <button
             type="button"
+            className={`ghost activity-toggle${activityOpen ? ' is-active' : ''}`}
+            aria-pressed={activityOpen}
+            aria-expanded={activityOpen}
+            title="Live agent activity feed"
+            onClick={() => setActivityOpen(v => !v)}
+          >
+            <ActivityIcon className="activity-toggle-icon" />
+            Activity
+          </button>
+          <button
+            type="button"
             className="ghost theme-toggle"
             aria-label={`Theme: ${THEME_LABEL[themePref]}. Switch to ${THEME_LABEL[THEME_NEXT[themePref]]}.`}
             title={`Theme: ${THEME_LABEL[themePref]}`}
             onClick={() => setThemePref(p => THEME_NEXT[p])}
           >
-            <span className="theme-icon" aria-hidden="true">{THEME_ICON[themePref]}</span>
+            {React.createElement(THEME_ICON[themePref], { className: 'theme-icon' })}
             {THEME_LABEL[themePref]}
           </button>
         </div>
@@ -369,6 +411,12 @@ function App() {
       onClose={() => setOpenId(null)}
     />}
 
+    {activityOpen && <ActivityPanel
+      statusLabels={statusLabels}
+      onClose={() => setActivityOpen(false)}
+      onOpenCard={id => { setActivityOpen(false); setOpenId(id); }}
+    />}
+
     {toast && <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">{toast.text}</div>}
   </main>;
 }
@@ -390,6 +438,8 @@ function ConnBanner({ message, onRetry, full = false }) {
 
 function Card({ card, epic, onOpen }) {
   const documents = Array.isArray(card.documents) ? card.documents : [];
+  const owner = shortOwner(card.claimed_by);
+  const age = card.claimed_at ? formatClaimAge(card.claimed_at) : '';
   return <article
     className="card"
     data-card-id={card.id}
@@ -399,27 +449,28 @@ function Card({ card, epic, onOpen }) {
     onClick={onOpen}
     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
   >
+    {/* One primary signal up top — Ready (go) or Waiting (hold). A claim shows via the left stripe
+        and the claim line, so it never competes in this row. Docs/deps drop to the meta footer. */}
     <div className="card-top">
-      <div className="card-top-left">
-        <span className="card-id">{card.id}</span>
-        {epic && <span className="epic-chip" title={epic.title}>{epic.id}</span>}
-      </div>
-      {documents.length > 0 && <span className="doc-chip" title={`${documents.length} document${documents.length === 1 ? '' : 's'}`}>Docs {documents.length}</span>}
-      {card.ready && <span className="ready-chip" title="All dependencies completed">Ready</span>}
-      {card.dependency_blocked && <span className="blocked-chip" title="Waiting on incomplete dependencies">Waiting</span>}
+      <span className="card-id">{card.id}</span>
+      {epic && <span className="epic-ref" title={epic.title}>{epic.id}</span>}
+      {card.ready ? <span className="state-badge is-ready" title="All dependencies completed">Ready</span>
+        : card.dependency_blocked ? <span className="state-badge is-waiting" title="Waiting on incomplete dependencies">Waiting</span>
+          : null}
     </div>
     <h3 className="card-title">{card.title}</h3>
     {card.claimed_by && <p className="claim-line" title={claimTitle(card)}>
-      <span aria-hidden="true">🔒</span>
-      <span>{shortOwner(card.claimed_by)}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}</span>
-      {card.claim_note && <span className="claim-line-note">— {card.claim_note}</span>}
+      <LockIcon className="claim-icon" size={12} />
+      <span className="claim-note">{card.claim_note || owner}</span>
+      <span className="claim-meta">{card.claim_note ? `${owner}${age ? ` · ${age}` : ''}` : age}</span>
     </p>}
     {card.summary && <p className="card-summary">{card.summary}</p>}
-    {(card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason) && <dl>
-      {card.depends_on.length > 0 && <><dt>Depends on</dt><dd>{card.depends_on.join(', ')}</dd></>}
-      {card.enables.length > 0 && <><dt>Enables</dt><dd>{card.enables.join(', ')}</dd></>}
-      {card.blocked_reason && <><dt>Blocked</dt><dd>{card.blocked_reason}</dd></>}
-    </dl>}
+    {(documents.length > 0 || card.depends_on.length > 0 || card.enables.length > 0) && <div className="card-meta">
+      {documents.length > 0 && <span className="meta-item" title={`${documents.length} document${documents.length === 1 ? '' : 's'}`}><DocIcon className="meta-icon" size={13} />{documents.length}</span>}
+      {card.depends_on.length > 0 && <span className="meta-item" title={`Depends on ${card.depends_on.join(', ')}`}>needs <span className="dep">{card.depends_on.join(', ')}</span></span>}
+      {card.enables.length > 0 && <span className="meta-item" title={`Enables ${card.enables.join(', ')}`}>enables <span className="dep">{card.enables.join(', ')}</span></span>}
+    </div>}
+    {card.blocked_reason && <p className="card-blocked-reason">{card.blocked_reason}</p>}
   </article>;
 }
 
@@ -451,9 +502,6 @@ function EpicRow({ epic, active, dimmed, onSelect, onOpen }) {
     onDoubleClick={handleDoubleClick}
     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
   >
-    <div className="epic-meter" role="progressbar" aria-valuenow={epic.percent_complete} aria-valuemin={0} aria-valuemax={100} aria-label={`${epic.title} progress`}>
-      <span style={{ width: `${epic.percent_complete}%` }} />
-    </div>
     <span className="epic-id-cell">
       <span className="id-tag">{epic.id}</span>
       {epic.is_complete && <span className="done-chip" title="All cards completed">Done</span>}
@@ -462,9 +510,14 @@ function EpicRow({ epic, active, dimmed, onSelect, onOpen }) {
       <h3>{epic.title}</h3>
       {epic.summary && <p>{epic.summary}</p>}
     </div>
-    <div className="epic-progress-copy">
-      <strong>{epic.done_count} / {epic.total_count}</strong>
-      <span>{epic.percent_complete}%</span>
+    <div className="epic-progress">
+      <div className="epic-progress-copy">
+        <strong>{epic.done_count} / {epic.total_count}</strong>
+        <span>{epic.percent_complete}%</span>
+      </div>
+      <div className="epic-meter" role="progressbar" aria-valuenow={epic.percent_complete} aria-valuemin={0} aria-valuemax={100} aria-label={`${epic.title} progress`}>
+        <span style={{ width: `${epic.percent_complete}%` }} />
+      </div>
     </div>
     <button
       type="button"
@@ -595,9 +648,119 @@ function isUrl(href) {
   return /^[a-z][a-z0-9+.-]*:/i.test(href);
 }
 
+// Resolve one timeline item to a visual state. Milestones (board moves/claims, source 'milestone')
+// are settled facts — always the neutral mark. Live steps map by status, except a long-running step
+// is promoted to 'stalled' so a wedged session stands out instead of spinning forever.
+function activityState(item, nowMs) {
+  if (item.source === 'milestone') return 'milestone';
+  if (item.status === 'running') {
+    const ts = new Date(item.ts).getTime();
+    if (!Number.isNaN(ts) && nowMs - ts > STALL_AFTER_MS) return 'stalled';
+    return 'running';
+  }
+  return ACTIVITY_TONE[item.status] ?? 'info';
+}
+
+// One sentence per item. Live steps arrive pre-shaped by the extension (title already curated and
+// security-scrubbed server-side), so we trust `title`; milestones reuse the same describeEvent the
+// card history uses, so a move/claim reads identically wherever it appears.
+function describeActivity(item, statusLabels) {
+  if (item.source === 'milestone') return describeEvent({ event_type: item.kind, payload: item.payload }, statusLabels);
+  return item.title || item.kind || 'Activity';
+}
+
+function ActivityGlyph({ state }) {
+  const Glyph = state === 'running' ? SpinnerIcon
+    : state === 'stalled' ? ClockIcon
+      : state === 'error' ? AlertIcon
+        : state === 'ok' ? CheckIcon
+          : DotIcon; // milestone, info, anything else
+  return <span className={`activity-glyph is-${state}`} aria-hidden="true"><Glyph size={13} /></span>;
+}
+
+// The shared feed renderer, used by both the global drawer and the card modal's live section.
+// `items`: null = loading, 'error' = fetch failed, [] = none, [...] = rows. `showCard` adds a card
+// chip per row (the drawer is board-wide; the modal already knows its card, so it omits it).
+function ActivityList({ items, statusLabels, nowMs, showCard = false, onOpenCard }) {
+  if (items === null) return <p className="empty">Loading activity…</p>;
+  if (items === 'error') return <p className="empty">Activity unavailable — couldn't reach the server.</p>;
+  if (items.length === 0) return <p className="empty">No recent activity. Is a session running?</p>;
+  return <ul className="activity-list">
+    {items.map(item => {
+      const state = activityState(item, nowMs);
+      return <li key={`${item.source}-${item.key}`} className={`activity-row is-${state}`}>
+        <ActivityGlyph state={state} />
+        <div className="activity-main">
+          <span className="activity-text">{describeActivity(item, statusLabels)}</span>
+          {state === 'stalled' && <span className="activity-flag">stalled</span>}
+          {showCard && item.card_id && (onOpenCard
+            ? <button type="button" className="activity-card" title={item.card_title ?? item.card_id} onClick={() => onOpenCard(item.card_id)}>{item.card_id}</button>
+            : <span className="activity-card" title={item.card_title ?? item.card_id}>{item.card_id}</span>)}
+        </div>
+        <time className="activity-time" dateTime={item.ts} title={new Date(item.ts).toLocaleString()}>{formatClaimAge(item.ts)}</time>
+      </li>;
+    })}
+  </ul>;
+}
+
+// The global live-activity drawer: a non-modal right-side panel that polls /api/timeline every 2s
+// while open. Unlike the card/epic dialogs it deliberately does NOT trap focus or block the board —
+// it's a feed you watch alongside the board, which keeps polling and stays interactive behind it.
+function ActivityPanel({ statusLabels, onClose, onOpenCard }) {
+  const [feed, setFeed] = useState({ items: null, error: false });
+  // nowMs advances every poll so relative ages and the stall threshold stay fresh even when the feed
+  // itself hasn't changed (a step that's been "running" for 2 minutes should flip to stalled on its own).
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    let alive = true;
+    async function tick() {
+      try {
+        const res = await fetch('/api/timeline?limit=60');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!alive) return;
+        setFeed({ items: json.items ?? [], error: false });
+        setNowMs(Date.now());
+      } catch {
+        // Keep the last good feed on a transient failure — the head chip shows "reconnecting…"; only
+        // a never-loaded panel surfaces the hard error state (handled in the items prop below).
+        if (alive) setFeed(f => ({ ...f, error: true }));
+      }
+    }
+    tick();
+    const timer = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+
+  // Escape closes the drawer. It's non-modal, so this is a convenience shortcut, not the focus-trap
+  // contract the dialogs carry.
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const items = feed.items === null && feed.error ? 'error' : feed.items;
+  return <aside className="activity-drawer" role="region" aria-label="Live activity">
+    <header className="activity-head">
+      <div className="activity-head-left">
+        <h2>Activity</h2>
+        <span className={`activity-status${feed.error ? ' is-stale' : ''}`}>{feed.error ? 'reconnecting…' : 'live'}</span>
+      </div>
+      <button type="button" className="modal-close" aria-label="Close activity" onClick={onClose}>×</button>
+    </header>
+    <div className="activity-body">
+      <ActivityList items={items} statusLabels={statusLabels} nowMs={nowMs} showCard onOpenCard={onOpenCard} />
+    </div>
+  </aside>;
+}
+
 function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, onClose }) {
   const [direction, setDirection] = useState('');
   const [events, setEvents] = useState(null); // null = loading, 'error' = fetch failed, [] = none, [...] = loaded
+  const [activity, setActivity] = useState(null); // live timeline for this card (ephemeral; polled)
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const panelRef = useRef(null);
 
   useEffect(() => { setDirection(''); }, [card.id]);
@@ -615,6 +778,29 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
     return () => { alive = false; };
   }, [card.id]);
 
+  // Live activity for this card, polled every 2s while the modal is open. This is the ephemeral feed
+  // (server RAM, not SQLite), so it's scoped to the running session that claimed the card and will be
+  // empty when nothing's in flight — the durable record stays below in History.
+  useEffect(() => {
+    let alive = true;
+    setActivity(null);
+    async function tick() {
+      try {
+        const res = await fetch(`/api/timeline?card=${encodeURIComponent(card.id)}&limit=20`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!alive) return;
+        setActivity(json.items ?? []);
+        setNowMs(Date.now());
+      } catch {
+        if (alive) setActivity('error');
+      }
+    }
+    tick();
+    const timer = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [card.id]);
+
   useDialogA11y(panelRef, onClose);
 
   function refine(e) {
@@ -626,6 +812,9 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
 
   const hasProps = epic || card.claimed_by || card.ready || card.dependency_blocked || card.depends_on.length > 0 || card.enables.length > 0 || card.blocked_reason;
   const documents = Array.isArray(card.documents) ? card.documents : [];
+  // Show only the live (ephemeral) half here — milestones already appear in History below, so the
+  // section stays a focused "what's happening now" view and only renders when there's live work.
+  const liveActivity = Array.isArray(activity) ? activity.filter(i => i.source === 'activity') : [];
 
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-label={`${card.id}: ${card.title}`} tabIndex={-1} ref={panelRef} onClick={e => e.stopPropagation()}>
@@ -642,7 +831,7 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
 
         {hasProps && <dl className="modal-props">
           {epic && <><dt>Epic</dt><dd><span className="epic-chip" title={epic.title}>{epic.id}</span><span className="prop-text">{epic.title}</span></dd></>}
-          {card.claimed_by && <><dt>Claimed</dt><dd><span className="claim-chip" title={claimTitle(card)}>🔒 {shortOwner(card.claimed_by)}</span><span className="prop-text">{card.claimed_by}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}{card.claim_note ? ` — ${card.claim_note}` : ''}</span></dd></>}
+          {card.claimed_by && <><dt>Claimed</dt><dd><span className="claim-chip" title={claimTitle(card)}><LockIcon size={11} /> {shortOwner(card.claimed_by)}</span><span className="prop-text">{card.claimed_by}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}{card.claim_note ? ` — ${card.claim_note}` : ''}</span></dd></>}
           {card.ready && <><dt>Ready</dt><dd><span className="ready-chip">Ready</span><span className="prop-text">All dependencies completed</span></dd></>}
           {card.dependency_blocked && <><dt>Waiting</dt><dd><span className="blocked-chip">Waiting</span><span className="prop-text">Waiting on incomplete dependencies</span></dd></>}
           {card.depends_on.length > 0 && <><dt>Depends on</dt><dd className="prop-text">{card.depends_on.join(', ')}</dd></>}
@@ -663,6 +852,11 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
           </li>)}
         </ul>}
 
+        {liveActivity.length > 0 && <>
+          <p className="modal-section-label">Live activity</p>
+          <ActivityList items={liveActivity} statusLabels={statusLabels} nowMs={nowMs} />
+        </>}
+
         <p className="modal-section-label">History</p>
         {events === null ? <p className="empty">Loading history…</p>
           : events === 'error' ? <p className="empty">History unavailable — couldn't reach the server.</p>
@@ -679,18 +873,18 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
       </div>
 
       <footer className="modal-actions">
-        <form className="modal-refine" onSubmit={refine}>
-          <input value={direction} onChange={e => setDirection(e.target.value)} placeholder="Tell the agent a specific adjustment…" aria-label="Refine direction" />
-          <button type="submit" className="primary" disabled={!direction.trim()}>Copy refine prompt</button>
-        </form>
-        <div className="prompt-group">
-          <span className="prompt-group-label">Copy prompt</span>
+        <div className="dispatch">
+          <span className="dispatch-label">Dispatch an agent</span>
           <div className="prompt-actions" role="group" aria-label="Copy agent prompt">
             {Object.keys(ACTION_LABELS).map(action =>
               <button type="button" key={action} aria-label={`Copy ${ACTION_LABELS[action]} prompt for ${card.id}`} onClick={() => onCopy(action)}>{ACTION_LABELS[action]}</button>
             )}
           </div>
         </div>
+        <form className="modal-refine" onSubmit={refine}>
+          <input value={direction} onChange={e => setDirection(e.target.value)} placeholder="Or refine with a specific adjustment…" aria-label="Refine direction" />
+          <button type="submit" className="ghost" disabled={!direction.trim()}>Copy refine</button>
+        </form>
       </footer>
     </div>
   </div>;

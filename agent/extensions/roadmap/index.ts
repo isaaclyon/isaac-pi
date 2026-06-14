@@ -12,8 +12,10 @@
 import { existsSync, realpathSync } from "node:fs";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import {
+	type ActivityEventInput,
 	type BoardCard,
 	type BoardSnapshot,
+	buildActivityLines,
 	buildBoardSummary,
 	buildNotifyLine,
 	buildWidgetLines,
@@ -21,8 +23,9 @@ import {
 	fillTemplate,
 	hasBoard,
 	resolveProjectRoot,
+	shapeActivity,
 } from "./core.ts";
-import { detachServer, ensureServer, fetchSnapshot, resolveCliPath } from "./server.ts";
+import { detachServer, ensureServer, fetchSnapshot, fetchTimeline, postActivity, resolveCliPath } from "./server.ts";
 
 const WIDGET_KEY = "roadmap";
 const CLI_TIMEOUT_MS = 15_000;
@@ -38,6 +41,28 @@ interface Attached {
 export default function roadmapExtension(pi: ExtensionAPI) {
 	let attached: Attached | undefined;
 	let sessionId: string | undefined;
+
+	// --- live activity capture (ROAD-025) ---------------------------------
+
+	/**
+	 * Shape a captured Pi lifecycle event and fire-and-forget POST it to the board server.
+	 * No-op until a server is attached and the session id is known. Deliberately NOT awaited
+	 * and never throwing — this runs on the agent's hot path (every tool call), so a slow or
+	 * down board must never slow or break the agent. The server attributes the event to the
+	 * card this session claims, so we send no card context here.
+	 */
+	function report(event: ActivityEventInput): void {
+		if (!attached || !sessionId) return;
+		const shaped = shapeActivity(event);
+		if (!shaped) return;
+		void postActivity(attached.port, { session: sessionId, ...shaped });
+	}
+
+	pi.on("agent_start", () => report({ type: "agent_start" }));
+	pi.on("agent_end", () => report({ type: "agent_end" }));
+	pi.on("tool_execution_start", (e) => report({ type: "tool_execution_start", toolName: e.toolName, args: e.args }));
+	pi.on("tool_execution_end", (e) => report({ type: "tool_execution_end", toolName: e.toolName, isError: e.isError }));
+	pi.on("model_select", (e) => report({ type: "model_select", modelName: e.model?.name ?? e.model?.id }));
 
 	// --- helpers ----------------------------------------------------------
 
@@ -106,6 +131,7 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 			const snap = result.snapshot ?? (await snapshot(target));
 			ctx.ui.notify(buildNotifyLine(result.url, snap), "info");
 			refreshWidget(ctx, snap);
+			report({ type: "session_start" });
 		} catch (error) {
 			ctx.ui.notify(`Roadmap: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		}
@@ -113,6 +139,14 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		if (attached && sessionId) {
+			// Post the session-ended marker first (awaited here, unlike the hot-path reports) so it
+			// lands in the ring while the server is still up — detachServer may kill it next if we're
+			// the last ref.
+			try {
+				await postActivity(attached.port, { session: sessionId, kind: "session_shutdown", title: "Session ended", status: "info" });
+			} catch {
+				/* best-effort marker */
+			}
 			// Drop this session's active claims so a clean exit doesn't leave cards looking owned by a
 			// gone session. Best-effort: a crash skips this, and stale claims stay visible (with their
 			// age) for a human or a force-claim to clear.
@@ -143,7 +177,7 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 
 	pi.registerCommand("road", {
 		description:
-			"Roadmap board. Usage: /road [summary] | ready [--epic E] | get <id> | blocked | claim|release <id> | open | init | triage|new <idea> | brainstorm|plan|execute|review <id>",
+			"Roadmap board. Usage: /road [summary] | ready [--epic E] | get <id> | blocked | activity [id] | claim|release <id> | open | init | triage|new <idea> | brainstorm|plan|execute|review <id>",
 		handler: async (args, ctx) => {
 			const trimmed = args.trim();
 			const tokens = trimmed.split(/\s+/).filter(Boolean);
@@ -205,6 +239,22 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 					return;
 				}
 
+				if (sub === "activity") {
+					// The live half lives in the server's RAM, so this read needs a running server —
+					// ensure one (like `open`) rather than going through the CLI. `<id>` scopes to a card.
+					sessionId = sessionId ?? sessionIdFor(ctx);
+					const ensured = await ensureServer(target.root, target.cliPath, sessionId);
+					attached = { root: target.root, cliPath: target.cliPath, port: ensured.port };
+					const card = tokens.find((t) => !t.startsWith("--"));
+					const timeline = await fetchTimeline(ensured.port, { limit: 20, card });
+					if (!timeline) {
+						ctx.ui.notify("Roadmap: could not read the activity timeline from the server.", "warning");
+						return;
+					}
+					ctx.ui.notify(buildActivityLines(timeline.items, Date.now()).join("\n"), "info");
+					return;
+				}
+
 				if (sub === "claim" || sub === "release") {
 					const id = tokens.find((t) => t !== "--force");
 					if (!id) {
@@ -263,7 +313,7 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 				}
 
 				ctx.ui.notify(
-					`Unknown subcommand: ${sub}. Try /road, ready, get <id>, blocked, open, triage <idea>, ${STAGES.join("|")}.`,
+					`Unknown subcommand: ${sub}. Try /road, ready, get <id>, blocked, activity, open, triage <idea>, ${STAGES.join("|")}.`,
 					"warning",
 				);
 			} catch (error) {

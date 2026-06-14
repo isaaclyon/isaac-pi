@@ -82,6 +82,7 @@ not from a full board dump.
 | `blocked-deps [--epic E\|none]` | Slim list of cards waiting on an incomplete dependency (the inverse of `ready`). Derived at render time, independent of the explicit `blocked` status. |
 | `epics [--archived\|--all]` | Slim epic list with derived `done/total` progress, plus `is_complete` (all cards done) and `archived`. Returns **active** epics by default; `--archived` for archived only, `--all` for both. |
 | `events <id>` | Just a card's event history (audit trail). |
+| `timeline [--limit N] [--card C] [--session S]` | Live agent activity feed — current steps, tool/status events, stalls, results — newest-first. **The one read served over HTTP from the running server's RAM, not SQLite:** the live half is ephemeral, so it merges that with durable milestone events (claims/moves) and returns an annotated empty result when no server is up. `--card` scopes to one card; `--session` to one session. |
 
 ## Writes (validated by the board; an event is logged and `ROADMAP.md` re-exported on every one)
 

@@ -15,6 +15,7 @@
   --text-faint: #9aa3b5;
   --brand: #1f66d1;
   --brand-dark: #174fa5;
+  --brand-soft: #6fa3ef;
   --brand-tint: #eef3ff;
   --brand-tint-hover: #dce9ff;
   --accent-line: #d3e2ff;
@@ -37,7 +38,7 @@
   --toast-error: #7f1d1d;
   --shadow-rgb: 15 23 42;
   --radius: 12px;
-  --board-column-width: 340px;
+  --board-column-width: 224px;
   --shadow-card: 0 1px 2px rgb(var(--shadow-rgb) / 0.06), 0 1px 1px rgb(var(--shadow-rgb) / 0.04);
 
   color: var(--text);
@@ -60,6 +61,7 @@
   --text-faint: #5d6678;
   --brand: #4d8df0;
   --brand-dark: #3d79dd;
+  --brand-soft: #2d5fa8;
   --brand-tint: #1a2542;
   --brand-tint-hover: #243358;
   --accent-line: #2d406b;
@@ -104,6 +106,10 @@ p { color: var(--text-muted); }
 .ready-toggle.is-active { background: var(--ready-tint); border-color: var(--ready-line); color: var(--ready-fg); }
 .ready-toggle.is-active:hover { background: var(--ready-tint); }
 .ready-toggle.is-active .count { background: var(--ready-line); color: var(--ready-fg); }
+.activity-toggle { align-items: center; display: inline-flex; gap: 7px; white-space: nowrap; }
+.activity-toggle.is-active { background: var(--brand-tint); border-color: var(--accent-line); color: var(--brand); }
+.activity-toggle.is-active:hover { background: var(--brand-tint-hover); }
+.activity-toggle-icon { flex: none; }
 
 /* Generic controls */
 input, textarea { border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; padding: 9px 10px; width: 100%; }
@@ -114,16 +120,22 @@ button { background: var(--brand); border: none; border-radius: 8px; color: whit
 button:hover { background: var(--brand-dark); }
 button:active { transform: translateY(1px); }
 button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+button:disabled { cursor: not-allowed; opacity: 0.45; }
 button.ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border-strong); font-weight: 500; }
-button.ghost:hover { background: var(--surface-sunk); color: var(--text); }
+button.ghost:hover:not(:disabled) { background: var(--surface-sunk); color: var(--text); }
+
+/* One icon language: inline SVGs that inherit currentColor and align with the text baseline. */
+.icon { display: inline-block; flex: none; vertical-align: -0.15em; }
 
 /* Epic rail */
 .epic-rail { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); margin-bottom: 20px; padding: 16px; }
 .epic-rail-head { align-items: center; display: flex; justify-content: space-between; margin-bottom: 12px; }
 .epic-rail-head h2 { margin: 0; font-size: 16px; }
 .count { background: var(--surface-sunk); border-radius: 999px; color: var(--text-muted); font-size: 12px; font-weight: 600; padding: 2px 9px; }
-.epic-row { align-items: center; display: grid; gap: 2px 12px; grid-template-columns: 52px auto minmax(0, 1fr) auto auto; cursor: pointer; border-radius: 8px; padding: 6px 8px; margin: 0 -8px; transition: background .12s ease, opacity .12s ease; }
-.epic-row + .epic-row { border-top: 1px solid var(--divider); margin-top: 8px; padding-top: 12px; }
+/* id · title/summary · a self-contained progress block (number paired with its meter) · Open.
+   Hover/active backgrounds stay inset within the rail padding — no negative-margin bleed. */
+.epic-row { align-items: center; display: grid; gap: 2px 14px; grid-template-columns: auto minmax(0, 1fr) 132px auto; cursor: pointer; border-radius: 8px; padding: 8px; transition: background .12s ease, opacity .12s ease; }
+.epic-row + .epic-row { border-top: 1px solid var(--divider); margin-top: 6px; padding-top: 14px; }
 .epic-row:hover { background: var(--surface-sunk); }
 .epic-row:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .epic-row.is-active { background: var(--brand-tint); box-shadow: inset 0 0 0 1px var(--accent-line); }
@@ -131,7 +143,7 @@ button.ghost:hover { background: var(--surface-sunk); color: var(--text); }
 .epic-clear { background: var(--brand-tint); border: 1px solid var(--accent-line); border-radius: 999px; color: var(--brand); cursor: pointer; font-size: 11.5px; font-weight: 600; margin-left: auto; padding: 2px 10px; }
 .epic-clear:hover { background: var(--accent-line); }
 .epic-meter { background: var(--track-bg); border-radius: 999px; height: 6px; overflow: hidden; }
-.epic-meter span { background: linear-gradient(90deg, #75a8ff, var(--brand)); border-radius: 999px; display: block; height: 100%; min-width: 0; transition: width .3s ease; }
+.epic-meter span { background: linear-gradient(90deg, var(--brand-soft), var(--brand)); border-radius: 999px; display: block; height: 100%; min-width: 0; transition: width .3s ease; }
 .epic-copy { min-width: 0; }
 .epic-copy h3 { font-size: 14px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .epic-copy p { font-size: 12.5px; margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -144,7 +156,8 @@ button.ghost:hover { background: var(--surface-sunk); color: var(--text); }
 .epic-archived-head .collapse { margin-left: auto; }
 .epic-archived .epic-row.is-dimmed { opacity: 0.5; }
 .epic-archived .epic-meter span { background: var(--text-faint); }
-.epic-progress-copy { align-items: baseline; display: flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
+.epic-progress { display: flex; flex-direction: column; gap: 5px; }
+.epic-progress-copy { align-items: baseline; display: flex; gap: 6px; justify-content: space-between; white-space: nowrap; }
 .epic-progress-copy strong { font-size: 13px; }
 .epic-progress-copy span { color: var(--text-muted); font-size: 12.5px; }
 .epic-open { background: var(--surface-sunk); border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); cursor: pointer; font-size: 11.5px; font-weight: 600; padding: 3px 12px; white-space: nowrap; }
@@ -164,14 +177,20 @@ button.ghost:hover { background: var(--surface-sunk); color: var(--text); }
 }
 .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(var(--board-column-width), 1fr); gap: 12px; align-items: start; }
 
+/* Status hues, tuned so adjacent live stages stay distinguishable: up next (sky) ≠ in progress
+   (blue) ≠ review (violet). Intake/done deliberately stay low-chroma — see the "parked lane" rule. */
 [data-status="triage"]      { --col: #94a3b8; }
 [data-status="backlog"]     { --col: #64748b; }
-[data-status="up_next"]     { --col: #6366f1; }
+[data-status="up_next"]     { --col: #0ea5e9; }
 [data-status="in_progress"] { --col: #2563eb; }
-[data-status="blocked"]     { --col: #e0a800; }
-[data-status="review"]      { --col: #9333ea; }
+[data-status="blocked"]     { --col: #f59e0b; }
+[data-status="review"]      { --col: #a855f7; }
 [data-status="completed"]   { --col: #16a34a; }
 .column { background: var(--surface-sunk); border: 1px solid var(--border); border-top: 3px solid var(--col, var(--text-faint)); border-radius: var(--radius); padding: 10px; }
+/* Rhythm: the live lane (up next → in progress → blocked → review) carries the colour. Intake and
+   done are "parked" — neutralise their top border and header so the eye lands on active work first. */
+.column[data-status="triage"], .column[data-status="backlog"], .column[data-status="completed"] { border-top-color: var(--border-strong); }
+.column[data-status="triage"] .column-name, .column[data-status="backlog"] .column-name, .column[data-status="completed"] .column-name { color: var(--text-muted); }
 
 h2 { align-items: center; display: flex; font-size: 12px; font-weight: 700; gap: 8px; letter-spacing: 0.04em; margin: 2px 2px 10px; text-transform: uppercase; }
 .column-name { color: var(--text); }
@@ -189,31 +208,49 @@ h2 { align-items: center; display: flex; font-size: 12px; font-weight: 700; gap:
 .card:active { transform: translateY(1px); }
 .card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
-.card-top { align-items: center; color: var(--text-muted); display: flex; justify-content: space-between; min-height: 18px; }
-.card-top-left { align-items: center; display: flex; gap: 6px; }
-.card-id { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.card-top { align-items: center; display: flex; flex-wrap: wrap; gap: 5px 7px; min-height: 16px; }
+.card-id { color: var(--text-faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: nowrap; }
+/* Quiet epic reference on the tile — brand-tinted mono text, not a filled pill, so the card's one
+   loud element stays the state badge. The filled .epic-chip is reserved for the detail modal. */
+.epic-ref { color: var(--brand); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 600; white-space: nowrap; }
+/* The single primary signal on a tile: Ready (go) or Waiting (hold). Claimed is shown by the
+   left stripe + claim line, so it never competes here. */
+.state-badge { border-radius: 999px; display: inline-flex; flex: none; font-size: 10.5px; font-weight: 700; margin-left: auto; padding: 1px 9px; }
+.state-badge.is-ready { background: var(--ready-tint); border: 1px solid var(--ready-line); color: var(--ready-fg); }
+.state-badge.is-waiting { background: var(--blocked-tint); border: 1px solid var(--blocked-line); color: var(--blocked-fg); }
 .epic-chip { background: var(--brand-tint); border: 1px solid var(--accent-line); border-radius: 999px; color: var(--brand); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 7px; }
 .ready-chip { background: var(--ready-tint); border: 1px solid var(--ready-line); border-radius: 999px; color: var(--ready-fg); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 8px; }
 .blocked-chip { background: var(--blocked-tint); border: 1px solid var(--blocked-line); border-radius: 999px; color: var(--blocked-fg); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 8px; }
-.claim-chip { background: var(--claim-tint); border: 1px solid var(--claim-line); border-radius: 999px; color: var(--claim-fg); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 8px; white-space: nowrap; }
-.doc-chip { background: var(--brand-tint); border: 1px solid var(--accent-line); border-radius: 999px; color: var(--brand); display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 1px 8px; white-space: nowrap; }
+.claim-chip { align-items: center; background: var(--claim-tint); border: 1px solid var(--claim-line); border-radius: 999px; color: var(--claim-fg); display: inline-flex; font-size: 10.5px; font-weight: 700; gap: 4px; padding: 1px 8px 1px 7px; white-space: nowrap; }
 
-.card-title { font-size: 14.5px; font-weight: 650; line-height: 1.3; margin: 6px 0 0; overflow-wrap: break-word; }
-.claim-line { align-items: center; color: var(--claim-fg); display: flex; font-size: 12px; font-weight: 650; gap: 5px; margin: 6px 0 0; min-width: 0; }
-.claim-line-note { color: var(--text-muted); font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-summary { color: var(--text-summary); font-size: 13px; line-height: 1.45; margin: 6px 0 0; overflow-wrap: break-word; }
+.card-title { font-size: 14.5px; font-weight: 680; letter-spacing: -0.005em; line-height: 1.3; margin: 7px 0 0; overflow-wrap: break-word; }
+/* Claim line leads with the human-meaningful note; the opaque session id + warm age trail behind
+   it, muted. With no note, the owner label becomes the lead instead (handled in the markup). */
+.claim-line { align-items: center; color: var(--claim-fg); display: flex; font-size: 12px; gap: 5px; margin: 7px 0 0; min-width: 0; }
+.claim-icon { color: var(--claim-fg); display: inline-flex; flex: none; }
+.claim-note { font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claim-meta { color: var(--text-muted); flex: none; font-weight: 500; }
+.card-summary { color: var(--text-summary); font-size: 13px; line-height: 1.45; margin: 7px 0 0; overflow-wrap: break-word; }
+
+/* Quiet metadata footer — docs and dependency edges live here, never competing with the title. */
+.card-meta { align-items: center; color: var(--text-muted); display: flex; flex-wrap: wrap; font-size: 11.5px; gap: 3px 10px; margin: 9px 0 0; }
+.meta-item { align-items: center; display: inline-flex; gap: 4px; min-width: 0; }
+.meta-item .meta-icon { flex: none; opacity: 0.8; }
+.meta-item .dep { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-blocked-reason { color: var(--blocked-fg); font-size: 12px; line-height: 1.4; margin: 7px 0 0; }
 
 dl { font-size: 12px; margin: 10px 0 0; }
 dt { color: var(--text-muted); font-weight: 700; }
 dd { margin: 0 0 4px; }
 
-/* Prompt action buttons (used in the detail modal) */
-.prompt-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.prompt-actions button { background: var(--brand-tint); color: var(--brand); font-size: 12.5px; font-weight: 600; padding: 6px 12px; }
-.prompt-actions button:hover { background: var(--brand-tint-hover); }
+/* Prompt action buttons — the modal's primary purpose: dispatch an agent on this card. Four peers
+   sharing the row width so the brainstorm→plan→execute→review flow reads as one control group. */
+.prompt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.prompt-actions button { background: var(--brand-tint); border: 1px solid var(--accent-line); color: var(--brand); flex: 1 1 auto; font-size: 13px; font-weight: 650; padding: 9px 14px; }
+.prompt-actions button:hover { background: var(--brand-tint-hover); border-color: var(--brand); }
 
 /* Card detail modal */
-.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgb(15 23 42 / 0.45); animation: backdrop-in .14s ease; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgb(var(--shadow-rgb) / 0.45); animation: backdrop-in .14s ease; }
 .modal { background: var(--surface); border-radius: 14px; box-shadow: 0 24px 60px rgb(var(--shadow-rgb) / 0.3); display: flex; flex-direction: column; width: 100%; max-width: 580px; max-height: 86vh; overflow: hidden; animation: modal-in .16s ease; }
 .modal-head { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 8px; justify-content: space-between; padding: 14px 18px; }
 .modal-head-left { align-items: center; display: flex; gap: 8px; }
@@ -237,15 +274,16 @@ dd { margin: 0 0 4px; }
 .card-documents code { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .doc-kind { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 11px; font-weight: 700; padding: 1px 7px; }
 .doc-note { color: var(--text-summary); flex-basis: 100%; font-size: 13px; }
-.modal-refine { display: flex; flex: 1 1 100%; gap: 10px; }
-.modal-refine input { flex: 1; font-size: 14px; padding: 9px 12px; }
-.modal-refine .primary { padding: 9px 16px; white-space: nowrap; }
-.modal-actions { align-items: center; background: var(--surface-raised); border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 13px 18px; }
-.prompt-group { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-.prompt-group-label { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+/* Footer stacks the primary dispatch group above a quieter refine row. */
+.modal-actions { background: var(--surface-raised); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 13px; padding: 14px 18px 16px; }
+.dispatch { display: flex; flex-direction: column; gap: 8px; }
+.dispatch-label { color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.modal-refine { display: flex; gap: 8px; }
+.modal-refine input { flex: 1; font-size: 13.5px; padding: 8px 11px; }
+.modal-refine button { white-space: nowrap; }
 /* Epic detail modal */
 .epic-modal-meter { background: var(--track-bg); border-radius: 999px; height: 8px; margin-top: 14px; overflow: hidden; }
-.epic-modal-meter span { background: linear-gradient(90deg, #75a8ff, var(--brand)); border-radius: 999px; display: block; height: 100%; min-width: 0; transition: width .3s ease; }
+.epic-modal-meter span { background: linear-gradient(90deg, var(--brand-soft), var(--brand)); border-radius: 999px; display: block; height: 100%; min-width: 0; transition: width .3s ease; }
 .epic-modal-cards { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; padding: 0; }
 .epic-modal-cards button { align-items: center; background: var(--surface-sunk); border: 1px solid var(--border); border-radius: 9px; cursor: pointer; display: flex; gap: 9px; padding: 8px 11px; text-align: left; width: 100%; }
 .epic-modal-cards button:hover { background: var(--brand-tint); border-color: var(--accent-line); }
@@ -259,6 +297,53 @@ dd { margin: 0 0 4px; }
 .history-actor.actor-agent { background: var(--brand-tint); color: var(--brand); }
 .history-text { color: var(--text); flex: 1; font-size: 13.5px; min-width: 0; }
 .history-time { color: var(--text-faint); flex: none; font-size: 12px; white-space: nowrap; }
+
+/* Live activity drawer — a non-modal right-side feed. Fixed so it floats over the board without
+   reflowing it; sits below the dialogs (z 100) so opening a card from the feed layers on top. */
+.activity-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 90;
+  width: min(380px, 92vw);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -14px 0 44px rgb(var(--shadow-rgb) / 0.18);
+  animation: drawer-in .18s ease;
+}
+@keyframes drawer-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+.activity-head { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 8px; justify-content: space-between; padding: 14px 12px 14px 16px; }
+.activity-head-left { align-items: center; display: flex; gap: 9px; }
+.activity-head h2 { margin: 0; font-size: 13px; }
+/* Heartbeat chip: a pulsing dot + "live" while polls land, flipping amber to "reconnecting…" when a
+   poll fails (the last good feed stays on screen behind it). */
+.activity-status { align-items: center; background: var(--ready-tint); border-radius: 999px; color: var(--ready-fg); display: inline-flex; font-size: 10px; font-weight: 700; gap: 5px; letter-spacing: 0.03em; padding: 2px 9px 2px 8px; text-transform: uppercase; }
+.activity-status::before { content: ""; background: var(--ready-fg); border-radius: 50%; height: 6px; width: 6px; animation: activity-pulse 1.6s ease-in-out infinite; }
+.activity-status.is-stale { background: var(--blocked-tint); color: var(--blocked-fg); }
+.activity-status.is-stale::before { background: var(--blocked-fg); animation: none; }
+.activity-body { overflow-y: auto; padding: 10px 14px 18px; }
+.activity-body .empty { margin: 10px 2px; }
+
+/* Activity feed list — shared by the drawer and the card modal's live section. */
+.activity-list { display: flex; flex-direction: column; gap: 0; list-style: none; margin: 0; padding: 0; }
+.activity-row { align-items: center; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; padding: 7px 0; border-top: 1px solid var(--divider); }
+.activity-row:first-child { border-top: none; }
+.activity-glyph { align-self: start; color: var(--text-faint); display: inline-flex; flex: none; margin-top: 1px; }
+.activity-row.is-running .activity-glyph { color: var(--brand); }
+.activity-row.is-ok .activity-glyph { color: var(--ready-fg); }
+.activity-row.is-error .activity-glyph { color: var(--error-fg); }
+.activity-row.is-stalled .activity-glyph { color: var(--blocked-fg); }
+.activity-row.is-running .activity-glyph .icon { animation: activity-spin 1s linear infinite; }
+.activity-main { align-items: baseline; display: flex; flex-wrap: wrap; gap: 3px 7px; min-width: 0; }
+.activity-text { color: var(--text); font-size: 13px; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+.activity-row.is-stalled .activity-text { color: var(--blocked-fg); }
+.activity-flag { background: var(--blocked-tint); border-radius: 999px; color: var(--blocked-fg); flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; padding: 0 7px; text-transform: uppercase; }
+.activity-card { background: var(--brand-tint); border: 1px solid var(--accent-line); border-radius: 999px; color: var(--brand); flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; font-weight: 600; padding: 0 7px; }
+button.activity-card { cursor: pointer; }
+button.activity-card:hover { background: var(--brand-tint-hover); }
+button.activity-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.activity-time { color: var(--text-faint); flex: none; font-size: 11.5px; white-space: nowrap; }
+
+@keyframes activity-spin { to { transform: rotate(360deg); } }
+@keyframes activity-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
@@ -290,6 +375,17 @@ dd { margin: 0 0 4px; }
   .board { display: flex; flex-direction: column; }
   .column { border-top-width: 3px; }
   .column-body { min-height: 0; }
+  /* Epic rows reflow to two lines: id · title · Open on top, the progress meter spanning below —
+     the desktop grid crushes the title to nothing at phone widths. */
+  .epic-row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "id copy open" "prog prog prog"; gap: 8px 10px; }
+  .epic-id-cell { grid-area: id; }
+  .epic-copy { grid-area: copy; }
+  .epic-open { grid-area: open; }
+  .epic-progress { grid-area: prog; flex-direction: row; align-items: center; gap: 10px; }
+  .epic-progress .epic-meter { flex: 1; }
+  .epic-progress-copy { flex: none; gap: 6px; }
+  /* The drawer goes full-bleed on phones — a 380px panel would crowd a narrow board. */
+  .activity-drawer { width: 100vw; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

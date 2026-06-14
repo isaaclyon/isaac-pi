@@ -1,5 +1,5 @@
 {
-  "mode": "normal",
+  "mode": "path",
   "scope": {
     "allProviders": false,
     "additionalProviders": []
@@ -19,10 +19,10 @@
     "backgroundShellCloseShortcut": "alt+r"
   },
   "compaction": {
-    "responsesCompaction": true
+    "responsesCompaction": false
   },
   "openai": {
-    "fast": false,
+    "fast": true,
     "verbosity": "low",
     "forceCachedWebSockets": true,
     "webSearchModel": "gpt-5.4-mini",

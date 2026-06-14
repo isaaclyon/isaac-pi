@@ -26,6 +26,10 @@ const PASSTHROUGH = new Set([
   'add', 'update', 'user-update', 'attach-doc', 'detach-doc', 'move', 'claim', 'release', 'delete', 'reorder', 'events', 'export',
   'epic-add', 'epic-update', 'epic-delete', 'epic-archive', 'epic-unarchive', 'reorder-epics',
   'assign-epic', 'clear-epic',
+  // The live activity feed — the one read served over HTTP from the running server's RAM, not
+  // SQLite. The CLI handles the connect-or-degrade itself; we just forward (cwd = projectRoot so
+  // it can find .server.json). Returns an annotated empty result when no server is up.
+  'timeline',
 ]);
 // Verbs that work without an existing board.
 const BOOTSTRAP = new Set(['init', 'paths']);
@@ -113,6 +117,7 @@ function usage() {
     },
     misc: {
       'events <id>': 'Card event history as JSON.',
+      'timeline [--limit N] [--session S] [--card C]': 'Live activity feed (reads the running server over HTTP; empty when no server is up — the feed is in-memory).',
       'export': 'Regenerate ROADMAP.md (writes auto-export already).',
       'init': 'Create local DB, prompt config, and ROADMAP.md.',
       'paths': 'Print resolved board paths.',

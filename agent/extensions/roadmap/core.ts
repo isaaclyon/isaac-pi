@@ -315,6 +315,199 @@ export function buildWidgetLines(snapshot: BoardSnapshot): string[] {
 	return [`📋 Roadmap · ${ready} ready, ${blocked} blocked`];
 }
 
+// ---------------------------------------------------------------------------
+// Live activity timeline (ROAD-025)
+//
+// The extension captures a curated set of Pi lifecycle events and fire-and-forget
+// POSTs each one to the board server's in-RAM ring. Everything in this section is the
+// pure shaping/formatting half — what to send and how to render it — kept side-effect
+// free so it's unit-tested without a Pi runtime (the POST/GET I/O lives in server.ts).
+// ---------------------------------------------------------------------------
+
+export type ActivityStatus = "running" | "ok" | "error" | "done" | "info";
+
+/** The shaped record the extension sends per event (the server adds session/card/ts). */
+export interface ShapedActivity {
+	kind: string;
+	title: string;
+	status: ActivityStatus;
+}
+
+/** Discriminated input to `shapeActivity` — the subset of each Pi event we actually use. */
+export interface ActivityEventInput {
+	type: string;
+	toolName?: string;
+	args?: unknown;
+	isError?: boolean;
+	modelName?: string;
+}
+
+const ACTIVITY_TITLE_MAX = 72;
+
+/** Collapse whitespace and clip to a one-line label so the feed never wraps or bloats. */
+export function truncateLabel(text: string, max = ACTIVITY_TITLE_MAX): string {
+	const t = text.replace(/\s+/g, " ").trim();
+	return t.length > max ? `${t.slice(0, Math.max(0, max - 1))}…` : t;
+}
+
+function baseName(p: string | undefined): string | undefined {
+	if (!p) return undefined;
+	const parts = p.split(/[\\/]/).filter(Boolean);
+	return parts.length ? parts[parts.length - 1] : p;
+}
+
+function hostOf(url: string | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		return new URL(url).host;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * One curated, non-sensitive hint for a tool execution. SECURITY: this never returns a
+ * bash command body, file contents, or a tool result — only a path basename, a search
+ * pattern, a host, or a human-authored description. For `Bash` it reads `args.description`
+ * and pointedly ignores `args.command`. Unknown tools fall back to no hint (name only).
+ */
+function toolArgHint(name: string, args: unknown): string | undefined {
+	if (!args || typeof args !== "object") return undefined;
+	const a = args as Record<string, unknown>;
+	const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+	switch (name) {
+		case "Bash":
+			return str(a.description); // human description only — never a.command
+		case "Read":
+		case "Edit":
+		case "Write":
+		case "NotebookEdit":
+			return baseName(str(a.file_path) ?? str(a.notebook_path));
+		case "Grep":
+		case "Glob":
+			return str(a.pattern);
+		case "Task":
+		case "Agent":
+			return str(a.description);
+		case "WebFetch":
+			return hostOf(str(a.url));
+		default:
+			return undefined;
+	}
+}
+
+/** A short, safe descriptor for a tool call: `<tool>` or `<tool>: <hint>`, truncated. */
+export function curateToolTitle(toolName: string | undefined, args: unknown): string {
+	const name = (toolName ?? "").trim() || "tool";
+	const hint = toolArgHint(name, args);
+	return truncateLabel(hint ? `${name}: ${hint}` : name);
+}
+
+/**
+ * Map a captured Pi lifecycle event to a shaped activity record, or null for events we
+ * deliberately don't surface. `message_update` (token streaming) is intentionally absent —
+ * it's far too chatty for a feed.
+ */
+export function shapeActivity(event: ActivityEventInput): ShapedActivity | null {
+	switch (event.type) {
+		case "agent_start":
+			return { kind: "agent_start", title: "Agent started working", status: "running" };
+		case "agent_end":
+			return { kind: "agent_end", title: "Agent finished", status: "done" };
+		case "tool_execution_start":
+			return { kind: "tool_start", title: curateToolTitle(event.toolName, event.args), status: "running" };
+		case "tool_execution_end": {
+			const name = (event.toolName ?? "").trim() || "tool";
+			return {
+				kind: "tool_end",
+				title: event.isError ? `${name} failed` : `${name} done`,
+				status: event.isError ? "error" : "ok",
+			};
+		}
+		case "model_select":
+			return { kind: "model_select", title: `Model → ${(event.modelName ?? "").trim() || "unknown"}`, status: "info" };
+		case "session_start":
+			return { kind: "session_start", title: "Session started", status: "info" };
+		case "session_shutdown":
+			return { kind: "session_shutdown", title: "Session ended", status: "info" };
+		default:
+			return null;
+	}
+}
+
+/** A merged timeline item as returned by GET /api/timeline (both sources normalized). */
+export interface TimelineItem {
+	source: "activity" | "milestone";
+	ts: string;
+	kind: string;
+	title?: string;
+	status?: string | null;
+	session?: string | null;
+	card_id?: string | null;
+	card_title?: string | null;
+	actor_type?: string | null;
+	payload?: Record<string, unknown>;
+}
+
+/** A compact age like `5s`, `3m`, `2h`, `4d` for a timeline line. */
+export function relativeAge(ts: string, nowMs: number): string {
+	const then = Date.parse(ts);
+	if (Number.isNaN(then)) return "";
+	const secs = Math.max(0, Math.round((nowMs - then) / 1000));
+	if (secs < 60) return `${secs}s`;
+	const mins = Math.round(secs / 60);
+	if (mins < 60) return `${mins}m`;
+	const hrs = Math.round(mins / 60);
+	if (hrs < 24) return `${hrs}h`;
+	return `${Math.round(hrs / 24)}d`;
+}
+
+/** A glyph cueing an item's nature: live status (running/ok/error/done) or a milestone dot. */
+export function activityGlyph(item: Pick<TimelineItem, "source" | "status">): string {
+	if (item.source === "milestone") return "•";
+	switch (item.status) {
+		case "running":
+			return "⟳";
+		case "error":
+			return "✗";
+		case "ok":
+		case "done":
+			return "✓";
+		default:
+			return "·";
+	}
+}
+
+/** Human label for a milestone item (claims/moves), mirroring the board's event vocabulary. */
+export function describeMilestone(item: TimelineItem): string {
+	const p = item.payload ?? {};
+	switch (item.kind) {
+		case "card_moved":
+			return `moved ${p.from ?? "?"} → ${p.to ?? "?"}`;
+		case "card_claimed":
+			return p.stolen_from ? `claim stolen from ${shortOwner(String(p.stolen_from))}` : `claimed by ${shortOwner(String(p.owner ?? ""))}`;
+		case "card_released":
+			return `released by ${shortOwner(String(p.owner ?? ""))}`;
+		default:
+			return item.kind;
+	}
+}
+
+/** The display text for any timeline item: live title, or a described milestone. */
+export function describeActivityItem(item: TimelineItem): string {
+	return item.source === "milestone" ? describeMilestone(item) : item.title || item.kind;
+}
+
+/** One rendered line for `/road activity`: glyph · age · card · description. */
+export function buildActivityLines(items: TimelineItem[], nowMs: number): string[] {
+	if (!items.length) return ["No recent activity. (Is a session running? The live buffer needs the board server.)"];
+	return items.map((item) => {
+		const age = relativeAge(item.ts, nowMs).padStart(3);
+		const card = item.card_id ? ` ${item.card_id}` : "";
+		return `${activityGlyph(item)} ${age}${card}  ${describeActivityItem(item)}`;
+	});
+}
+
 /** A compact multi-epic summary for `/road` (epic progress + column counts). */
 export function buildBoardSummary(snapshot: BoardSnapshot): string {
 	const lines: string[] = [];
