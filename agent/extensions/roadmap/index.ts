@@ -26,6 +26,7 @@ import {
 	shapeActivity,
 } from "./core.ts";
 import { detachServer, ensureServer, fetchSnapshot, fetchTimeline, postActivity, resolveCliPath } from "./server.ts";
+import { type RoadmapToolDeps, registerRoadmapTools } from "./tools.ts";
 
 const WIDGET_KEY = "roadmap";
 const CLI_TIMEOUT_MS = 15_000;
@@ -41,6 +42,27 @@ interface Attached {
 export default function roadmapExtension(pi: ExtensionAPI) {
 	let attached: Attached | undefined;
 	let sessionId: string | undefined;
+	// The board's root/cli for this process. Stable once a board is found (one project per
+	// process); the server's port can change across respawns, but root/cliPath do not. Tools
+	// read this at execute time so they keep working even if the live server is down.
+	let boardTarget: { root: string; cliPath: string } | undefined;
+	let toolsRegistered = false;
+
+	// --- native board tools (the agent's structured interface) ------------
+
+	const toolDeps: RoadmapToolDeps = {
+		runCli: (args) => {
+			const t = attached ?? boardTarget;
+			if (!t) throw new Error("No roadmap board is attached to this session.");
+			return runCli(t.root, t.cliPath, args);
+		},
+		snapshot: () => {
+			const t = attached ?? boardTarget;
+			if (!t) throw new Error("No roadmap board is attached to this session.");
+			return snapshot(t);
+		},
+		owner: () => sessionId ?? "",
+	};
 
 	// --- live activity capture (ROAD-025) ---------------------------------
 
@@ -125,6 +147,15 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 		}
 
 		sessionId = sessionIdFor(ctx);
+		// A board exists here, so the agent gets the native board tools (gated to board
+		// repos keeps the system prompt clean elsewhere). Register once per process; the
+		// deps read the current target/session at execute time. Done before ensureServer so
+		// the tools are present even if the live server has trouble starting.
+		boardTarget = { root: target.root, cliPath: target.cliPath };
+		if (!toolsRegistered) {
+			registerRoadmapTools(pi, toolDeps);
+			toolsRegistered = true;
+		}
 		try {
 			const result = await ensureServer(target.root, target.cliPath, sessionId);
 			attached = { root: target.root, cliPath: target.cliPath, port: result.port };
