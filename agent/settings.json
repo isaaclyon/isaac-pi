@@ -25,9 +25,9 @@
     "npm:@narumitw/pi-retry",
     "npm:pi-tool-display"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-5.4",
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
