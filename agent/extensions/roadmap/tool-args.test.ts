@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BoardCard } from "./core.ts";
-import { buildClaimArgs, buildEpicArgs, buildMoveArgs, buildUpdateArgs, filterByEpic } from "./tool-args.ts";
+import { buildAddArgs, buildClaimArgs, buildEpicArgs, buildMoveArgs, buildUpdateArgs, filterByEpic } from "./tool-args.ts";
+
+test("buildAddArgs creates an agent-attributed triage card and requires a non-empty title", () => {
+	assert.deepEqual(buildAddArgs("New work"), ["agent-add", "New work"]);
+	assert.deepEqual(buildAddArgs("New work", "details"), ["agent-add", "New work", "details"]);
+	assert.throws(() => buildAddArgs(""), /non-empty title/);
+	assert.throws(() => buildAddArgs("   "), /non-empty title/);
+});
 
 test("buildUpdateArgs keeps provided fields and drops undefined ones", () => {
 	const args = buildUpdateArgs("ROAD-006", { summary: "s", depends_on: ["ROAD-001"], title: undefined });

@@ -23,7 +23,7 @@
 import type { AgentToolResult, ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { type SchemaOptions, type Static, Type } from "typebox";
 import type { BoardCard, BoardSnapshot } from "./core.ts";
-import { buildClaimArgs, buildEpicArgs, buildMoveArgs, buildUpdateArgs, EPIC_OPS, filterByEpic, LIST_VIEWS, STATUSES } from "./tool-args.ts";
+import { buildAddArgs, buildClaimArgs, buildEpicArgs, buildMoveArgs, buildUpdateArgs, EPIC_OPS, filterByEpic, LIST_VIEWS, STATUSES } from "./tool-args.ts";
 
 export { ROADMAP_TOOL_NAMES } from "./tool-args.ts";
 
@@ -72,6 +72,13 @@ const ListParams = Type.Object({
 	status: Type.Optional(Type.String({ description: "Filter the list view by column." })),
 	card: Type.Optional(Type.String({ description: "Scope the timeline view to one card id." })),
 	limit: Type.Optional(Type.Number({ description: "Max timeline items (default 20)." })),
+});
+
+const AddParams = Type.Object({
+	title: Type.String({ description: "Short, clear card title." }),
+	summary: Type.Optional(
+		Type.String({ description: "Concise description of the work. Attach plans/notes as documents later (roadmap_update), not here." }),
+	),
 });
 
 const DocumentSchema = Type.Object({
@@ -128,7 +135,7 @@ const EpicParamsSchema = Type.Object({
 // ---------------------------------------------------------------------------
 
 /**
- * Register the six board tools on `pi`. Call once, only when a board is present.
+ * Register the seven board tools on `pi`. Call once, only when a board is present.
  * `deps` is read at execute time, so it stays valid as the attached server changes.
  */
 export function registerRoadmapTools(pi: ExtensionAPI, deps: RoadmapToolDeps): void {
@@ -141,7 +148,7 @@ export function registerRoadmapTools(pi: ExtensionAPI, deps: RoadmapToolDeps): v
 		promptGuidelines: [
 			"This project tracks work on a roadmap board. Use roadmap_get to read a card before refining/planning/executing it, and roadmap_list view:ready to pick what to work on next.",
 			"Keep a card's summary a concise description; attach plans, outcomes, and review notes as documents (roadmap_update documents) rather than growing the summary.",
-			"Status flow is convention: triage→backlog→up_next→in_progress→review→completed (blocked is a side state needing a reason). Capturing new Triage ideas is the human's lane (/road triage) — don't create cards yourself.",
+			"Status flow is convention: triage→backlog→up_next→in_progress→review→completed (blocked is a side state needing a reason). New cards enter via roadmap_add (Triage column); advance them with roadmap_move and flesh them out with roadmap_update.",
 		],
 		parameters: GetParams,
 		async execute(_id, params: Static<typeof GetParams>) {
@@ -187,6 +194,19 @@ export function registerRoadmapTools(pi: ExtensionAPI, deps: RoadmapToolDeps): v
 					return ok(json(await deps.runCli(args)), { tool: "roadmap_list", view: "timeline" });
 				}
 			}
+		},
+	});
+
+	pi.registerTool({
+		name: "roadmap_add",
+		label: "Roadmap Add",
+		description:
+			"Create a new card in the Triage column (where all new work enters) and return it with its assigned id. New cards always start in triage — advance one with roadmap_move, and set its summary, dependencies, or documents with roadmap_update.",
+		promptSnippet: "Create a new roadmap card in Triage",
+		parameters: AddParams,
+		async execute(_id, params: Static<typeof AddParams>) {
+			const card = (await deps.runCli(buildAddArgs(params.title, params.summary))) as BoardCard;
+			return ok(json(card), { tool: "roadmap_add", id: card?.id });
 		},
 	});
 

@@ -77,6 +77,7 @@ Commands:
                                     Live activity feed (reads the running server over HTTP;
                                     empty when no server is up — the feed is in-memory)
   add <title> [summary]             Add a user Triage card
+  agent-add <title> [summary]       Add an agent-created Triage card
   epic-add <title> [summary]        Add an Epic
   epic-update <id> <json>           Update Epic fields: title, summary, sort_index
   epic-delete <id>                  Delete an Epic; detaches its cards
@@ -121,6 +122,7 @@ async function main() {
     else if (cmd === 'blocked-deps') result = store.dependencyBlockedCards();
     else if (cmd === 'events') result = store.cardEvents(args[0]);
     else if (cmd === 'add') result = store.createTriage({ title: args[0], summary: args[1] ?? '' }, 'user');
+    else if (cmd === 'agent-add') result = store.createTriage({ title: args[0], summary: args[1] ?? '' }, 'agent');
     else if (cmd === 'epic-add') result = store.createEpic({ title: args[0], summary: args[1] ?? '' }, 'agent');
     else if (cmd === 'epic-update') result = store.updateEpic(args[0], parseJson(args[1], {}), 'agent');
     else if (cmd === 'epic-delete') result = store.deleteEpic(args[0], 'agent');

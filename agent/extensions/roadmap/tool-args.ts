@@ -17,6 +17,7 @@ export const EPIC_OPS = ["add", "update", "assign", "clear", "delete", "archive"
 export const ROADMAP_TOOL_NAMES = [
 	"roadmap_get",
 	"roadmap_list",
+	"roadmap_add",
 	"roadmap_update",
 	"roadmap_move",
 	"roadmap_claim",
@@ -30,6 +31,16 @@ export interface UpdatePatch {
 	enables?: string[];
 	blocked_reason?: string;
 	documents?: Array<{ title: string; href: string; kind?: string; note?: string }>;
+}
+
+/**
+ * `agent-add <title> [summary]` — creates a Triage card attributed to the agent (the
+ * `add` command's user-attributed sibling). New cards always enter in triage; advance
+ * them with move and flesh them out with update.
+ */
+export function buildAddArgs(title: string, summary?: string): string[] {
+	if (!title?.trim()) throw new Error("roadmap_add requires a non-empty title.");
+	return summary !== undefined ? ["agent-add", title, summary] : ["agent-add", title];
 }
 
 /** `update <id> <json>` — drops undefined fields; throws when the patch is empty. */
