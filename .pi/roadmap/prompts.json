@@ -1,6 +1,6 @@
 {
   "brainstorm": "Brainstorm roadmap card {{id}}. Read the card from the roadmap board, sharpen the idea in place, and do not plan or execute yet.",
-  "plan": "Plan roadmap card {{id}}. Read the card from the roadmap board, inspect the repo, and produce an implementation plan without executing it yet.",
-  "execute": "Execute roadmap card {{id}}. Read the card from the roadmap board, implement it, validate it, update the board, and export the generated roadmap.",
-  "review": "Review roadmap card {{id}}. Read the card from the roadmap board and review the implementation against the card before completion."
+  "plan": "Plan roadmap card {{id}}. Read the card from the roadmap board, inspect the repo, and produce an implementation plan without executing it yet. Attach the plan as a document, then claim the card and move it to up_next.",
+  "execute": "Execute roadmap card {{id}}. Claim the card if it isn't already yours and move it to in_progress, keeping it claimed while you implement it, validate it, attach the outcome as a document, update the board, and export the generated roadmap.",
+  "review": "Review roadmap card {{id}}. Read the card from the roadmap board and assess the implementation against it. When it passes, attach review notes, move the card to completed, and release your claim; if it doesn't, send it back with notes explaining what's missing."
 }
