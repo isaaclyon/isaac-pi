@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -24,6 +25,28 @@ export const DEFAULT_PROMPTS = {
 const VALID = new Set(COLUMNS.map(c => c.key));
 const ACTORS = new Set(['user', 'agent', 'system']);
 const EPIC_PATCH_FIELDS = new Set(['title', 'summary', 'sort_index']);
+
+// Resolve the project root that owns the board, worktree-aware. A linked git worktree's `.git`
+// points at the primary checkout, so `git rev-parse --git-common-dir` (then its parent) is the
+// main repo that owns the single gitignored board — and the same trick targets the repo root
+// when invoked from any subdirectory. Priority: $ROADMAP_PROJECT_ROOT → git common-dir parent →
+// cwd. Mirrors resolveProjectRoot() in the pi extension (agent/extensions/roadmap/core.ts), so
+// the CLI, the server, and the extension all agree on which board a worktree writes to.
+export function resolveProjectRoot(cwd = process.cwd()) {
+  const env = process.env.ROADMAP_PROJECT_ROOT;
+  if (env && env.trim()) return resolve(env.trim());
+  try {
+    const out = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (out) return dirname(resolve(cwd, out));
+  } catch {
+    /* not a git repo (or no git) — fall through to cwd */
+  }
+  return resolve(cwd);
+}
 
 export function paths(projectRoot = process.cwd()) {
   const root = resolve(projectRoot);
