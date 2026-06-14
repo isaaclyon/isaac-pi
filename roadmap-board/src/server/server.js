@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openRoadmap } from './model.js';
+import { openRoadmap, resolveProjectRoot } from './model.js';
 import { createActivityRing, mergeTimeline } from './activity.js';
 
 const packageRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -82,7 +82,7 @@ export async function startServer({ projectRoot = process.cwd(), port = 4177 } =
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   startServer({
-    projectRoot: process.env.ROADMAP_PROJECT_ROOT || process.cwd(),
+    projectRoot: resolveProjectRoot(),
     port: Number(process.env.PORT || 4177),
   }).catch(error => {
     console.error(error);

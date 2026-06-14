@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { join } from 'node:path';
-import { openRoadmap, paths } from './model.js';
+import { openRoadmap, paths, resolveProjectRoot } from './model.js';
 import { startServer } from './server.js';
 
 function parseJson(value, fallback) {
@@ -43,13 +43,13 @@ function httpGetJson(port, path, timeoutMs = 2000) {
   });
 }
 
-async function timelineCommand(args) {
+async function timelineCommand(args, root) {
   const empty = {
     items: [],
     started_at: null,
     note: 'No roadmap server is running. The live activity feed lives in the server process; start one with `serve` (or open the board) to populate it.',
   };
-  const port = readServerPort(process.cwd());
+  const port = readServerPort(root);
   if (!port) { console.log(JSON.stringify(empty, null, 2)); return; }
   const params = new URLSearchParams();
   const limit = flagValue(args, '--limit');
@@ -104,16 +104,17 @@ Commands:
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   if (!cmd || cmd === 'help' || cmd === '--help') { usage(); return; }
+  const root = resolveProjectRoot();
   if (cmd === 'serve') {
     const portFlag = args.indexOf('--port');
     const port = portFlag >= 0 ? Number(args[portFlag + 1]) : Number(process.env.PORT || 4177);
-    await startServer({ projectRoot: process.cwd(), port });
+    await startServer({ projectRoot: root, port });
     return;
   }
-  if (cmd === 'paths') { console.log(JSON.stringify(paths(process.cwd()), null, 2)); return; }
-  if (cmd === 'timeline') { await timelineCommand(args); return; }
+  if (cmd === 'paths') { console.log(JSON.stringify(paths(root), null, 2)); return; }
+  if (cmd === 'timeline') { await timelineCommand(args, root); return; }
 
-  const store = openRoadmap(process.cwd());
+  const store = openRoadmap(root);
   try {
     let result;
     if (cmd === 'init') result = store.init();

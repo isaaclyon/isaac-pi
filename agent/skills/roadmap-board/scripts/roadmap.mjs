@@ -7,7 +7,9 @@
 // - Passes every write verb straight through to the CLI (single source of truth).
 //
 // Resolution order (both overridable by env so it works from any project/worktree):
-//   project root : $ROADMAP_PROJECT_ROOT  ->  walk up from cwd for .pi/roadmap/roadmap.sqlite
+//   project root : $ROADMAP_PROJECT_ROOT  ->  parent of `git rev-parse --git-common-dir`
+//                                              (the MAIN checkout, so worktrees share its board)
+//                                          ->  walk up from cwd for .pi/roadmap/roadmap.sqlite
 //   cli.js       : $ROADMAP_CLI           ->  walk up from cwd for roadmap-board/src/server/cli.js
 //                                          ->  bundled checkout relative to this skill
 
@@ -47,10 +49,36 @@ function walkUp(startDir, test) {
   }
 }
 
+// A linked git worktree's `.git` points at the primary checkout, so `git rev-parse
+// --git-common-dir` (then its parent) is the main repo that owns the single gitignored
+// board — the same trick also targets the repo root from any subdirectory. Returns null
+// when cwd isn't in a git repo (or git is unavailable), so the walk-up fallback still runs.
+function gitCommonRoot(cwd) {
+  try {
+    const out = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return out ? dirname(resolve(cwd, out)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasBoard(root) {
+  return !!root && existsSync(join(root, '.pi', 'roadmap', 'roadmap.sqlite'));
+}
+
+// The board lives in the MAIN checkout. Resolve there first (env override, then the git
+// common dir) so a worktree never reads or writes a stray per-worktree board; fall back to
+// walking up only when we're not inside a git repo at all.
 function findProjectRoot() {
   if (process.env.ROADMAP_PROJECT_ROOT) return resolve(process.env.ROADMAP_PROJECT_ROOT);
+  const common = gitCommonRoot(process.cwd());
+  if (common) return common;
   return walkUp(process.cwd(), dir =>
-    existsSync(join(dir, '.pi', 'roadmap', 'roadmap.sqlite')) ? dir : null);
+    hasBoard(dir) ? dir : null);
 }
 
 function findCli() {
@@ -124,7 +152,9 @@ function usage() {
     },
     statuses: STATUSES,
     resolution: {
-      project_root: process.env.ROADMAP_PROJECT_ROOT || '(walk up from cwd for .pi/roadmap/roadmap.sqlite)',
+      project_root: process.env.ROADMAP_PROJECT_ROOT
+        || '(main checkout via `git rev-parse --git-common-dir`, so worktrees share its board; '
+          + 'else walk up from cwd for .pi/roadmap/roadmap.sqlite)',
       cli: process.env.ROADMAP_CLI || '(walk up from cwd, then bundled in-repo copy)',
     },
   });
@@ -152,13 +182,14 @@ function main() {
   }
 
   // Bootstrap verbs default to cwd; everything else needs an initialized board.
+  // `init` resolves to the main checkout too, so it creates the board there (not in a worktree).
   let projectRoot = findProjectRoot();
   if (BOOTSTRAP.has(cmd)) {
     if (!projectRoot) projectRoot = process.cwd();
     process.stdout.write(runCli(cliPath, projectRoot, [cmd, ...args]));
     return;
   }
-  if (!projectRoot) {
+  if (!hasBoard(projectRoot)) {
     fail('No roadmap board found (.pi/roadmap/roadmap.sqlite). Run `roadmap init` in the project root, '
       + 'or set ROADMAP_PROJECT_ROOT to the project that owns the board.');
   }

@@ -50,9 +50,13 @@ The script self-resolves all paths, so run it from anywhere; relative to this sk
 `./scripts/roadmap.mjs`. Run `… help` for the full command list. JSON args are a single quoted
 object, e.g. `update ROAD-006 '{"summary":"…","depends_on":["ROAD-001"]}'`.
 
-**How it finds things** (both env vars override; useful for worktrees or out-of-tree boards):
-- **Board** — `$ROADMAP_PROJECT_ROOT`, else the nearest ancestor of `cwd` containing
+**How it finds things** (both env vars override; useful for out-of-tree boards):
+- **Board** — `$ROADMAP_PROJECT_ROOT`, else the **main checkout** (resolved via
+  `git rev-parse --git-common-dir`), else the nearest ancestor of `cwd` containing
   `.pi/roadmap/roadmap.sqlite`. The CLI runs with that directory as its working dir.
+  Because a linked worktree's `.git` points at the primary checkout, the board always
+  resolves to the main repo — running from a worktree (or any subdirectory) reads and
+  writes the **same** board, never a stray per-worktree copy.
 - **CLI** — `$ROADMAP_CLI`, else the nearest ancestor of `cwd` containing
   `roadmap-board/src/server/cli.js`, else the copy bundled in this repo.
 

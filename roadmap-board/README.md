@@ -51,7 +51,9 @@ After `npm run build`, `node roadmap-board/src/server/cli.js serve --port 4177` 
 
 ## Fresh clones and worktrees
 
-The SQLite database is intentionally local. A fresh clone starts with an empty editable board and treats any committed `ROADMAP.md` as a read-only snapshot. Card IDs are sequential within the local database. If multiple worktrees need independent roadmaps, run the CLI from each worktree root.
+The SQLite database is intentionally local. A fresh clone starts with an empty editable board and treats any committed `ROADMAP.md` as a read-only snapshot. Card IDs are sequential within the local database.
+
+**Worktrees share the main checkout's board.** The CLI resolves its project root via `git rev-parse --git-common-dir` (then its parent), and a linked worktree's `.git` points at the primary checkout — so commands run from any worktree (or any subdirectory) read and write the one board under the main repo's `.pi/roadmap/`, not a stray per-worktree copy. Set `$ROADMAP_PROJECT_ROOT` to override (e.g. a genuinely separate board, or an out-of-tree project).
 
 ## Concurrency model
 
