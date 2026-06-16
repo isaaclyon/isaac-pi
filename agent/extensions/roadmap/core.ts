@@ -222,6 +222,24 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
 	);
 }
 
+/**
+ * `pi.sendUserMessage()` throws mid-stream unless the extension chooses a queueing mode.
+ * Roadmap prompt handoffs are explicit user steering, so when the agent is busy we queue
+ * them as a steer message; when idle we send immediately with no extra option.
+ */
+export function userMessageOptions(isIdle: boolean): { deliverAs: "steer" } | undefined {
+	return isIdle ? undefined : { deliverAs: "steer" };
+}
+
+/** Send one roadmap prompt handoff with the correct busy-session queueing mode. */
+export function sendRoadmapHandoff(
+	sendUserMessage: (message: string, options?: { deliverAs: "steer" }) => void,
+	isIdle: boolean,
+	message: string,
+): void {
+	sendUserMessage(message, userMessageOptions(isIdle));
+}
+
 // ---------------------------------------------------------------------------
 // Board snapshot summarisation
 // ---------------------------------------------------------------------------

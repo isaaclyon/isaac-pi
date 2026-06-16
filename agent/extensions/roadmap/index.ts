@@ -23,6 +23,7 @@ import {
 	fillTemplate,
 	hasBoard,
 	resolveProjectRoot,
+	sendRoadmapHandoff,
 	shapeActivity,
 } from "./core.ts";
 import { detachServer, ensureServer, fetchSnapshot, fetchTimeline, postActivity, resolveCliPath } from "./server.ts";
@@ -379,7 +380,7 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 			return;
 		}
 		const filled = fillTemplate(template, { id: card.id, title: card.title });
-		pi.sendUserMessage(filled);
+		sendRoadmapHandoff(pi.sendUserMessage.bind(pi), ctx.isIdle(), filled);
 	}
 
 	/**
@@ -403,7 +404,7 @@ export default function roadmapExtension(pi: ExtensionAPI) {
 			"Capture this new roadmap idea as a Triage card: {{idea}}\n\n" +
 				"Using the roadmap-board skill, refine it into a clear title and a short summary, " +
 				"create the Triage card, and report the new card id. Do not plan or implement it yet.";
-		pi.sendUserMessage(fillTemplate(template, { idea }));
+		sendRoadmapHandoff(pi.sendUserMessage.bind(pi), ctx.isIdle(), fillTemplate(template, { idea }));
 	}
 }
 

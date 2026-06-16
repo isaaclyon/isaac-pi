@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.79.3",
+  "lastChangelogVersion": "0.79.4",
   "packages": [
     "npm:lsp-pi",
     "npm:pi-schedule-prompt",
@@ -23,9 +23,10 @@
     "npm:@narumitw/pi-caffeinate",
     "npm:@narumitw/pi-chrome-devtools",
     "npm:@narumitw/pi-retry",
-    "npm:pi-tool-display"
+    "npm:pi-tool-display",
+    "npm:pi-mcporter"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
   "treeFilterMode": "no-tools",
@@ -62,5 +63,6 @@
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini"
-  ]
+  ],
+  "theme": "dark"
 }

@@ -75,3 +75,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **SKILL.md files and agent skills make you incredibly powerful. USE THEM LIBERALLY.**
 
 You will have access to user/global and potentially project-level skills. Use these as often as they seem potentially applicable. They contain battle-won logic and context that will make you a materially better developer.
+
+## 7. Review After Material Work
+
+**Treat review as required work, not optional polish.**
+
+- After any material work, use the `review-with-subagents` skill before claiming completion.
+- Choose the smallest reviewer combination that fits the task.
+- For material work, include `intent-validator`.
+- Do not claim completion just because tests passed; finish only after the review pass is complete and useful feedback has been reconciled.

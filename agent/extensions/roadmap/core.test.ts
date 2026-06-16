@@ -29,8 +29,10 @@ import {
 	shapeActivity,
 	shortOwner,
 	shouldReuseServer,
+	sendRoadmapHandoff,
 	type TimelineItem,
 	truncateLabel,
+	userMessageOptions,
 } from "./core.ts";
 
 // --- project-root resolution ---------------------------------------------
@@ -161,6 +163,24 @@ test("fillTemplate substitutes known keys and leaves unknown ones intact", () =>
 		"Plan ROAD-007: Widget (ROAD-007)",
 	);
 	assert.equal(fillTemplate("keep {{unknown}}", { id: "x" }), "keep {{unknown}}");
+});
+
+test("userMessageOptions queues roadmap handoffs as steer only while busy", () => {
+	assert.equal(userMessageOptions(true), undefined);
+	assert.deepEqual(userMessageOptions(false), { deliverAs: "steer" });
+});
+
+test("sendRoadmapHandoff sends immediately when idle and steers when busy", () => {
+	const calls: Array<{ message: string; options?: { deliverAs: "steer" } }> = [];
+	const send = (message: string, options?: { deliverAs: "steer" }) => calls.push({ message, options });
+
+	sendRoadmapHandoff(send, true, "Plan ROAD-001");
+	sendRoadmapHandoff(send, false, "Plan ROAD-002");
+
+	assert.deepEqual(calls, [
+		{ message: "Plan ROAD-001", options: undefined },
+		{ message: "Plan ROAD-002", options: { deliverAs: "steer" } },
+	]);
 });
 
 // --- summarisation ---------------------------------------------------------
