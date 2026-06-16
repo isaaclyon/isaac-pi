@@ -4,14 +4,7 @@
 
 ## Epics
 
-- **EPIC-006** — Agent work visibility ✓
-  - Summary: Make agent work visible on the roadmap by connecting cards to active Pi sessions and showing what those sessions are doing over time.
-  - Progress: 2 / 2 (100%)
-  - Cards: ROAD-024, ROAD-025
-- **EPIC-007** — Card Data Enhancement ✓
-  - Summary: Enhance roadmap card data with richer metadata and supporting artifacts.
-  - Progress: 1 / 1 (100%)
-  - Cards: ROAD-023
+_No epics._
 
 ## Archived Epics
 
@@ -30,6 +23,12 @@
 - **EPIC-005** — Epic depth
   - Progress: 2 / 2 (100%)
   - Cards: ROAD-016, ROAD-017
+- **EPIC-006** — Agent work visibility
+  - Progress: 2 / 2 (100%)
+  - Cards: ROAD-024, ROAD-025
+- **EPIC-007** — Card Data Enhancement
+  - Progress: 1 / 1 (100%)
+  - Cards: ROAD-023
 
 ## Triage
 
@@ -144,3 +143,5 @@ DONE — all 8 steps shipped. Claims are advisory coordination (never a lock): c
     - [Implementation plan](docs/plans/2026-06-13-roadmap-activity-timeline/ExecPlan.md) — plan — Ephemeral ring buffer + HTTP-only timeline read; merges live activity with durable milestones; 11 planned steps
     - [Execution outcome](docs/plans/2026-06-13-roadmap-activity-timeline/Outcome.md) — outcome — Build notes + post-exec updates: serve needs a built dist; dist already gitignored; 91 tests green
   - Depends on: ROAD-024
+- **ROAD-026** — Linked dependency card navigation in card modal
+  - Summary: Let users click dependency references inside a card to open that referenced card’s modal directly, and provide a back control to return to the previously viewed linked card.

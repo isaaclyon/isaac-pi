@@ -95,7 +95,7 @@ function App() {
   const [toast, setToast] = useState(null);
   const [collapsedCompleted, setCollapsedCompleted] = useState(true);
   const [collapsedArchived, setCollapsedArchived] = useState(true);
-  const [openId, setOpenId] = useState(null);
+  const [cardStack, setCardStack] = useState([]);
   const [openEpicId, setOpenEpicId] = useState(null);
   const [focusEpicId, setFocusEpicId] = useState(null);
   const [readyOnly, setReadyOnly] = useState(false);
@@ -207,12 +207,14 @@ function App() {
   const readyCount = useMemo(() => data.cards.filter(c => c.ready).length, [data.cards]);
 
   const epicsById = useMemo(() => Object.fromEntries(data.epics.map(epic => [epic.id, epic])), [data.epics]);
+  const cardsById = useMemo(() => Object.fromEntries(data.cards.map(card => [card.id, card])), [data.cards]);
   // Active epics fill the rail; archived ones drop into a collapsed group at the bottom. Archiving is
   // a CLI/skill action — the board stays read-only — so the UI only reflects archived_at, never sets it.
   const activeEpics = useMemo(() => data.epics.filter(epic => !epic.archived_at), [data.epics]);
   const archivedEpics = useMemo(() => data.epics.filter(epic => epic.archived_at), [data.epics]);
   const statusLabels = useMemo(() => Object.fromEntries(data.columns.map(c => [c.key, c.label])), [data.columns]);
-  const openCard = useMemo(() => data.cards.find(c => c.id === openId) ?? null, [data.cards, openId]);
+  const openCardId = cardStack[cardStack.length - 1] ?? null;
+  const openCard = useMemo(() => data.cards.find(c => c.id === openCardId) ?? null, [data.cards, openCardId]);
   const openEpic = useMemo(() => data.epics.find(e => e.id === openEpicId) ?? null, [data.epics, openEpicId]);
   const openEpicCards = useMemo(() => {
     if (!openEpicId) return [];
@@ -221,6 +223,22 @@ function App() {
       .filter(c => c.epic_id === openEpicId)
       .sort((a, b) => (order[a.status] ?? 0) - (order[b.status] ?? 0) || a.position - b.position || a.id.localeCompare(b.id));
   }, [data.cards, data.columns, openEpicId]);
+
+  function openCardFromBoard(id) {
+    setCardStack(id ? [id] : []);
+  }
+
+  function openLinkedCard(id) {
+    setCardStack(stack => id ? [...stack, id] : stack);
+  }
+
+  function goBackCard() {
+    setCardStack(stack => stack.slice(0, -1));
+  }
+
+  function closeCardModal() {
+    setCardStack([]);
+  }
 
   async function copyPrompt(action, card) {
     const template = data.prompts[action] ?? '';
@@ -383,7 +401,7 @@ function App() {
                       key={card.id}
                       card={card}
                       epic={epicsById[card.epic_id] ?? null}
-                      onOpen={() => setOpenId(card.id)}
+                      onOpen={() => openCardFromBoard(card.id)}
                     />
                   )}
             </div>
@@ -397,24 +415,28 @@ function App() {
       epic={openEpic}
       cards={openEpicCards}
       statusLabels={statusLabels}
-      onOpenCard={id => { setOpenEpicId(null); setOpenId(id); }}
+      onOpenCard={id => { setOpenEpicId(null); openCardFromBoard(id); }}
       onClose={() => setOpenEpicId(null)}
     />}
 
     {openCard && <CardModal
       card={openCard}
+      cardsById={cardsById}
       epic={epicsById[openCard.epic_id] ?? null}
       statusLabel={statusLabels[openCard.status] ?? openCard.status}
       statusLabels={statusLabels}
+      canGoBack={cardStack.length > 1}
+      onBack={goBackCard}
+      onOpenLinkedCard={openLinkedCard}
       onCopy={action => copyPrompt(action, openCard)}
       onRefine={direction => copyRefine(openCard, direction)}
-      onClose={() => setOpenId(null)}
+      onClose={closeCardModal}
     />}
 
     {activityOpen && <ActivityPanel
       statusLabels={statusLabels}
       onClose={() => setActivityOpen(false)}
-      onOpenCard={id => { setActivityOpen(false); setOpenId(id); }}
+      onOpenCard={id => { setActivityOpen(false); openCardFromBoard(id); }}
     />}
 
     {toast && <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">{toast.text}</div>}
@@ -756,12 +778,35 @@ function ActivityPanel({ statusLabels, onClose, onOpenCard }) {
   </aside>;
 }
 
-function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, onClose }) {
+function RelatedCardLinks({ ids, currentCardId, cardsById, onOpenCard }) {
+  return ids.map((id, index) => {
+    const linked = cardsById[id] ?? null;
+    const clickable = !!linked && id !== currentCardId;
+    const content = <>
+      <span className="relation-id">{id}</span>
+      {linked?.title && <span className="relation-title"> — {linked.title}</span>}
+    </>;
+    return <span className="relation-item" key={`${id}-${index}`}>
+      {index > 0 && <span className="relation-sep">, </span>}
+      {clickable
+        ? <button
+          type="button"
+          className="relation-link"
+          onClick={() => onOpenCard(id)}
+          aria-label={`Open ${id}: ${linked.title}`}
+        >{content}</button>
+        : <span className={`relation-text${linked ? '' : ' is-missing'}`}>{content}</span>}
+    </span>;
+  });
+}
+
+function CardModal({ card, cardsById, epic, statusLabel, statusLabels, canGoBack, onBack, onOpenLinkedCard, onCopy, onRefine, onClose }) {
   const [direction, setDirection] = useState('');
   const [events, setEvents] = useState(null); // null = loading, 'error' = fetch failed, [] = none, [...] = loaded
   const [activity, setActivity] = useState(null); // live timeline for this card (ephemeral; polled)
   const [nowMs, setNowMs] = useState(() => Date.now());
   const panelRef = useRef(null);
+  const backRef = useRef(null);
 
   useEffect(() => { setDirection(''); }, [card.id]);
 
@@ -777,6 +822,10 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
       .catch(() => { if (alive) setEvents('error'); });
     return () => { alive = false; };
   }, [card.id]);
+
+  useEffect(() => {
+    if (canGoBack) backRef.current?.focus();
+  }, [card.id, canGoBack]);
 
   // Live activity for this card, polled every 2s while the modal is open. This is the ephemeral feed
   // (server RAM, not SQLite), so it's scoped to the running session that claimed the card and will be
@@ -820,6 +869,7 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
     <div className="modal" role="dialog" aria-modal="true" aria-label={`${card.id}: ${card.title}`} tabIndex={-1} ref={panelRef} onClick={e => e.stopPropagation()}>
       <header className="modal-head">
         <div className="modal-head-left">
+          {canGoBack && <button type="button" className="modal-back" onClick={onBack} ref={backRef}>← Back</button>}
           <span className="card-id">{card.id}</span>
           <span className="status-pill" data-status={card.status}>{statusLabel}</span>
         </div>
@@ -834,8 +884,8 @@ function CardModal({ card, epic, statusLabel, statusLabels, onCopy, onRefine, on
           {card.claimed_by && <><dt>Claimed</dt><dd><span className="claim-chip" title={claimTitle(card)}><LockIcon size={11} /> {shortOwner(card.claimed_by)}</span><span className="prop-text">{card.claimed_by}{card.claimed_at ? ` · ${formatClaimAge(card.claimed_at)}` : ''}{card.claim_note ? ` — ${card.claim_note}` : ''}</span></dd></>}
           {card.ready && <><dt>Ready</dt><dd><span className="ready-chip">Ready</span><span className="prop-text">All dependencies completed</span></dd></>}
           {card.dependency_blocked && <><dt>Waiting</dt><dd><span className="blocked-chip">Waiting</span><span className="prop-text">Waiting on incomplete dependencies</span></dd></>}
-          {card.depends_on.length > 0 && <><dt>Depends on</dt><dd className="prop-text">{card.depends_on.join(', ')}</dd></>}
-          {card.enables.length > 0 && <><dt>Enables</dt><dd className="prop-text">{card.enables.join(', ')}</dd></>}
+          {card.depends_on.length > 0 && <><dt>Depends on</dt><dd className="prop-text"><RelatedCardLinks ids={card.depends_on} currentCardId={card.id} cardsById={cardsById} onOpenCard={onOpenLinkedCard} /></dd></>}
+          {card.enables.length > 0 && <><dt>Enables</dt><dd className="prop-text"><RelatedCardLinks ids={card.enables} currentCardId={card.id} cardsById={cardsById} onOpenCard={onOpenLinkedCard} /></dd></>}
           {card.blocked_reason && <><dt>Blocked</dt><dd className="prop-text">{card.blocked_reason}</dd></>}
         </dl>}
 
