@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { beginQuestionAttention } from "./attention.js";
 import { loadConfig, validateGuidanceFields } from "./config.js";
 import { displayLabel } from "./state/i18n-bridge.js";
 import { QuestionnaireSession } from "./state/questionnaire-session.js";
@@ -73,20 +74,25 @@ Use multiSelect: true when multiple answers are valid. Use options[].preview onl
 			}
 
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((question) => buildItemsForQuestion(question));
+			const endAttention = beginQuestionAttention(ctx, typed);
 
-			const result = await ctx.ui.custom<QuestionnaireResult>((tui, theme, _kb, done) => {
-				const session = new QuestionnaireSession({
-					tui,
-					theme,
-					params: typed,
-					itemsByTab,
-					done,
-					timeout,
+			try {
+				const result = await ctx.ui.custom<QuestionnaireResult>((tui, theme, _kb, done) => {
+					const session = new QuestionnaireSession({
+						tui,
+						theme,
+						params: typed,
+						itemsByTab,
+						done,
+						timeout,
+					});
+					return session.component;
 				});
-				return session.component;
-			});
 
-			return buildQuestionnaireResponse(result, typed);
+				return buildQuestionnaireResponse(result, typed);
+			} finally {
+				endAttention();
+			}
 		},
 	});
 }
