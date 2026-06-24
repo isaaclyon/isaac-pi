@@ -153,11 +153,16 @@ export async function runWorkflow(
 			} catch (error) {
 				if (signal.aborted || state.cancelRequested) throw error;
 				const failure = error instanceof WorkflowFailure ? error : unknownFailure(currentStep, labelForStep(currentStep), error);
-				if (state.auto.enabled) {
-					const recovered = await attemptAutoRepair(runtime, failure);
-					if (recovered) {
-						currentStep = state.auto.resumeFromCheckpoint ?? currentStep;
-						continue;
+				if (state.auto.enabled || isAutofixableFailure(state, failure.failure)) {
+					try {
+						const recovered = await attemptAutoRepair(runtime, failure, state.auto.enabled ? AUTO_RETRY_LIMIT : 1);
+						if (recovered) {
+							currentStep = state.auto.resumeFromCheckpoint ?? currentStep;
+							continue;
+						}
+					} catch (repairError) {
+						if (state.auto.enabled) throw repairError;
+						log(state, "Automatic autofix retry failed; falling back to manual fix preview");
 					}
 				}
 				throw failure;
@@ -605,7 +610,7 @@ async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, b
 	});
 }
 
-async function attemptAutoRepair(runtime: WorkflowRuntime, failure: WorkflowFailure): Promise<boolean> {
+async function attemptAutoRepair(runtime: WorkflowRuntime, failure: WorkflowFailure, maxAttempts = AUTO_RETRY_LIMIT): Promise<boolean> {
 	const classification = classifyFailure(failure.failure);
 	if (classification === "unrecoverable") {
 		stateForFailure(runtime, failure);
@@ -615,14 +620,14 @@ async function attemptAutoRepair(runtime: WorkflowRuntime, failure: WorkflowFail
 	const { state, ctx } = runtime;
 	const cwd = ctx.cwd;
 	const headShaBefore = await revParse(runtime, cwd, "HEAD");
-	const baseBranch = state.baseBranch ?? (await detectDefaultBranch(runtime, cwd));
+	const baseBranch = state.baseBranch ?? (!state.auto.enabled ? state.branch : undefined) ?? (await detectDefaultBranch(runtime, cwd));
 	state.baseBranch = baseBranch;
 	const retryKey = buildRetryKey(failure.stepId, headShaBefore);
 	const attempt = (state.auto.retryCounts[retryKey] ?? 0) + 1;
-	if (attempt > AUTO_RETRY_LIMIT) {
+	if (attempt > maxAttempts) {
 		state.failure = {
 			...failure.failure,
-			message: `Auto repair exhausted ${AUTO_RETRY_LIMIT} attempts for ${retryKey}.`,
+			message: `Auto repair exhausted ${maxAttempts} attempt${maxAttempts === 1 ? "" : "s"} for ${retryKey}.`,
 		};
 		state.outcome = "failed";
 		state.status = state.failure.message;
@@ -633,20 +638,20 @@ async function attemptAutoRepair(runtime: WorkflowRuntime, failure: WorkflowFail
 		return false;
 	}
 
-	const prompt = buildRepairPrompt(state, failure.failure, failure.stepId, headShaBefore, attempt);
+	const prompt = buildRepairPrompt(state, failure.failure, failure.stepId, headShaBefore, attempt, maxAttempts);
 	state.auto.latestHandoffPrompt = prompt;
 	state.auto.retryCounts = recordRetryAttempt(state.auto.retryCounts, retryKey);
 	state.auto.currentRepair = {
 		stepId: failure.stepId,
 		attempt,
-		maxAttempts: AUTO_RETRY_LIMIT,
+		maxAttempts,
 		status: "starting",
 		headShaBefore,
 		baseBranch,
 		sessionFile: state.auto.latestSideSessionFile,
 		lastPrompt: prompt,
 	};
-	state.status = `Starting repair attempt ${attempt}/${AUTO_RETRY_LIMIT} for ${failure.stepId}...`;
+	state.status = `Starting repair attempt ${attempt}/${maxAttempts} for ${failure.stepId}...`;
 	log(state, state.status);
 	await persistState(runtime);
 	await update(runtime);
@@ -713,10 +718,11 @@ async function resumeAfterRepair(runtime: WorkflowRuntime, failedStepId: StepId,
 	const { state, ctx } = runtime;
 	const cwd = ctx.cwd;
 	try {
+		const maxAttempts = state.auto.currentRepair?.maxAttempts ?? AUTO_RETRY_LIMIT;
 		state.auto.currentRepair = {
 			stepId: failedStepId,
 			attempt: state.auto.currentRepair?.attempt ?? 1,
-			maxAttempts: AUTO_RETRY_LIMIT,
+			maxAttempts,
 			status: summary.outcome === "cancelled" ? "cancelled" : "importing",
 			headShaBefore: summary.headShaBefore,
 			baseBranch: summary.baseBranch,
@@ -764,11 +770,11 @@ async function resumeAfterRepair(runtime: WorkflowRuntime, failedStepId: StepId,
 		const nextState = invalidateForResume(state, plan) as ProductionizeState;
 		Object.assign(state, nextState);
 		state.auto.currentRepair = {
-			...(state.auto.currentRepair ?? { stepId: failedStepId, attempt: 1, maxAttempts: AUTO_RETRY_LIMIT, status: "resuming" as const }),
+			...(state.auto.currentRepair ?? { stepId: failedStepId, attempt: 1, maxAttempts, status: "resuming" as const }),
 			status: "resuming",
 			resumeCheckpoint: plan.resumeFrom,
 		};
-		state.status = `Resuming from ${plan.resumeFrom} after repair attempt ${state.auto.currentRepair.attempt}/${AUTO_RETRY_LIMIT}...`;
+		state.status = `Resuming from ${plan.resumeFrom} after repair attempt ${state.auto.currentRepair.attempt}/${maxAttempts}...`;
 		state.failure = undefined;
 		state.outcome = "running";
 		log(state, state.status);
@@ -819,6 +825,16 @@ async function importRepairPatch(runtime: WorkflowRuntime, patchFile: string): P
 	}
 }
 
+function isAutofixableFailure(state: ProductionizeState, failure: CommandFailure): boolean {
+	if (["Branch", "Pull Request", "Merge", "Pull base branch"].includes(failure.step)) return false;
+	const checks = state.checks.map((check) => checkLabel(check)).join("\n");
+	const text = [failure.command, failure.args?.join(" "), failure.stdout, failure.stderr, failure.message, checks]
+		.filter(Boolean)
+		.join("\n")
+		.toLowerCase();
+	return /\bruff\b|\bprettier\b|\beslint\b|\bbiome\b|\bblack\b|\bisort\b|\bautopep8\b|\byapf\b|\bshfmt\b|\bgofmt\b|\bswiftformat\b|\bstylua\b|\bcargo fmt\b|\bclippy\b|\bterraform fmt\b|\blint\b|\bformat(?:ter|ting)?\b/.test(text);
+}
+
 function classifyFailure(failure: CommandFailure): "recoverable" | "unrecoverable" {
 	const stderr = `${failure.stderr ?? ""}\n${failure.stdout ?? ""}\n${failure.message ?? ""}`.toLowerCase();
 	const args = failure.args?.join(" ") ?? "";
@@ -831,7 +847,7 @@ function classifyFailure(failure: CommandFailure): "recoverable" | "unrecoverabl
 	return failure.step !== "Branch" ? "recoverable" : "unrecoverable";
 }
 
-export function buildRepairPrompt(state: ProductionizeState, failure: CommandFailure, stepId: StepId, headShaBefore: string, attempt: number): string {
+export function buildRepairPrompt(state: ProductionizeState, failure: CommandFailure, stepId: StepId, headShaBefore: string, attempt: number, maxAttempts = AUTO_RETRY_LIMIT): string {
 	const context = buildFailureContext(failure, {
 		branch: state.branch,
 		remote: state.remote,
@@ -841,11 +857,12 @@ export function buildRepairPrompt(state: ProductionizeState, failure: CommandFai
 	});
 	return [
 		`You are fixing a /productionize auto repair handoff for step ${stepId}.`,
-		"Work only in the current temporary worktree using read/edit/write tools.",
+		"Work only in the current temporary worktree using read/edit/write tools plus focused local autofix commands when needed.",
 		"Do not run /productionize, do not try to push, and do not use GitHub commands.",
 		"Make the smallest code or file changes needed to address the failure.",
+		"Prefer targeted autofix commands such as ruff --fix or formatter --write when they directly repair the failure.",
 		"When done, stop after a concise summary of what you changed.",
-		`Attempt: ${attempt}/${AUTO_RETRY_LIMIT}`,
+		`Attempt: ${attempt}/${maxAttempts}`,
 		`Current branch: ${state.branch ?? "unknown"}`,
 		`Current HEAD before repair: ${headShaBefore}`,
 		"Foreground productionize will import your patch, rerun the safe checkpoint, and verify the result itself.",

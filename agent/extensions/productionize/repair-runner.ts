@@ -8,7 +8,7 @@ import type { StepId } from "./core.ts";
 
 const SESSION_DIR = path.join(os.tmpdir(), "productionize-auto-sessions");
 const GITHUB_ENV_KEYS = ["GH_TOKEN", "GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_AUTH_TOKEN"];
-const ALLOWED_TOOLS = ["read", "edit", "write"] as const;
+const ALLOWED_TOOLS = ["read", "edit", "write", "bash"] as const;
 const DEFAULT_REPAIR_TIMEOUT_MS = 5 * 60_000;
 
 export interface RepairRunnerInput {
