@@ -36,6 +36,7 @@ test("auto repair prompt is wired to raw failure context, not the manual handoff
 	assert.match(block, /const context = buildFailureContext\(/);
 	assert.doesNotMatch(block, /const context = buildFailurePrompt\(/);
 	assert.match(block, /Make the smallest code or file changes needed to address the failure\./);
+	assert.match(block, /focused local autofix commands/);
 });
 
 test("scoped commit run executes branch through commit", async () => {
@@ -620,7 +621,7 @@ function makeSummary(overrides: Partial<RepairAttemptSummary> = {}): RepairAttem
 			command: "pi",
 			args: [],
 			cwd: "/tmp/repair-worktree",
-			tools: ["read", "edit", "write"],
+			tools: ["read", "edit", "write", "bash"],
 		},
 		protocol: overrides.protocol ?? {
 			sawSessionHeader: true,

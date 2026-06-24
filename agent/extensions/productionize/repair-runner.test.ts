@@ -19,12 +19,30 @@ async function initRepo(): Promise<{ dir: string; branch: string }> {
 	return { dir, branch: branch.trim() };
 }
 
-test("guard blocks /productionize recursion and non-allowlisted tools", async () => {
+test("guard blocks /productionize recursion and unsafe bash but allows focused autofix commands", async () => {
 	assert.deepEqual(await guardInput({ text: "/productionize auto", type: "input", source: "extension" } as any), { action: "handled" });
 	assert.equal(await guardInput({ text: "normal prompt", type: "input", source: "extension" } as any), undefined);
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "productionize-auto-bash-"));
+	await fs.mkdir(path.join(root, "pkg"), { recursive: true });
+	await fs.writeFile(path.join(root, "pkg", "app.py"), "print('ok')\n", "utf8");
+	const allowedEvent = { type: "tool_call", toolName: "bash", input: { command: "ruff check --fix pkg/app.py && ruff format pkg/app.py" } } as any;
+	assert.equal(await guardToolCall(allowedEvent, root), undefined);
+	assert.match(allowedEvent.input.command, /^cd '/);
+	assert.match(allowedEvent.input.command, /ruff check --fix pkg\/app.py && ruff format pkg\/app.py$/);
+	const wrappedEvent = { type: "tool_call", toolName: "bash", input: { command: "uv run python -m ruff check --fix pkg/app.py" } } as any;
+	assert.equal(await guardToolCall(wrappedEvent, root), undefined);
+	assert.match(wrappedEvent.input.command, /uv run python -m ruff check --fix pkg\/app.py$/);
 	assert.deepEqual(
-		await guardToolCall({ type: "tool_call", toolName: "bash", input: { command: "pwd" } } as any, process.cwd()),
-		{ block: true, reason: "Tool bash is not allowed in productionize auto repair." },
+		await guardToolCall({ type: "tool_call", toolName: "bash", input: { command: "pwd" } } as any, root),
+		{ block: true, reason: "Only focused local autofix commands are allowed in productionize auto repair." },
+	);
+	assert.deepEqual(
+		await guardToolCall({ type: "tool_call", toolName: "bash", input: { command: "black pkg/app.py & rm -rf ." } } as any, root),
+		{ block: true, reason: "Only focused local autofix commands are allowed in productionize auto repair." },
+	);
+	assert.deepEqual(
+		await guardToolCall({ type: "tool_call", toolName: "bash", input: { command: "prettier --write ../outside.js" } } as any, root),
+		{ block: true, reason: "Only focused local autofix commands are allowed in productionize auto repair." },
 	);
 });
 
@@ -97,7 +115,7 @@ test("verified orphan detection kills only a matching child process", async () =
 			pid: child.pid,
 			childToken: token,
 			spawnTimestamp,
-			verifiedCommand: { command: process.execPath, args: [token, slug], cwd: process.cwd(), tools: ["read", "edit", "write"] },
+			verifiedCommand: { command: process.execPath, args: [token, slug], cwd: process.cwd(), tools: ["read", "edit", "write", "bash"] },
 		} as any;
 		assert.equal(await verifyRunningChild(repair), true);
 		assert.equal(await killVerifiedOrphan(repair), true);
