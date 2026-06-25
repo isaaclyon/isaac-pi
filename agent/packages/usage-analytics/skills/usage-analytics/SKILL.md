@@ -1,3 +1,8 @@
+---
+name: usage-analytics
+description: Query Pi usage analytics with `pi-usage-query`. Use when answering questions about skill invocations, tool usage, failures, slow tools, or repo-level usage trends.
+---
+
 # Usage Analytics
 
 Use the package CLI command `pi-usage-query` to answer questions about Pi usage analytics.
