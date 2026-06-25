@@ -67,8 +67,6 @@ export default function usageTracker(pi: ExtensionAPI) {
     toolsByName = new Map(pi.getAllTools().map((tool) => [tool.name, tool]));
   }
 
-  refreshTools();
-
   pi.on('session_start', async () => {
     refreshTools();
   });

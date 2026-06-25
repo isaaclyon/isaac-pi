@@ -2,7 +2,6 @@
   "lastChangelogVersion": "0.80.2",
   "packages": [
     "npm:lsp-pi",
-    "npm:pi-schedule-prompt",
     {
       "source": "npm:pi-rtk-optimizer@0.7.1",
       "extensions": []
@@ -19,8 +18,6 @@
     "npm:@narumitw/pi-goal",
     "npm:@sting8k/pi-vcc",
     "npm:pi-web-access",
-    "git:github.com/HazAT/pi-interactive-subagents",
-    "npm:@juicesharp/rpiv-btw",
     "npm:@howaboua/pi-codex-conversion",
     "npm:@aliou/pi-processes",
     "npm:@narumitw/pi-caffeinate",
@@ -28,9 +25,18 @@
     "npm:@narumitw/pi-retry",
     "npm:pi-tool-display",
     "npm:pi-mcporter",
-    "git:github.com/DietrichGebert/ponytail"
+    {
+      "source": "./packages/usage-analytics",
+      "extensions": [
+        "+extensions/usage-tracker.ts"
+      ],
+      "skills": [
+        "+skills/usage-analytics/SKILL.md"
+      ]
+    },
+    "npm:@adamjen/pi-interactive-subagents"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
   "treeFilterMode": "no-tools",
@@ -68,5 +74,5 @@
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini"
   ],
-  "theme": "dark"
+  "theme": "dark/dark"
 }

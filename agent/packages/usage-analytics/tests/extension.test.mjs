@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { openUsageAnalyticsDb } from '../src/db.mjs';
 import usageTracker from '../extensions/usage-tracker.ts';
 
-function createMockPi(tools) {
+function createMockPi(tools, overrides = {}) {
   const handlers = new Map();
   return {
     on(event, handler) {
@@ -16,8 +16,33 @@ function createMockPi(tools) {
       return tools;
     },
     handlers,
+    ...overrides,
   };
 }
+
+test('usage tracker defers tool lookup until runtime is ready', async () => {
+  let runtimeReady = false;
+  const pi = createMockPi([], {
+    getAllTools() {
+      if (!runtimeReady) {
+        throw new Error('runtime not initialized');
+      }
+      return [];
+    },
+  });
+
+  assert.doesNotThrow(() => {
+    usageTracker(pi);
+  });
+
+  runtimeReady = true;
+  await assert.doesNotReject(async () => {
+    await pi.handlers.get('session_start')({}, {
+      cwd: process.cwd(),
+      sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
+    });
+  });
+});
 
 test('usage tracker records raw input and tool provenance', async () => {
   const tempDir = mkdtempSync(join(tmpdir(), 'usage-analytics-ext-'));
@@ -46,6 +71,7 @@ test('usage tracker records raw input and tool provenance', async () => {
     sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
   };
 
+  await pi.handlers.get('session_start')({}, ctx);
   await pi.handlers.get('input')({ text: '/skill:usage-analytics now', source: 'interactive' }, ctx);
   await pi.handlers.get('tool_execution_start')({ toolCallId: 'tool-1', toolName: 'demo_extension_tool', args: {} }, ctx);
   await pi.handlers.get('tool_execution_end')({ toolCallId: 'tool-1', toolName: 'demo_extension_tool', result: {}, isError: false }, ctx);
