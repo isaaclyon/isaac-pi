@@ -1,0 +1,11 @@
+{
+  "configPath": "/Users/isaaclyon/Developer/lola/data-analytics/lola-data-platform/config/mcporter.json",
+  "mode": "index",
+  "mcpServers": {
+    "linear": {
+      "env": {
+        "LINEAR_API_KEY": "!awk '/^LINEAR_API_KEY=/{sub(/^LINEAR_API_KEY=/,\"\"); gsub(/^\"|\"$/,\"\"); print; exit}' ~/.config/lola/runtime/shared.env"
+      }
+    }
+  }
+}
