@@ -30,7 +30,7 @@
     "npm:pi-mcporter",
     "git:github.com/DietrichGebert/ponytail"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
   "treeFilterMode": "no-tools",

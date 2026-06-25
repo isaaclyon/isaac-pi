@@ -1,0 +1,20 @@
+{
+  "name": "@earendil-works/pi-usage-analytics",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Pi package for collecting and querying usage analytics.",
+  "keywords": ["pi-package"],
+  "bin": {
+    "pi-usage-query": "./scripts/usage-query.mjs"
+  },
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
