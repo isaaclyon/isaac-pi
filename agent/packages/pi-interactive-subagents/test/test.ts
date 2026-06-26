@@ -60,6 +60,8 @@ import {
 	shouldMarkUserTookOver,
 	shouldAutoExitOnAgentEnd,
 	findLatestAssistantError,
+	findLatestAssistantSummary,
+	writeAutoExitSidecar,
 } from "../pi-extension/subagents/subagent-done.ts";
 import { __pollForExitTest__ } from "../pi-extension/subagents/cmux.ts";
 
@@ -1538,6 +1540,87 @@ describe("subagent-done.ts", () => {
 		});
 	});
 
+	describe("findLatestAssistantSummary", () => {
+		it("returns the latest assistant text content", () => {
+			assert.equal(
+				findLatestAssistantSummary([
+					{ role: "assistant", content: [{ type: "text", text: "old" }] },
+					{ role: "user", content: "again" },
+					{ role: "assistant", content: [{ type: "text", text: "  final summary  " }] },
+				]),
+				"final summary",
+			);
+		});
+
+		it("ignores non-text assistant parts", () => {
+			assert.equal(
+				findLatestAssistantSummary([
+					{
+						role: "assistant",
+						content: [
+							{ type: "thinking", thinking: "hidden" },
+							{ type: "text", text: "visible" },
+						],
+					},
+				]),
+				"visible",
+			);
+		});
+	});
+
+	describe("writeAutoExitSidecar", () => {
+		it("writes a done sidecar with summary for normal auto-exit turns", () => {
+			const dir = createTestDir();
+			try {
+				const sessionFile = join(dir, "child.jsonl");
+				writeAutoExitSidecar(sessionFile, [
+					{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Done." }] },
+				]);
+
+				assert.deepEqual(
+					JSON.parse(readFileSync(`${sessionFile}.exit`, "utf8")),
+					{ type: "done", summary: "Done." },
+				);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("writes an error sidecar for provider error auto-exit turns", () => {
+			const dir = createTestDir();
+			try {
+				const sessionFile = join(dir, "child.jsonl");
+				writeAutoExitSidecar(sessionFile, [
+					{ role: "assistant", stopReason: "error", errorMessage: "529 overloaded" },
+				]);
+
+				assert.deepEqual(
+					JSON.parse(readFileSync(`${sessionFile}.exit`, "utf8")),
+					{ type: "error", errorMessage: "529 overloaded", stopReason: "error" },
+				);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("does not overwrite a sidecar already written by subagent_done", () => {
+			const dir = createTestDir();
+			try {
+				const sessionFile = join(dir, "child.jsonl");
+				writeFileSync(`${sessionFile}.exit`, JSON.stringify({ type: "done", summary: "tool summary" }));
+
+				writeAutoExitSidecar(sessionFile, [{ role: "assistant", stopReason: "stop" }]);
+
+				assert.deepEqual(
+					JSON.parse(readFileSync(`${sessionFile}.exit`, "utf8")),
+					{ type: "done", summary: "tool summary" },
+				);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+	});
+
 	describe("subagent_done tool", () => {
 		it("refuses to exit without a non-empty summary", async () => {
 			const dir = createTestDir();
@@ -1600,7 +1683,7 @@ describe("subagent-done.ts", () => {
 });
 
 describe("cmux.ts interpretExitSidecar", () => {
-	const { interpretExitSidecar } = __pollForExitTest__;
+	const { interpretExitSidecar, parseWrapperExitCode } = __pollForExitTest__;
 
 	it("decodes ping payloads", () => {
 		assert.deepEqual(
@@ -1663,6 +1746,17 @@ describe("cmux.ts interpretExitSidecar", () => {
 			reason: "done",
 			exitCode: 0,
 		});
+	});
+
+	it("parses the latest wrapper exit code from wrapper logs", () => {
+		assert.equal(parseWrapperExitCode("[subagent-wrapper-exit] code=0\n"), 0);
+		assert.equal(
+			parseWrapperExitCode(
+				"[subagent-wrapper-exit] code=1\nother\n[subagent-wrapper-exit] code=0\n",
+			),
+			0,
+		);
+		assert.equal(parseWrapperExitCode("no exit yet"), null);
 	});
 });
 describe("commands", () => {

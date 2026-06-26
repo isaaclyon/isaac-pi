@@ -1228,6 +1228,12 @@ export interface PollResult {
   errorMessage?: string;
 }
 
+function parseWrapperExitCode(contents: string): number | null {
+  const matches = [...contents.matchAll(/\[subagent-wrapper-exit\] code=(\d+)/g)];
+  const last = matches.at(-1);
+  return last ? parseInt(last[1]!, 10) : null;
+}
+
 /**
  * Interpret an `.exit` sidecar payload (written by subagent_done / caller_ping /
  * the error path in subagent-done.ts). Centralized so both the fast and slow
@@ -1259,12 +1265,13 @@ function interpretExitSidecar(data: any): PollResult {
   return { reason: "done", exitCode: 0 };
 }
 
-export const __pollForExitTest__ = { interpretExitSidecar };
+export const __pollForExitTest__ = { interpretExitSidecar, parseWrapperExitCode };
 
 /**
- * Poll until the subagent exits. Checks for a `.exit` sidecar file first
- * (written by subagent_done / caller_ping), falling back to the terminal
- * sentinel for crash detection.
+ * Poll until the subagent exits. `.exit` sidecars carry result payloads
+ * (summary/error/ping), but done/error sidecars are not treated as proof that
+ * the process has finished; the wrapper exit marker or terminal sentinel is
+ * still required before the caller closes the surface.
  */
 export async function pollForExit(
   surface: string,
@@ -1273,14 +1280,25 @@ export async function pollForExit(
     interval: number;
     sessionFile?: string;
     sentinelFile?: string;
+    stdioLogFile?: string;
     onTick?: (elapsed: number) => void;
   },
 ): Promise<PollResult> {
   const start = Date.now();
+  let pendingExit: PollResult | null = null;
+
+  function finishAfterProcessExit(exitCode: number): PollResult {
+    if (!pendingExit) return { reason: "sentinel", exitCode };
+    return {
+      ...pendingExit,
+      exitCode: pendingExit.reason === "error" ? 1 : exitCode,
+    };
+  }
 
   for (;;) {
     if (signal.aborted) {
-      throw new Error("Aborted while waiting for subagent to finish");
+      const reason = signal.reason == null ? "" : `: ${String(signal.reason)}`;
+      throw new Error(`Aborted while waiting for subagent to finish${reason}`);
     }
 
     // Fast path: check for .exit sidecar file (written by subagent_done / caller_ping)
@@ -1290,7 +1308,9 @@ export async function pollForExit(
         if (existsSync(exitFile)) {
           const data = JSON.parse(readFileSync(exitFile, "utf8"));
           rmSync(exitFile, { force: true });
-          return interpretExitSidecar(data);
+          const sidecar = interpretExitSidecar(data);
+          if (sidecar.reason === "ping") return sidecar;
+          pendingExit = sidecar;
         }
       } catch {}
     }
@@ -1299,7 +1319,16 @@ export async function pollForExit(
     if (options.sentinelFile) {
       try {
         if (existsSync(options.sentinelFile)) {
-          return { reason: "sentinel", exitCode: 0 };
+          return finishAfterProcessExit(0);
+        }
+      } catch {}
+    }
+
+    if (options.stdioLogFile) {
+      try {
+        if (existsSync(options.stdioLogFile)) {
+          const exitCode = parseWrapperExitCode(readFileSync(options.stdioLogFile, "utf8"));
+          if (exitCode != null) return finishAfterProcessExit(exitCode);
         }
       } catch {}
     }
@@ -1309,7 +1338,7 @@ export async function pollForExit(
       const screen = await readScreenAsync(surface, 5);
       const match = screen.match(/__SUBAGENT_DONE_(\d+)__/);
       if (match) {
-        return { reason: "sentinel", exitCode: parseInt(match[1], 10) };
+        return finishAfterProcessExit(parseInt(match[1], 10));
       }
     } catch {
       // Surface may have been destroyed — check if .exit file appeared in the meantime
@@ -1319,7 +1348,9 @@ export async function pollForExit(
           if (existsSync(exitFile)) {
             const data = JSON.parse(readFileSync(exitFile, "utf8"));
             rmSync(exitFile, { force: true });
-            return interpretExitSidecar(data);
+            const sidecar = interpretExitSidecar(data);
+            if (sidecar.reason === "ping") return sidecar;
+            pendingExit = sidecar;
           }
         } catch {}
       }

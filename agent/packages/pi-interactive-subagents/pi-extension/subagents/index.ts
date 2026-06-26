@@ -16,6 +16,7 @@ import {
 	mkdirSync,
 	copyFileSync,
 	unlinkSync,
+	statSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import {
@@ -82,7 +83,12 @@ const POLL_ABORT_KEY = Symbol.for("pi-subagents/poll-abort-controller");
 	const prevAbort = (globalThis as any)[POLL_ABORT_KEY] as
 		| AbortController
 		| undefined;
-	if (prevAbort) prevAbort.abort();
+	if (prevAbort) {
+		logSubagent("watch_abort_requested", {
+			reason: "module_reload",
+		});
+		prevAbort.abort("module_reload");
+	}
 	(globalThis as any)[POLL_ABORT_KEY] = new AbortController();
 }
 
@@ -253,6 +259,56 @@ function bestEffortScreenTail(surface: string, lines = 80): string | undefined {
 	}
 }
 
+function fileStatus(path: string | undefined): Record<string, unknown> | undefined {
+	if (!path) return undefined;
+	try {
+		const stat = statSync(path);
+		return {
+			path,
+			exists: true,
+			size: stat.size,
+			mtime: stat.mtime.toISOString(),
+		};
+	} catch (err: any) {
+		return {
+			path,
+			exists: false,
+			error: err?.code ?? err?.message ?? String(err),
+		};
+	}
+}
+
+function tailFile(path: string | undefined, maxBytes = 8000): string | undefined {
+	if (!path) return undefined;
+	try {
+		const contents = readFileSync(path, "utf8");
+		return contents.length <= maxBytes
+			? contents
+			: contents.slice(contents.length - maxBytes);
+	} catch {
+		return undefined;
+	}
+}
+
+function wrapWithStdioCapture(
+	commandBody: string,
+	stdioLogFile: string,
+	metadata: Record<string, string | undefined>,
+): string {
+	const header = Object.entries(metadata)
+		.filter((entry): entry is [string, string] => entry[1] != null)
+		.map(([key, value]) => `${key}=${value}`)
+		.join(" ");
+	return [
+		`mkdir -p ${shellEscape(dirname(stdioLogFile))}`,
+		`printf '%s\\n' ${shellEscape(`[subagent-launch] ${header}`)} | tee -a ${shellEscape(stdioLogFile)}`,
+		`( ${commandBody} )`,
+		`subagent_wrapper_exit=$?`,
+		`printf '%s\\n' "[subagent-wrapper-exit] code=\${subagent_wrapper_exit}" >> ${shellEscape(stdioLogFile)}`,
+		`exit "$subagent_wrapper_exit"`,
+	].join("; ");
+}
+
 function logSubagent(
 	event: string,
 	data: Record<string, unknown> = {},
@@ -267,6 +323,26 @@ function logSubagent(
 		);
 	} catch {
 		// Logging must never break subagent orchestration.
+	}
+}
+
+function removeExitSidecar(
+	sessionFile: string | undefined,
+	reason: string,
+): void {
+	if (!sessionFile) return;
+	const exitFile = `${sessionFile}.exit`;
+	try {
+		if (!existsSync(exitFile)) return;
+		unlinkSync(exitFile);
+		logSubagent("exit_sidecar_removed", { sessionFile, exitFile, reason });
+	} catch (err: any) {
+		logSubagent("exit_sidecar_remove_error", {
+			sessionFile,
+			exitFile,
+			reason,
+			error: err?.message ?? String(err),
+		});
 	}
 }
 
@@ -737,6 +813,7 @@ interface RunningSubagent {
 	startTime: number;
 	sessionFile: string;
 	launchScriptFile?: string;
+	stdioLogFile?: string;
 	activityFile?: string;
 	activity?: SubagentActivityState;
 	activityRead?: {
@@ -1335,12 +1412,14 @@ async function launchSubagent(
 		Math.random().toString(16).slice(2, 6),
 	].join("-");
 	const subagentSessionFile = join(sessionDir, `${timestamp}_${uuid}.jsonl`);
+	const stdioLogFile = join(artifactDir, "subagent-stdio", `${id}.log`);
 	logSubagent("spawn_resolved", {
 		id,
 		name: params.name,
 		agent: params.agent,
 		parentSessionFile: sessionFile,
 		childSessionFile: subagentSessionFile,
+		stdioLogFile,
 		targetCwd: targetCwdForSession,
 		effectiveAgentDir,
 		effectiveModel,
@@ -1447,7 +1526,20 @@ async function launchSubagent(
 		cmdParts.push(shellEscape(params.task));
 
 		const cdPrefix = effectiveCwd ? `cd ${shellEscape(effectiveCwd)} && ` : "";
-		const command = `${cdPrefix}${cmdParts.join(" ")}; echo '__SUBAGENT_DONE_'$?'__'`;
+		const claudeCommand = cdPrefix + cmdParts.join(" ");
+		const command = wrapWithStdioCapture(
+			`${claudeCommand}; subagent_exit=$?; echo "__SUBAGENT_DONE_\${subagent_exit}__"; exit "$subagent_exit"`,
+			stdioLogFile,
+			{
+				ts: new Date().toISOString(),
+				id,
+				name: params.name,
+				agent: params.agent,
+				cli: "claude",
+				cwd: effectiveCwd ?? ctx.cwd,
+				session: subagentSessionFile,
+			},
+		);
 
 		const launchScriptName = `${
 			(params.name || "subagent")
@@ -1462,6 +1554,7 @@ async function launchSubagent(
 			"subagent-scripts",
 			launchScriptName,
 		);
+		removeExitSidecar(subagentSessionFile, "spawn_launch");
 
 		logSubagent("command_send_start", {
 			id,
@@ -1469,6 +1562,7 @@ async function launchSubagent(
 			cli: "claude",
 			surface,
 			launchScriptFile,
+			stdioLogFile,
 			command: previewText(command),
 		});
 		try {
@@ -1478,6 +1572,7 @@ async function launchSubagent(
 					`# Claude Code subagent launch script for ${params.name}`,
 					`# Generated: ${new Date().toISOString()}`,
 					`# Surface: ${surface}`,
+					`# Stdio log: ${stdioLogFile}`,
 				].join("\n"),
 			});
 			logSubagent("command_send_ok", {
@@ -1486,6 +1581,7 @@ async function launchSubagent(
 				cli: "claude",
 				surface,
 				launchScriptFile,
+				stdioLogFile,
 			});
 		} catch (err) {
 			logSubagent("command_send_error", {
@@ -1494,6 +1590,7 @@ async function launchSubagent(
 				cli: "claude",
 				surface,
 				launchScriptFile,
+				stdioLogFile,
 				error: err instanceof Error ? err.message : String(err),
 				screenTail: bestEffortScreenTail(surface),
 			});
@@ -1509,6 +1606,7 @@ async function launchSubagent(
 			startTime,
 			sessionFile: subagentSessionFile,
 			launchScriptFile,
+			stdioLogFile,
 			cli: "claude",
 			sentinelFile,
 			interactive: effectiveInteractive,
@@ -1528,6 +1626,7 @@ async function launchSubagent(
 			interactive: effectiveInteractive,
 			sessionFile: subagentSessionFile,
 			launchScriptFile,
+			stdioLogFile,
 		});
 		return running;
 	}
@@ -1647,7 +1746,19 @@ async function launchSubagent(
 	const cdPrefix = effectiveCwd ? `cd ${shellEscape(effectiveCwd)} && ` : "";
 
 	const piCommand = cdPrefix + envPrefix + parts.join(" ");
-	const command = `${piCommand}; echo '__SUBAGENT_DONE_'$?'__'`;
+	const command = wrapWithStdioCapture(
+		`${piCommand}; subagent_exit=$?; echo "__SUBAGENT_DONE_\${subagent_exit}__"; exit "$subagent_exit"`,
+		stdioLogFile,
+		{
+			ts: new Date().toISOString(),
+			id,
+			name: params.name,
+			agent: params.agent,
+			cli: "pi",
+			cwd: effectiveCwd ?? ctx.cwd,
+			session: subagentSessionFile,
+		},
+	);
 	const launchScriptName = `${
 		(params.name || "subagent")
 			.toLowerCase()
@@ -1661,12 +1772,14 @@ async function launchSubagent(
 		"subagent-scripts",
 		launchScriptName,
 	);
+	removeExitSidecar(subagentSessionFile, "spawn_launch");
 	logSubagent("command_send_start", {
 		id,
 		name: params.name,
 		cli: "pi",
 		surface,
 		launchScriptFile,
+		stdioLogFile,
 		childSessionFile: subagentSessionFile,
 		activityFile,
 		command: previewText(command),
@@ -1679,6 +1792,7 @@ async function launchSubagent(
 				`# Generated: ${new Date().toISOString()}`,
 				`# Session: ${subagentSessionFile}`,
 				`# Surface: ${surface}`,
+				`# Stdio log: ${stdioLogFile}`,
 			].join("\n"),
 		});
 		logSubagent("command_send_ok", {
@@ -1687,6 +1801,7 @@ async function launchSubagent(
 			cli: "pi",
 			surface,
 			launchScriptFile,
+			stdioLogFile,
 			childSessionFile: subagentSessionFile,
 			activityFile,
 		});
@@ -1697,6 +1812,7 @@ async function launchSubagent(
 			cli: "pi",
 			surface,
 			launchScriptFile,
+			stdioLogFile,
 			childSessionFile: subagentSessionFile,
 			activityFile,
 			error: err instanceof Error ? err.message : String(err),
@@ -1714,6 +1830,7 @@ async function launchSubagent(
 		startTime,
 		sessionFile: subagentSessionFile,
 		launchScriptFile,
+		stdioLogFile,
 		activityFile,
 		interactive: effectiveInteractive,
 		statusState: createStatusState({
@@ -1732,6 +1849,7 @@ async function launchSubagent(
 		interactive: effectiveInteractive,
 		sessionFile: subagentSessionFile,
 		launchScriptFile,
+		stdioLogFile,
 		activityFile,
 	});
 	return running;
@@ -1779,6 +1897,8 @@ async function watchSubagent(
 		cli: running.cli ?? "pi",
 		surface,
 		sessionFile,
+		launchScriptFile: running.launchScriptFile,
+		stdioLogFile: running.stdioLogFile,
 		activityFile: running.activityFile,
 	});
 
@@ -1790,6 +1910,7 @@ async function watchSubagent(
 				interval: 1000,
 				sessionFile,
 				sentinelFile: running.sentinelFile,
+				stdioLogFile: running.stdioLogFile,
 				onTick() {
 					observeRunningSubagent(running);
 				},
@@ -1810,7 +1931,11 @@ async function watchSubagent(
 			ping: result.ping,
 			elapsed,
 			...(result.exitCode !== 0 || result.errorMessage
-				? { screenTail: bestEffortScreenTail(surface) }
+				? {
+						screenTail: bestEffortScreenTail(surface),
+						stdioLogFile: running.stdioLogFile,
+						stdioTail: tailFile(running.stdioLogFile),
+					}
 				: {}),
 		});
 
@@ -1842,9 +1967,15 @@ async function watchSubagent(
 				name,
 				cli: "claude",
 				sessionFile,
+				stdioLogFile: running.stdioLogFile,
 				summaryLength: summary.length,
 				hasSummary: extractedSummary,
-				...(extractedSummary ? {} : { screenTail: bestEffortScreenTail(surface) }),
+				...(extractedSummary
+					? {}
+					: {
+							screenTail: bestEffortScreenTail(surface),
+							stdioTail: tailFile(running.stdioLogFile),
+						}),
 			});
 
 			// Copy Claude session transcript
@@ -1882,27 +2013,27 @@ async function watchSubagent(
 		let summary: string;
 		let entryCount = 0;
 		let extractedSummary: string | null = null;
-		let summarySource: "assistant_message" | "subagent_done" | "fallback" =
+		let summarySource: "assistant_message" | "sidecar" | "fallback" =
 			"fallback";
 		if (existsSync(sessionFile)) {
 			const allEntries = getNewEntries(sessionFile, 0);
 			entryCount = allEntries.length;
 			extractedSummary = findLastAssistantMessage(allEntries);
-			if (extractedSummary != null) {
+			if (result.summary) {
+				summarySource = "sidecar";
+			} else if (extractedSummary != null) {
 				summarySource = "assistant_message";
-			} else if (result.summary) {
-				summarySource = "subagent_done";
 			}
 			summary =
-				extractedSummary ??
-				result.summary ??
-				(result.errorMessage
+				result.errorMessage
 					? `Subagent error: ${result.errorMessage}`
-					: result.exitCode !== 0
-						? `Sub-agent exited with code ${result.exitCode}`
-						: "Sub-agent exited without output");
+					: result.summary ??
+						extractedSummary ??
+						(result.exitCode !== 0
+							? `Sub-agent exited with code ${result.exitCode}`
+							: "Sub-agent exited without output");
 		} else {
-			if (result.summary) summarySource = "subagent_done";
+			if (result.summary) summarySource = "sidecar";
 			summary = result.errorMessage
 				? `Subagent error: ${result.errorMessage}`
 				: result.summary
@@ -1916,13 +2047,17 @@ async function watchSubagent(
 			name,
 			cli: "pi",
 			sessionFile,
+			stdioLogFile: running.stdioLogFile,
 			entryCount,
 			summaryLength: summary.length,
 			hasSummary: summarySource !== "fallback",
 			summarySource,
 			...(summarySource !== "fallback" && result.exitCode === 0 && !result.errorMessage
 				? {}
-				: { screenTail: bestEffortScreenTail(surface) }),
+				: {
+						screenTail: bestEffortScreenTail(surface),
+						stdioTail: tailFile(running.stdioLogFile),
+					}),
 		});
 
 		closeSurface(surface);
@@ -1952,8 +2087,16 @@ async function watchSubagent(
 			cli: running.cli ?? "pi",
 			surface,
 			sessionFile,
+			launchScriptFile: running.launchScriptFile,
+			stdioLogFile: running.stdioLogFile,
+			activityFile: running.activityFile,
 			error: err?.message ?? String(err),
 			aborted: signal.aborted,
+			sessionFileStatus: fileStatus(sessionFile),
+			launchScriptFileStatus: fileStatus(running.launchScriptFile),
+			stdioLogFileStatus: fileStatus(running.stdioLogFile),
+			activityFileStatus: fileStatus(running.activityFile),
+			stdioTail: tailFile(running.stdioLogFile),
 			screenTail: bestEffortScreenTail(surface),
 		});
 		try {
@@ -2010,9 +2153,22 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 		const moduleAbort = (globalThis as any)[POLL_ABORT_KEY] as
 			| AbortController
 			| undefined;
-		if (moduleAbort) moduleAbort.abort();
-		for (const [_id, agent] of runningSubagents) {
-			agent.abortController?.abort();
+		if (moduleAbort) {
+			logSubagent("watch_abort_requested", {
+				reason: "session_shutdown",
+				runningCount: runningSubagents.size,
+			});
+			moduleAbort.abort("session_shutdown");
+		}
+		for (const [id, agent] of runningSubagents) {
+			logSubagent("watch_abort_requested", {
+				reason: "session_shutdown_agent_abort",
+				id,
+				name: agent.name,
+				surface: agent.surface,
+				sessionFile: agent.sessionFile,
+			});
+			agent.abortController?.abort("session_shutdown");
 		}
 		runningSubagents.clear();
 	});
@@ -2121,6 +2277,9 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 							exitCode: result.exitCode,
 							elapsed: result.elapsed,
 							sessionFile: result.sessionFile,
+							launchScriptFile: running.launchScriptFile,
+							stdioLogFile: running.stdioLogFile,
+							activityFile: running.activityFile,
 							errorMessage: result.errorMessage,
 							summaryLength: result.summary.length,
 							ping: result.ping,
@@ -2553,6 +2712,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 					sessionId,
 				);
 				const activityFile = getSubagentActivityFile(artifactDir, id);
+				const stdioLogFile = join(artifactDir, "subagent-stdio", `${id}.log`);
 				mkdirSync(dirname(activityFile), { recursive: true });
 
 				let resumeMsgFile: string | undefined;
@@ -2598,7 +2758,19 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 				}
 				const resumeEnvPrefix = resumeEnvParts.join(" ") + " ";
 
-				const command = `${resumeEnvPrefix}${parts.join(" ")}; echo '__SUBAGENT_DONE_'$?'__'`;
+				const resumeCommand = resumeEnvPrefix + parts.join(" ");
+				const command = wrapWithStdioCapture(
+					`${resumeCommand}; subagent_exit=$?; echo "__SUBAGENT_DONE_\${subagent_exit}__"; exit "$subagent_exit"`,
+					stdioLogFile,
+					{
+						ts: new Date().toISOString(),
+						id,
+						name,
+						cli: "pi",
+						resume: "true",
+						session: params.sessionPath,
+					},
+				);
 				const launchScriptFile = join(
 					artifactDir,
 					"subagent-scripts",
@@ -2611,18 +2783,60 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 							.replace(/^-|-$/g, "") || "resume"
 					}-resume-${Date.now()}.sh`,
 				);
-				sendLongCommand(surface, command, {
-					scriptPath: launchScriptFile,
-					scriptPreamble: [
-						`# Subagent resume script for ${name}`,
-						`# Generated: ${new Date().toISOString()}`,
-						`# Session: ${params.sessionPath}`,
-						`# Surface: ${surface}`,
-						...(resumeMsgFile
-							? [`# Resume message file: ${resumeMsgFile}`]
-							: []),
-					].join("\n"),
+				removeExitSidecar(params.sessionPath, "resume_launch");
+				logSubagent("command_send_start", {
+					id,
+					name,
+					cli: "pi",
+					resume: true,
+					surface,
+					launchScriptFile,
+					stdioLogFile,
+					childSessionFile: params.sessionPath,
+					activityFile,
+					command: previewText(command),
 				});
+				try {
+					sendLongCommand(surface, command, {
+						scriptPath: launchScriptFile,
+						scriptPreamble: [
+							`# Subagent resume script for ${name}`,
+							`# Generated: ${new Date().toISOString()}`,
+							`# Session: ${params.sessionPath}`,
+							`# Surface: ${surface}`,
+							`# Stdio log: ${stdioLogFile}`,
+							...(resumeMsgFile
+								? [`# Resume message file: ${resumeMsgFile}`]
+								: []),
+						].join("\n"),
+					});
+					logSubagent("command_send_ok", {
+						id,
+						name,
+						cli: "pi",
+						resume: true,
+						surface,
+						launchScriptFile,
+						stdioLogFile,
+						childSessionFile: params.sessionPath,
+						activityFile,
+					});
+				} catch (err) {
+					logSubagent("command_send_error", {
+						id,
+						name,
+						cli: "pi",
+						resume: true,
+						surface,
+						launchScriptFile,
+						stdioLogFile,
+						childSessionFile: params.sessionPath,
+						activityFile,
+						error: err instanceof Error ? err.message : String(err),
+						screenTail: bestEffortScreenTail(surface),
+					});
+					throw err;
+				}
 
 				// Register as a running subagent for widget tracking
 				const running: RunningSubagent = {
@@ -2633,6 +2847,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 					startTime,
 					sessionFile: params.sessionPath,
 					launchScriptFile,
+					stdioLogFile,
 					activityFile,
 					interactive,
 					statusState: createStatusState({
@@ -2641,6 +2856,18 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 					}),
 				};
 				runningSubagents.set(id, running);
+				logSubagent("spawn_registered", {
+					id,
+					name,
+					cli: "pi",
+					resume: true,
+					surface,
+					interactive,
+					sessionFile: params.sessionPath,
+					launchScriptFile,
+					stdioLogFile,
+					activityFile,
+				});
 				startWidgetRefresh();
 				startStatusRefresh(pi);
 
@@ -2670,15 +2897,16 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 							return;
 						}
 
-						const allEntries = getNewEntries(
-							params.sessionPath,
-							entryCountBefore,
-						);
-						const summary =
-							findLastAssistantMessage(allEntries) ??
-							(result.errorMessage
-								? `Subagent error: ${result.errorMessage}`
-								: result.exitCode !== 0
+					const allEntries = getNewEntries(
+						params.sessionPath,
+						entryCountBefore,
+					);
+					const summary =
+						result.errorMessage
+							? `Subagent error: ${result.errorMessage}`
+							: result.summary ??
+								findLastAssistantMessage(allEntries) ??
+								(result.exitCode !== 0
 									? `Resumed session exited with code ${result.exitCode}`
 									: "Resumed session exited without new output");
 						const presentation = resolveResultPresentation(
@@ -2725,6 +2953,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 						name,
 						sessionPath: params.sessionPath,
 						launchScriptFile,
+						stdioLogFile,
 						status: "started",
 					},
 				};

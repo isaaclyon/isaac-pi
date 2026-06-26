@@ -172,6 +172,18 @@ Environment overrides:
   length + preview only. Use carefully: verbose logs can include sensitive
   prompts and paths.
 
+Each spawned subagent also gets a wrapper log beside the parent session
+artifacts:
+
+```bash
+~/.pi/agent/sessions/<parent-session-dir>/artifacts/<parent-session-id>/subagent-stdio/<subagent-id>.log
+```
+
+Lifecycle error events include artifact existence/size checks plus the tail of
+that wrapper log when available. The child process itself keeps its terminal TTY
+so the Pi TUI renders normally; its model transcript remains in the child
+session JSONL.
+
 ---
 
 ## Spawning Subagents
