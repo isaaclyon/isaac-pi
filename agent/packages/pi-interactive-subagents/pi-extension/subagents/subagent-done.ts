@@ -6,7 +6,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { createSubagentActivityRecorder } from "./activity.ts";
 
 export function shouldMarkUserTookOver(agentStarted: boolean): boolean {
@@ -66,6 +66,53 @@ export function findLatestAssistantError(
     };
   }
   return null;
+}
+
+export function findLatestAssistantSummary(messages: any[] | undefined): string | null {
+  if (!messages) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role !== "assistant") continue;
+    const content = msg.content;
+    const text = Array.isArray(content)
+      ? content
+          .map((part) => (part?.type === "text" && typeof part.text === "string" ? part.text : ""))
+          .join("\n")
+          .trim()
+      : typeof content === "string"
+        ? content.trim()
+        : "";
+    return text || null;
+  }
+  return null;
+}
+
+export function writeAutoExitSidecar(
+  sessionFile: string | undefined,
+  messages: any[] | undefined,
+): void {
+  if (!sessionFile) return;
+
+  const exitFile = `${sessionFile}.exit`;
+  if (existsSync(exitFile)) return;
+
+  const errorInfo = findLatestAssistantError(messages);
+  const summary = findLatestAssistantSummary(messages);
+  writeFileSync(
+    exitFile,
+    JSON.stringify(
+      errorInfo
+        ? {
+            type: "error",
+            errorMessage: errorInfo.errorMessage,
+            stopReason: errorInfo.stopReason,
+          }
+        : {
+            type: "done",
+            ...(summary ? { summary } : {}),
+          },
+    ),
+  );
 }
 
 export function parseDeniedTools(rawValue: string | undefined): string[] {
@@ -176,23 +223,15 @@ export default function (pi: ExtensionAPI) {
     const shouldExit = autoExit && shouldAutoExitOnAgentEnd(userTookOver, messages);
 
     if (shouldExit) {
-      // Surface stopReason: "error" turns (auto-retry exhausted, provider
-      // overload, etc.) to the parent via the .exit sidecar so the watcher
-      // can report a clear failure with the underlying error message.
-      // Without this the parent would only see exit code 0 and a stale
-      // assistant message, mistaking the crash for a successful completion.
-      const errorInfo = findLatestAssistantError(messages);
+      // Surface completion through the .exit sidecar so the parent watcher does
+      // not depend on terminal scrollback still containing the shell sentinel.
+      // Error turns carry the underlying provider error; normal turns include
+      // the latest assistant text when available so the parent need not race
+      // session JSONL flushing to report the right summary.
       const sessionFile = process.env.PI_SUBAGENT_SESSION;
-      if (errorInfo && sessionFile) {
+      if (sessionFile) {
         try {
-          writeFileSync(
-            `${sessionFile}.exit`,
-            JSON.stringify({
-              type: "error",
-              errorMessage: errorInfo.errorMessage,
-              stopReason: errorInfo.stopReason,
-            }),
-          );
+          writeAutoExitSidecar(sessionFile, messages);
         } catch {
           // Best effort — even without the sidecar, watcher's session-file
           // fallback can still recover the errorMessage.
