@@ -34,7 +34,7 @@
         "+skills/usage-analytics/SKILL.md"
       ]
     },
-    "npm:@adamjen/pi-interactive-subagents",
+    "./packages/pi-interactive-subagents",
     "npm:@juicesharp/rpiv-advisor"
   ],
   "defaultThinkingLevel": "high",
