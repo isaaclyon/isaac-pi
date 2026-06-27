@@ -91,16 +91,21 @@ function createMockExtensionApi() {
 	const registeredTools: Array<any> = [];
 	const registeredCommands: Array<any> = [];
 	const registeredMessageRenderers: Array<any> = [];
+	const registeredEventHandlers: Record<string, Array<any>> = {};
 	const sentUserMessages: string[] = [];
 	const sentMessages: Array<any> = [];
 	return {
 		registeredTools,
 		registeredCommands,
 		registeredMessageRenderers,
+		registeredEventHandlers,
 		sentUserMessages,
 		sentMessages,
 		api: {
-			on() {},
+			on(event: string, handler: any) {
+				registeredEventHandlers[event] ??= [];
+				registeredEventHandlers[event].push(handler);
+			},
 			registerTool(tool: any) {
 				registeredTools.push(tool);
 			},
@@ -3067,6 +3072,182 @@ describe("cmux.ts", () => {
 						"agentTiers" in result,
 					"config object should have at least one expected property",
 				);
+			});
+		});
+	});
+
+		describe("subagent lifecycle diagnostics", () => {
+		it("treats runtime-only aborts as watcher cancellation", () => {
+			const testApi = (subagentsModule as any).__test__;
+			const toolAbort = new AbortController();
+			const runtimeAbort = new AbortController();
+			const combinedSignal = AbortSignal.any([
+				toolAbort.signal,
+				runtimeAbort.signal,
+			]);
+
+			runtimeAbort.abort("module_reload");
+
+			assert.equal(toolAbort.signal.aborted, false);
+			assert.equal(runtimeAbort.signal.aborted, true);
+			assert.equal(combinedSignal.aborted, true);
+			assert.equal(
+				testApi.isWatchCancellation(
+					toolAbort.signal,
+					runtimeAbort.signal,
+					combinedSignal,
+				),
+				true,
+			);
+		});
+
+		it("suppresses cancelled watcher results instead of delivering them", () => {
+			const testApi = (subagentsModule as any).__test__;
+
+			assert.equal(
+				testApi.shouldDeliverSubagentResult({
+					error: "cancelled",
+					cancelled: true,
+				}),
+				false,
+			);
+			assert.equal(
+				testApi.shouldDeliverSubagentResult({ error: "cancelled" }),
+				true,
+			);
+			assert.equal(
+				testApi.shouldDeliverSubagentResult({ error: "real failure" }),
+				true,
+			);
+			assert.equal(testApi.shouldDeliverSubagentResult({}), true);
+		});
+
+		it("keeps shutdown abort visible until the next explicit lifecycle reset", () => {
+			const testApi = (subagentsModule as any).__test__;
+			const controller = testApi.resetModuleAbortController("test-start");
+			const firstSignal = testApi.getModuleAbortSignal();
+			assert.equal(firstSignal, controller.signal);
+
+			controller.abort("test-abort");
+
+			assert.equal(testApi.getModuleAbortSignal(), firstSignal);
+			assert.equal(testApi.getModuleAbortSignal().aborted, true);
+
+			const nextController = testApi.resetModuleAbortController("test-reset");
+			assert.notEqual(nextController.signal, firstSignal);
+			assert.equal(testApi.getModuleAbortSignal().aborted, false);
+		});
+
+		it("writes process and module identifiers to lifecycle logs", () => {
+			withTempDir((dir) => {
+				const previousLogDir = process.env.PI_SUBAGENT_LOG_DIR;
+				process.env.PI_SUBAGENT_LOG_DIR = dir;
+				try {
+					const testApi = (subagentsModule as any).__test__;
+					testApi.logSubagent("diagnostic_test", { custom: "value" });
+
+					const logFile = join(
+						dir,
+						`${new Date().toISOString().slice(0, 10)}.jsonl`,
+					);
+					const line = readFileSync(logFile, "utf8").trim();
+					const entry = JSON.parse(line);
+
+					assert.equal(entry.event, "diagnostic_test");
+					assert.equal(entry.custom, "value");
+					assert.equal(entry.pid, process.pid);
+					assert.equal(typeof entry.moduleInstanceId, "string");
+					assert.ok(entry.moduleInstanceId.length > 0);
+				} finally {
+					restoreEnvVar("PI_SUBAGENT_LOG_DIR", previousLogDir);
+				}
+			});
+		});
+
+		it("session lifecycle handlers abort shutdown work and reset on next start", () => {
+			withTempDir((dir) => {
+				const previousLogDir = process.env.PI_SUBAGENT_LOG_DIR;
+				process.env.PI_SUBAGENT_LOG_DIR = dir;
+				try {
+					const testApi = (subagentsModule as any).__test__;
+					const runningMap = testApi.runningSubagents as Map<string, any>;
+					runningMap.clear();
+
+					const { api, registeredEventHandlers } = createMockExtensionApi();
+					(subagentsModule as any).default(api);
+
+					const ctx = {
+						cwd: "/repo",
+						sessionManager: {
+							getSessionFile: () => "/parent.jsonl",
+							getSessionId: () => "session-1",
+						},
+					};
+
+					testApi.resetModuleAbortController("lifecycle-test");
+					registeredEventHandlers.session_start[0](
+						{ reason: "initial", previousSessionFile: undefined },
+						ctx,
+					);
+					const shutdownSignal = testApi.getModuleAbortSignal();
+					const runningAbort = new AbortController();
+
+					runningMap.set("run-1", {
+						id: "run-1",
+						name: "Worker",
+						task: "",
+						surface: "pane-1",
+						startTime: 0,
+						parentSessionFile: "/parent.jsonl",
+						sessionFile: "/child.jsonl",
+						abortController: runningAbort,
+						interactive: false,
+						statusState: createStatusState({ source: "pi", startTimeMs: 0 }),
+					});
+
+					registeredEventHandlers.session_shutdown[0](
+						{ reason: "reload", targetSessionFile: "/parent.jsonl" },
+						ctx,
+					);
+
+					assert.equal(shutdownSignal.aborted, true);
+					assert.equal(runningAbort.signal.aborted, true);
+					assert.equal(runningMap.size, 0);
+					assert.equal(testApi.getModuleAbortSignal(), shutdownSignal);
+
+					registeredEventHandlers.session_start[0](
+						{ reason: "resume", previousSessionFile: "/old.jsonl" },
+						ctx,
+					);
+					assert.notEqual(testApi.getModuleAbortSignal(), shutdownSignal);
+					assert.equal(testApi.getModuleAbortSignal().aborted, false);
+
+					const logFile = join(
+						dir,
+						`${new Date().toISOString().slice(0, 10)}.jsonl`,
+					);
+					const entries = readFileSync(logFile, "utf8")
+						.trim()
+						.split("\n")
+						.map((line) => JSON.parse(line));
+					const shutdownEntry = entries.find(
+						(entry) => entry.event === "session_shutdown",
+					);
+					const agentAbortEntry = entries.find(
+						(entry) => entry.reason === "session_shutdown_agent_abort",
+					);
+
+					assert.equal(shutdownEntry.reason, "reload");
+					assert.equal(shutdownEntry.targetSessionFile, "/parent.jsonl");
+					assert.equal(shutdownEntry.runtimeSessionFile, "/parent.jsonl");
+					assert.equal(shutdownEntry.runtimeSessionId, "session-1");
+					assert.equal(shutdownEntry.runtimeCwd, "/repo");
+					assert.equal(agentAbortEntry.parentSessionFile, "/parent.jsonl");
+					assert.equal(agentAbortEntry.sessionFile, "/child.jsonl");
+				} finally {
+					restoreEnvVar("PI_SUBAGENT_LOG_DIR", previousLogDir);
+					(subagentsModule as any).__test__.runningSubagents.clear();
+				}
 			});
 		});
 	});

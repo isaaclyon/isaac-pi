@@ -61,6 +61,10 @@ import {
 
 /** Absolute path to `pi-extension/subagents`. https://github.com/nodejs/node/issues/37845 */
 const SUBAGENTS_DIR = dirname(fileURLToPath(import.meta.url));
+const MODULE_INSTANCE_ID = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
+let currentRuntimeSessionFile: string | undefined;
+let currentRuntimeSessionId: string | undefined;
+let currentRuntimeCwd: string | undefined;
 
 // Survive /reload: clear timers and abort poll loops from the previous module load.
 // /reload re-imports this file, giving fresh module-level state, but closures from
@@ -68,6 +72,7 @@ const SUBAGENTS_DIR = dirname(fileURLToPath(import.meta.url));
 const WIDGET_INTERVAL_KEY = Symbol.for("pi-subagents/widget-interval");
 const STATUS_INTERVAL_KEY = Symbol.for("pi-subagents/status-interval");
 const POLL_ABORT_KEY = Symbol.for("pi-subagents/poll-abort-controller");
+let moduleAbortController: AbortController | undefined;
 
 {
 	const prevInterval = (globalThis as any)[WIDGET_INTERVAL_KEY];
@@ -89,11 +94,34 @@ const POLL_ABORT_KEY = Symbol.for("pi-subagents/poll-abort-controller");
 		});
 		prevAbort.abort("module_reload");
 	}
-	(globalThis as any)[POLL_ABORT_KEY] = new AbortController();
+	resetModuleAbortController("module_load");
+}
+
+function resetModuleAbortController(reason: string): AbortController {
+	const controller = new AbortController();
+	moduleAbortController = controller;
+	(globalThis as any)[POLL_ABORT_KEY] = controller;
+	logSubagent("module_abort_controller_reset", { reason });
+	return controller;
+}
+
+function getModuleAbortController(): AbortController {
+	if (!moduleAbortController) return resetModuleAbortController("missing");
+	return moduleAbortController;
 }
 
 function getModuleAbortSignal(): AbortSignal {
-	return ((globalThis as any)[POLL_ABORT_KEY] as AbortController).signal;
+	return getModuleAbortController().signal;
+}
+
+function isWatchCancellation(
+	signal: AbortSignal,
+	runtimeSignal?: AbortSignal,
+	combinedSignal?: AbortSignal,
+): boolean {
+	return Boolean(
+		signal.aborted || runtimeSignal?.aborted || combinedSignal?.aborted,
+	);
 }
 
 const SubagentParams = Type.Object({
@@ -318,7 +346,16 @@ function logSubagent(
 		mkdirSync(dirname(logFile), { recursive: true });
 		appendFileSync(
 			logFile,
-			JSON.stringify({ ts: new Date().toISOString(), event, ...data }) + "\n",
+			JSON.stringify({
+				ts: new Date().toISOString(),
+				event,
+				pid: process.pid,
+				moduleInstanceId: MODULE_INSTANCE_ID,
+				runtimeSessionFile: currentRuntimeSessionFile,
+				runtimeSessionId: currentRuntimeSessionId,
+				runtimeCwd: currentRuntimeCwd,
+				...data,
+			}) + "\n",
 			"utf8",
 		);
 	} catch {
@@ -796,9 +833,16 @@ interface SubagentResult {
 	exitCode: number;
 	elapsed: number;
 	error?: string;
+	cancelled?: boolean;
 	/** Provider/agent error message when auto-retry exhausted (overload, rate limit, etc.). */
 	errorMessage?: string;
 	ping?: { name: string; message: string };
+}
+
+function shouldDeliverSubagentResult(
+	result: Pick<SubagentResult, "error"> & { cancelled?: boolean },
+): boolean {
+	return result.cancelled !== true;
 }
 
 /**
@@ -811,6 +855,7 @@ interface RunningSubagent {
 	agent?: string;
 	surface: string;
 	startTime: number;
+	parentSessionFile?: string;
 	sessionFile: string;
 	launchScriptFile?: string;
 	stdioLogFile?: string;
@@ -822,6 +867,7 @@ interface RunningSubagent {
 		error?: string;
 	};
 	abortController?: AbortController;
+	runtimeAbortSignal?: AbortSignal;
 	cli?: string;
 	sentinelFile?: string;
 	statusState: SubagentStatusState;
@@ -1302,6 +1348,11 @@ export const __test__ = {
 	resolveResultPresentation,
 	resolveResumeLaunchBehavior,
 	runningSubagents,
+	getModuleAbortSignal,
+	resetModuleAbortController,
+	isWatchCancellation,
+	shouldDeliverSubagentResult,
+	logSubagent,
 	formatElapsed,
 	getModelPreferenceConfig,
 	resolveModelPreference,
@@ -1604,12 +1655,15 @@ async function launchSubagent(
 			agent: params.agent,
 			surface,
 			startTime,
+			parentSessionFile: sessionFile,
 			sessionFile: subagentSessionFile,
 			launchScriptFile,
 			stdioLogFile,
 			cli: "claude",
 			sentinelFile,
 			interactive: effectiveInteractive,
+			abortController: new AbortController(),
+			runtimeAbortSignal: getModuleAbortSignal(),
 			statusState: createStatusState({
 				source: "claude",
 				startTimeMs: startTime,
@@ -1828,11 +1882,14 @@ async function launchSubagent(
 		agent: params.agent,
 		surface,
 		startTime,
+		parentSessionFile: sessionFile,
 		sessionFile: subagentSessionFile,
 		launchScriptFile,
 		stdioLogFile,
 		activityFile,
 		interactive: effectiveInteractive,
+		abortController: new AbortController(),
+		runtimeAbortSignal: getModuleAbortSignal(),
 		statusState: createStatusState({
 			source: "pi",
 			startTimeMs: startTime,
@@ -1896,16 +1953,19 @@ async function watchSubagent(
 		agent: running.agent,
 		cli: running.cli ?? "pi",
 		surface,
+		parentSessionFile: running.parentSessionFile,
 		sessionFile,
 		launchScriptFile: running.launchScriptFile,
 		stdioLogFile: running.stdioLogFile,
 		activityFile: running.activityFile,
 	});
 
+	const runtimeSignal = running.runtimeAbortSignal ?? getModuleAbortSignal();
+	const combinedSignal = AbortSignal.any([signal, runtimeSignal]);
 	try {
 		const result = await pollForExit(
 			surface,
-			AbortSignal.any([signal, getModuleAbortSignal()]),
+			combinedSignal,
 			{
 				interval: 1000,
 				sessionFile,
@@ -1924,6 +1984,7 @@ async function watchSubagent(
 			agent: running.agent,
 			cli: running.cli ?? "pi",
 			surface,
+			parentSessionFile: running.parentSessionFile,
 			sessionFile,
 			reason: result.reason,
 			exitCode: result.exitCode,
@@ -1966,6 +2027,7 @@ async function watchSubagent(
 				id: running.id,
 				name,
 				cli: "claude",
+				parentSessionFile: running.parentSessionFile,
 				sessionFile,
 				stdioLogFile: running.stdioLogFile,
 				summaryLength: summary.length,
@@ -2046,6 +2108,7 @@ async function watchSubagent(
 			id: running.id,
 			name,
 			cli: "pi",
+			parentSessionFile: running.parentSessionFile,
 			sessionFile,
 			stdioLogFile: running.stdioLogFile,
 			entryCount,
@@ -2080,18 +2143,28 @@ async function watchSubagent(
 			...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
 		};
 	} catch (err: any) {
-		logSubagent("watch_error", {
+		const cancelled = isWatchCancellation(signal, runtimeSignal, combinedSignal);
+		logSubagent(cancelled ? "watch_cancelled" : "watch_error", {
 			id: running.id,
 			name,
 			agent: running.agent,
 			cli: running.cli ?? "pi",
 			surface,
+			parentSessionFile: running.parentSessionFile,
 			sessionFile,
 			launchScriptFile: running.launchScriptFile,
 			stdioLogFile: running.stdioLogFile,
 			activityFile: running.activityFile,
 			error: err?.message ?? String(err),
-			aborted: signal.aborted,
+			aborted: cancelled,
+			toolSignalAborted: signal.aborted,
+			runtimeSignalAborted: runtimeSignal.aborted,
+			combinedSignalAborted: combinedSignal.aborted,
+			abortReason: cancelled
+				? String(
+						signal.reason ?? runtimeSignal.reason ?? combinedSignal.reason ?? "abort",
+					)
+				: undefined,
 			sessionFileStatus: fileStatus(sessionFile),
 			launchScriptFileStatus: fileStatus(running.launchScriptFile),
 			stdioLogFileStatus: fileStatus(running.stdioLogFile),
@@ -2110,7 +2183,7 @@ async function watchSubagent(
 		} catch {}
 		runningSubagents.delete(running.id);
 
-		if (signal.aborted) {
+		if (cancelled) {
 			return {
 				name,
 				task,
@@ -2118,6 +2191,7 @@ async function watchSubagent(
 				exitCode: 1,
 				elapsed: Math.floor((Date.now() - startTime) / 1000),
 				error: "cancelled",
+				cancelled: true,
 				sessionFile,
 			};
 		}
@@ -2134,12 +2208,32 @@ async function watchSubagent(
 
 export default function subagentsExtension(pi: ExtensionAPI) {
 	// Capture the UI context for widget updates
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", (event, ctx) => {
 		latestCtx = ctx;
+		currentRuntimeSessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
+		currentRuntimeSessionId = ctx.sessionManager.getSessionId();
+		currentRuntimeCwd = ctx.cwd;
+		if (getModuleAbortController().signal.aborted) {
+			resetModuleAbortController("session_start_after_aborted_signal");
+		}
+		logSubagent("session_start", {
+			reason: event.reason,
+			previousSessionFile: event.previousSessionFile,
+			sessionFile: currentRuntimeSessionFile,
+			cwd: ctx.cwd,
+		});
 	});
 
 	// Clean up on session shutdown
-	pi.on("session_shutdown", (_event, _ctx) => {
+	pi.on("session_shutdown", (event, ctx) => {
+		const shutdownSessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
+		logSubagent("session_shutdown", {
+			reason: event.reason,
+			targetSessionFile: event.targetSessionFile,
+			sessionFile: shutdownSessionFile,
+			cwd: ctx.cwd,
+			runningCount: runningSubagents.size,
+		});
 		if (widgetInterval) {
 			clearInterval(widgetInterval);
 			widgetInterval = null;
@@ -2150,22 +2244,28 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 			statusInterval = null;
 			(globalThis as any)[STATUS_INTERVAL_KEY] = null;
 		}
-		const moduleAbort = (globalThis as any)[POLL_ABORT_KEY] as
-			| AbortController
-			| undefined;
+		const moduleAbort = getModuleAbortController();
 		if (moduleAbort) {
 			logSubagent("watch_abort_requested", {
 				reason: "session_shutdown",
+				shutdownReason: event.reason,
+				targetSessionFile: event.targetSessionFile,
+				sessionFile: shutdownSessionFile,
 				runningCount: runningSubagents.size,
 			});
-			moduleAbort.abort("session_shutdown");
+			if (!moduleAbort.signal.aborted) {
+				moduleAbort.abort("session_shutdown");
+			}
 		}
 		for (const [id, agent] of runningSubagents) {
 			logSubagent("watch_abort_requested", {
 				reason: "session_shutdown_agent_abort",
+				shutdownReason: event.reason,
+				targetSessionFile: event.targetSessionFile,
 				id,
 				name: agent.name,
 				surface: agent.surface,
+				parentSessionFile: agent.parentSessionFile,
 				sessionFile: agent.sessionFile,
 			});
 			agent.abortController?.abort("session_shutdown");
@@ -2257,9 +2357,9 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 					throw err; // Re-throw non-model errors
 				}
 
-				// Create a separate AbortController for the watcher
-				// (the tool's signal completes when we return)
-				const watcherAbort = new AbortController();
+				// Use the controller installed before registration so session_shutdown
+				// can cancel the watcher even if it fires between launch and watch start.
+				const watcherAbort = running.abortController ?? new AbortController();
 				running.abortController = watcherAbort;
 
 				// Start widget refresh and status supervision when the first agent launches
@@ -2284,6 +2384,17 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 							summaryLength: result.summary.length,
 							ping: result.ping,
 						});
+
+						if (!shouldDeliverSubagentResult(result)) {
+							logSubagent("steer_delivery_suppressed", {
+								id: running.id,
+								name: running.name,
+								type: "subagent_result",
+								reason: "cancelled",
+								sessionFile: result.sessionFile,
+							});
+							return;
+						}
 
 						if (result.ping) {
 							// Subagent is requesting help — steer a ping message with session path for resume
@@ -2674,6 +2785,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 				const { autoExit, interactive } = resolveResumeLaunchBehavior(params);
 				const startTime = Date.now();
 				const id = Math.random().toString(16).slice(2, 10);
+				const parentSessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
 
 				if (!isMuxAvailable()) {
 					return muxUnavailableResult();
@@ -2845,11 +2957,14 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 					task: params.message ?? "resumed session",
 					surface,
 					startTime,
+					parentSessionFile,
 					sessionFile: params.sessionPath,
 					launchScriptFile,
 					stdioLogFile,
 					activityFile,
 					interactive,
+					abortController: new AbortController(),
+					runtimeAbortSignal: getModuleAbortSignal(),
 					statusState: createStatusState({
 						source: "pi",
 						startTimeMs: startTime,
@@ -2871,13 +2986,25 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 				startWidgetRefresh();
 				startStatusRefresh(pi);
 
-				// Fire-and-forget watcher
-				const watcherAbort = new AbortController();
+				// Fire-and-forget watcher. Use the controller installed before
+				// registration so session_shutdown can cancel startup races.
+				const watcherAbort = running.abortController ?? new AbortController();
 				running.abortController = watcherAbort;
 
 				watchSubagent(running, watcherAbort.signal)
 					.then((result) => {
 						updateWidget();
+
+						if (!shouldDeliverSubagentResult(result)) {
+							logSubagent("steer_delivery_suppressed", {
+								id: running.id,
+								name: running.name,
+								type: "subagent_result",
+								reason: "cancelled",
+								sessionFile: params.sessionPath,
+							});
+							return;
+						}
 
 						if (result.ping) {
 							const sessionRef = `\n\nSession: ${params.sessionPath}\nResume: pi --session ${params.sessionPath}`;
