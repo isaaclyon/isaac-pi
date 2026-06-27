@@ -10,10 +10,11 @@ Use the package CLI command `pi-usage-query` to answer questions about Pi usage 
 ## What this package measures
 
 - explicit `/skill:name` invocations from raw `input`
+- observed skill loads from successful reads of registered skill files
 - tool executions from `tool_execution_start` / `tool_execution_end`
 - repo scope from `ctx.cwd` via git repo-root resolution
 
-It does **not** infer implicit model skill usage.
+Observed skill loads mean the model read a registered skill file. They do **not** prove the skill influenced reasoning.
 
 ## Default scope rules
 
@@ -24,9 +25,10 @@ It does **not** infer implicit model skill usage.
 ## Preferred query flow
 
 1. Start with a canned report:
-   - `summary`
-   - `skills`
-   - `tools`
+  - `summary`
+  - `skills`
+  - `skill-loads`
+  - `tools`
    - `extension-tools`
    - `failures`
    - `slow-tools`
@@ -45,6 +47,7 @@ It does **not** infer implicit model skill usage.
 ```bash
 pi-usage-query summary --scope=all
 pi-usage-query skills --scope=current --days=7
+pi-usage-query skill-loads --scope=all --days=7
 pi-usage-query tools --repo /path/to/repo --limit=20
 pi-usage-query extension-tools --scope=all
 pi-usage-query failures --scope=current
@@ -64,4 +67,4 @@ pi-usage-query sql "SELECT skill_name, COUNT(*) AS n FROM skill_invocations GROU
 
 - Lead with the answer.
 - Mention scope and time filter used.
-- Mention the caveat when skill counts are involved: only explicit `/skill:name` commands are counted.
+- Mention the caveat when skill counts are involved: `skills` counts only explicit `/skill:name` commands; `skill-loads` also includes observed successful reads of registered skill files, which is a proxy for implicit loads, not proof of semantic influence.
