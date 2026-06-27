@@ -5,11 +5,11 @@ import { resolveRepoRootFromPath } from '../src/repo.mjs';
 import { runCannedReport, renderReport } from '../src/reports.mjs';
 import { ensureReadOnlySql } from '../src/sql.mjs';
 
-const REPORT_NAMES = ['summary', 'skills', 'tools', 'extension-tools', 'failures', 'slow-tools', 'repos'];
+const REPORT_NAMES = ['summary', 'skills', 'skill-loads', 'tools', 'extension-tools', 'failures', 'slow-tools', 'repos'];
 
 function printUsage() {
   console.error(`Usage:
-  usage-query.mjs [summary|skills|tools|extension-tools|failures|slow-tools|repos] [--scope=current|all] [--repo PATH] [--days N] [--limit N] [--format=table|json]
+  usage-query.mjs [summary|skills|skill-loads|tools|extension-tools|failures|slow-tools|repos] [--scope=current|all] [--repo PATH] [--days N] [--limit N] [--format=table|json]
   usage-query.mjs sql "SELECT ..." [--format=table|json]`);
 }
 

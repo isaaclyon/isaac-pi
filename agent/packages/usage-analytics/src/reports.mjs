@@ -69,6 +69,10 @@ export function runCannedReport(db, name, options = {}) {
       return db.prepare(`
         SELECT 'skill_invocations' AS metric, COUNT(*) AS value FROM skill_invocations ${skillFilter.where}
         UNION ALL
+        SELECT 'skill_loads' AS metric, COUNT(*) AS value FROM skill_loads ${skillFilter.where}
+        UNION ALL
+        SELECT 'observed_skill_file_reads' AS metric, COUNT(*) AS value FROM skill_loads ${buildWhere([skillFilter.where.replace(/^WHERE\s*/, ''), "load_source = 'skill_file_read'"].filter(Boolean))}
+        UNION ALL
         SELECT 'tool_executions' AS metric, COUNT(*) AS value FROM tool_executions ${toolFilter.where}
         UNION ALL
         SELECT 'tool_failures' AS metric, COUNT(*) AS value FROM tool_executions ${buildWhere([toolFilter.where.replace(/^WHERE\s*/, ''), 'ok = 0'].filter(Boolean))}
@@ -85,6 +89,18 @@ export function runCannedReport(db, name, options = {}) {
         ${filter.where}
         GROUP BY skill_name
         ORDER BY invocation_count DESC, last_seen DESC, skill_name ASC
+        LIMIT :limit
+      `).all({ ...filter.params, limit });
+    }
+
+    case 'skill-loads': {
+      const filter = buildEventFilter('repo_root', options);
+      return db.prepare(`
+        SELECT skill_name, load_source, COUNT(*) AS load_count, MAX(ts) AS last_seen
+        FROM skill_loads
+        ${filter.where}
+        GROUP BY skill_name, load_source
+        ORDER BY load_count DESC, last_seen DESC, skill_name ASC, load_source ASC
         LIMIT :limit
       `).all({ ...filter.params, limit });
     }
@@ -139,12 +155,19 @@ export function runCannedReport(db, name, options = {}) {
 
     case 'repos': {
       const skillFilter = buildEventFilter('repo_root', options);
+      const skillLoadFilter = buildEventFilter('repo_root', options);
       const toolFilter = buildEventFilter('repo_root', options);
       return db.prepare(`
         WITH repo_skill_counts AS (
           SELECT repo_root, COUNT(*) AS skill_invocations
           FROM skill_invocations
           ${skillFilter.where}
+          GROUP BY repo_root
+        ),
+        repo_skill_load_counts AS (
+          SELECT repo_root, COUNT(*) AS observed_skill_file_reads
+          FROM skill_loads
+          ${buildWhere([skillLoadFilter.where.replace(/^WHERE\s*/, ''), "load_source = 'skill_file_read'"].filter(Boolean))}
           GROUP BY repo_root
         ),
         repo_tool_counts AS (
@@ -156,19 +179,23 @@ export function runCannedReport(db, name, options = {}) {
         repos AS (
           SELECT repo_root FROM repo_skill_counts
           UNION
+          SELECT repo_root FROM repo_skill_load_counts
+          UNION
           SELECT repo_root FROM repo_tool_counts
         )
         SELECT
           COALESCE(repos.repo_root, '(no repo)') AS repo_root,
           COALESCE(repo_skill_counts.skill_invocations, 0) AS skill_invocations,
+          COALESCE(repo_skill_load_counts.observed_skill_file_reads, 0) AS observed_skill_file_reads,
           COALESCE(repo_tool_counts.tool_executions, 0) AS tool_executions,
-          COALESCE(repo_skill_counts.skill_invocations, 0) + COALESCE(repo_tool_counts.tool_executions, 0) AS total_events
+          COALESCE(repo_skill_counts.skill_invocations, 0) + COALESCE(repo_skill_load_counts.observed_skill_file_reads, 0) + COALESCE(repo_tool_counts.tool_executions, 0) AS total_events
         FROM repos
         LEFT JOIN repo_skill_counts ON repo_skill_counts.repo_root IS repos.repo_root
+        LEFT JOIN repo_skill_load_counts ON repo_skill_load_counts.repo_root IS repos.repo_root
         LEFT JOIN repo_tool_counts ON repo_tool_counts.repo_root IS repos.repo_root
         ORDER BY total_events DESC, repo_root ASC
         LIMIT :limit
-      `).all({ ...skillFilter.params, ...toolFilter.params, limit });
+      `).all({ ...skillFilter.params, ...skillLoadFilter.params, ...toolFilter.params, limit });
     }
 
     default:
