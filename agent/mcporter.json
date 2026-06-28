@@ -6,6 +6,14 @@
       "env": {
         "LINEAR_API_KEY": "!awk '/^LINEAR_API_KEY=/{sub(/^LINEAR_API_KEY=/,\"\"); gsub(/^\"|\"$/,\"\"); print; exit}' ~/.config/lola/runtime/shared.env"
       }
+    },
+    "data-apps": {
+      "command": "bash",
+      "args": [
+        "-lc",
+        "cd /Users/isaaclyon/Developer/lola/bi/generative-data-apps/.worktrees/components && exec pnpm mcp"
+      ],
+      "mode": "index"
     }
   }
 }

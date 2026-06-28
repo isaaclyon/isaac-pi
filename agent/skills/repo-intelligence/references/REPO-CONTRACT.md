@@ -15,17 +15,19 @@ Owns orientation:
 - where major subsystems live
 - where deeper docs live
 
-It should not become the canonical glossary, architecture decision log, or rulebook.
+It should not become the canonical glossary, architecture decision log, roadmap, or rulebook.
 
 ### `ARCHITECTURE.md`
 
-Owns the high-level map:
+Owns the current high-level map:
 
 - system purpose
 - major components and boundaries
 - dependency or data-flow shape
 - stable invariants that future contributors must preserve
-- links to deeper docs
+- links to deeper docs and current ADRs
+
+It should synthesize current decisions, not preserve implementation checklists or rejected historical paths as current truth.
 
 ### Root `CONTEXT.md`
 
@@ -34,6 +36,8 @@ Owns shared repo language:
 - important business or product terms
 - naming discipline
 - cross-cutting concepts that appear in several modules
+
+It should not contain implementation plans, API shapes, file layouts, or speculative features.
 
 ### Root `CONTEXT-MAP.md`
 
@@ -44,7 +48,7 @@ Owns multi-context topology:
 - shared-kernel vs local-dialect boundaries
 - genuine term translations between contexts
 
-Use it when one root glossary is not enough.
+Use it when one root glossary is not enough. Do not duplicate glossary definitions there.
 
 ### Local `CONTEXT.md`
 
@@ -65,6 +69,29 @@ Owns durable decisions:
 
 Prefer `docs/adr/` when starting fresh, but preserve `docs/adrs/` if the repo already uses it coherently.
 
+### `ROADMAP.md`
+
+Owns medium-term direction:
+
+- active themes or phases
+- sequencing assumptions
+- visible trade-offs that are not yet ADR-level decisions
+- pointers to implementation plans when work is active
+
+It should not become a stale task tracker or a substitute for ADRs.
+
+### `docs/plans/`
+
+Owns temporary implementation state:
+
+- active work plans
+- migration checklists
+- verification steps
+- open questions and cut lines
+- follow-ups that should disappear once done
+
+Plans are intentionally less durable than roadmap, architecture, context, and ADRs. Archive or delete completed plans according to repo convention.
+
 ### `docs/guidelines/`
 
 Owns repo-wide engineering standards:
@@ -75,15 +102,26 @@ Owns repo-wide engineering standards:
 - simplicity or review rules
 - language- or framework-specific practices when they are truly repo-wide
 
-### `CLAUDE.md` or equivalent
+### `AGENTS.md`, `CLAUDE.md`, or equivalent
 
-Owns short agent-facing guidance only:
+Owns agent-facing workflow guidance:
 
+- source-of-truth order
 - safety-critical gotchas
 - command surfaces
+- doc-routing rules agents should apply
 - quick pointers to the real owners above
 
 It should not become the hidden source of truth for architecture or domain language.
+
+### Code comments with ADR references
+
+Own local enforcement-seam rationale:
+
+- short comments near non-obvious code that enforces a durable ADR
+- pointers such as `ADR-0023: host bridge boundary`
+
+Do not copy ADR rationale into code comments.
 
 ## One owner per fact
 
@@ -97,8 +135,11 @@ Use this default mapping unless the repo already has a better explicit contract.
 | Multi-context topology | root `CONTEXT-MAP.md` |
 | Local technical dialect | local `CONTEXT.md` |
 | Durable decision rationale | ADRs |
+| Medium-term sequencing | `ROADMAP.md` |
+| Temporary implementation state | `docs/plans/` |
 | Engineering rules | `docs/guidelines/` |
-| Agent-only sharp edges | `CLAUDE.md` |
+| Agent/dev workflow rules | `AGENTS.md` / `CLAUDE.md` |
+| Local ADR enforcement rationale | code comment with ADR reference |
 
 ## Bootstrap decision tree
 
@@ -112,8 +153,13 @@ Start with:
 - `docs/adr/README.md`
 - `docs/adr/template.md`
 - `docs/guidelines/engineering-standards.md`
+- `AGENTS.md` or equivalent if coding agents need repo-specific rules
 
-Then add `CONTEXT-MAP.md` and local `CONTEXT.md` files if the repo grows into several bounded contexts.
+Then add:
+
+- `CONTEXT-MAP.md` and local `CONTEXT.md` files if the repo grows into several bounded contexts
+- `ROADMAP.md` when medium-term sequencing becomes valuable
+- `docs/plans/` when active implementation work needs temporary written state
 
 ### Existing repo
 
@@ -123,7 +169,10 @@ Start by inspecting first. Then choose the smallest repair:
 - duplicated glossary terms in many places → create or clarify `CONTEXT.md`
 - several apps/packages with different dialects → add `CONTEXT-MAP.md` and local contexts
 - repeated design arguments → start ADRs
+- active implementation details scattered through durable docs → move them to `docs/plans/`
+- undocumented roadmap themes → add or repair `ROADMAP.md`
 - undocumented repo standards → add `docs/guidelines/engineering-standards.md`
+- agent-only gotchas hiding in prompts or chat history → add `AGENTS.md` or equivalent
 
 ## Ratchet ideas
 
@@ -133,6 +182,8 @@ Once the structure is in use, small guardrails become worthwhile:
 - `CONTEXT-MAP.md` lists every context
 - ADR numbering stays sequential
 - required root docs exist
+- implementation plans have owners, status, verification steps, and completion/archival rules
 - repo-specific standards point to real checks where practical
+- high-value code enforcement seams reference the owning ADR
 
 Do not automate semantic agreement too early. First make the structure explicit and used.
