@@ -22,6 +22,12 @@ Only include these when they add genuine value. Most ADRs won't need them.
 - **Considered Options** — only when the rejected alternatives are worth remembering
 - **Consequences** — only when non-obvious downstream effects need to be called out
 
+## What not to put in ADRs
+
+Keep temporary execution state out of ADRs. If the conversation produces steps, owners, migration checklists, verification commands, or unresolved tactical questions, put them in `docs/plans/` instead.
+
+Keep current-system summaries out of ADRs unless they are part of the decision context. Use `ARCHITECTURE.md` for the synthesized current shape.
+
 ## Numbering
 
 Scan `docs/adr/` for the highest existing number and increment by one.

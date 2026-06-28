@@ -38,11 +38,17 @@ runtime surfaces / outputs / users
 - Shared language lives in:
 - Local technical dialect lives in:
 - Durable decisions live in:
+- Medium-term roadmap lives in:
+- Temporary implementation plans live in:
 - Engineering standards live in:
+- Agent workflow rules live in:
 
 ## Pointers
 
 - Glossary:
 - ADRs:
+- Roadmap:
+- Plans:
 - Guidelines:
+- Agent instructions:
 - Important package docs:
