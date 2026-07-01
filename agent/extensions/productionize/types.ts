@@ -1,7 +1,6 @@
 import type { CommandFailure, StepId } from "./core.ts";
 import type { PersistedPrInfo, ProductionizeStateSnapshot, WorkflowOutcomeValue } from "./auto.ts";
 
-export type PanelResult = { action: "close" } | { action: "fix"; instruction: string };
 export type WorkflowOutcome = WorkflowOutcomeValue;
 
 export interface ExecResult {

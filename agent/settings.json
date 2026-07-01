@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.80.2",
+  "lastChangelogVersion": "0.80.3",
   "packages": [
     "npm:lsp-pi",
     {
@@ -35,7 +35,8 @@
       ]
     },
     "./packages/pi-interactive-subagents",
-    "npm:@juicesharp/rpiv-advisor"
+    "npm:@juicesharp/rpiv-advisor",
+    "npm:pi-claude-bridge"
   ],
   "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",

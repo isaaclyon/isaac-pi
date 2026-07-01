@@ -50,13 +50,6 @@ export interface CommandFailure {
 	message?: string;
 }
 
-export interface FailurePromptContext {
-	branch?: string;
-	remote?: string;
-	prUrl?: string;
-	checks?: DisplayCheck[];
-	recentLog?: string[];
-}
 
 const CONVENTIONAL_BRANCH_PREFIXES = new Set([
 	"feat",
@@ -253,73 +246,6 @@ export function evaluateChecks(checks: GitHubCheck[]): CheckEvaluation {
 	if (failed.length > 0) return { status: "failed", hasNonSkipped, passed, failed, pending, skipped };
 	if (hasNonSkipped && pending.length === 0) return { status: "passed", hasNonSkipped, passed, failed, pending, skipped };
 	return { status: "pending", hasNonSkipped, passed, failed, pending, skipped };
-}
-
-export function buildFailureContext(failure: CommandFailure, context: FailurePromptContext = {}): string {
-	const commandText = failure.command ? [failure.command, ...(failure.args ?? [])].join(" ") : "(no command)";
-	const checkLines = (context.checks ?? []).map((check) => {
-		const label = checkLabel(check);
-		return check.link ? `- [${check.status}] ${label}: ${check.link}` : `- [${check.status}] ${label}`;
-	});
-
-	return [
-		"## Workflow context",
-		`- Step: ${failure.step}`,
-		context.branch ? `- Branch: ${context.branch}` : undefined,
-		context.remote ? `- Remote: ${context.remote}` : undefined,
-		context.prUrl ? `- PR: ${context.prUrl}` : undefined,
-		"",
-		"## Failed command",
-		`- Command: ${commandText}`,
-		failure.cwd ? `- CWD: ${failure.cwd}` : undefined,
-		failure.code !== undefined ? `- Exit code: ${failure.code}` : undefined,
-		failure.message ? `- Error: ${failure.message}` : undefined,
-		"",
-		"## stdout",
-		truncateForPrompt(failure.stdout ?? "(empty)"),
-		"",
-		"## stderr",
-		truncateForPrompt(failure.stderr ?? "(empty)"),
-		checkLines.length > 0 ? "" : undefined,
-		checkLines.length > 0 ? "## Checks" : undefined,
-		...checkLines,
-		context.recentLog && context.recentLog.length > 0 ? "" : undefined,
-		context.recentLog && context.recentLog.length > 0 ? "## Recent productionize log" : undefined,
-		...(context.recentLog ?? []).slice(-10).map((line) => `- ${line}`),
-	]
-		.filter((line): line is string => line !== undefined)
-		.join("\n");
-}
-
-export function buildFailurePrompt(failure: CommandFailure, context: FailurePromptContext = {}): string {
-	return [
-		"Write a concise instruction for Pi to fix a failed `/productionize` workflow.",
-		"The instruction will be pasted into Pi's user message box. It must tell Pi what failed, what evidence to inspect, and the smallest safe next action.",
-		"Do not include a preamble. Do not ask the user to paste logs manually unless required.",
-		"",
-		buildFailureContext(failure, context),
-	].join("\n");
-}
-
-export function fallbackFixInstruction(failure: CommandFailure): string {
-	const commandText = failure.command ? [failure.command, ...(failure.args ?? [])].join(" ") : "the productionize command";
-	return [
-		`The /productionize workflow failed during the ${failure.step} step.`,
-		`Inspect and fix the failure from: ${commandText}`,
-		failure.code !== undefined ? `Exit code: ${failure.code}` : undefined,
-		failure.stderr?.trim() ? `stderr: ${truncateForPrompt(failure.stderr, 1200)}` : undefined,
-		"Please diagnose the root cause, make the smallest safe fix, and then tell me to rerun /productionize.",
-	]
-		.filter((line): line is string => line !== undefined)
-		.join("\n");
-}
-
-export function truncateForPrompt(value: string, maxChars = 2_000): string {
-	if (value.length <= maxChars) return value;
-	const headLength = Math.floor(maxChars * 0.6);
-	const tailLength = maxChars - headLength - 80;
-	const omitted = value.length - headLength - tailLength;
-	return `${value.slice(0, headLength)}\n\n[... ${omitted} characters omitted ...]\n\n${value.slice(-tailLength)}`;
 }
 
 export function checkLabel(check: GitHubCheck): string {

@@ -2,8 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
 	DEFAULT_STEPS,
-	buildFailureContext,
-	buildFailurePrompt,
 	buildPrBody,
 	classifyCheck,
 	evaluateChecks,
@@ -17,8 +15,6 @@ import {
 	sanitizeBranchName,
 	sanitizeCommitSubject,
 	sanitizePrTitle,
-	truncateForPrompt,
-	type GitHubCheck,
 } from "./core.ts";
 
 test("sanitizeBranchName returns conventional safe branch names", () => {
@@ -138,51 +134,4 @@ test("evaluateChecks requires at least one non-skipped passing check", () => {
 	assert.equal(evaluateChecks([{ name: "lint", bucket: "pass" }]).status, "passed");
 	assert.equal(evaluateChecks([{ name: "lint", bucket: "pass" }, { name: "test", bucket: "pending" }]).status, "pending");
 	assert.equal(evaluateChecks([{ name: "lint", bucket: "pass" }, { name: "test", bucket: "fail" }]).status, "failed");
-});
-
-test("buildFailurePrompt includes failure context and truncates logs", () => {
-	const checks: GitHubCheck[] = [{ name: "test", workflow: "CI", bucket: "fail", state: "FAILURE", link: "https://example.test" }];
-	const prompt = buildFailurePrompt(
-		{
-			step: "CI Checks",
-			command: "gh",
-			args: ["pr", "checks", "123"],
-			cwd: "/repo",
-			code: 1,
-			stdout: "x".repeat(3_000),
-			stderr: "failure details",
-		},
-		{ branch: "feat/thing", prUrl: "https://github.com/acme/repo/pull/123", checks: checks.map((check) => ({ ...check, status: "failed" })) },
-	);
-
-	assert.match(prompt, /Write a concise instruction for Pi/);
-	assert.match(prompt, /Step: CI Checks/);
-	assert.match(prompt, /Command: gh pr checks 123/);
-	assert.match(prompt, /Exit code: 1/);
-	assert.match(prompt, /CI \/ test/);
-	assert.match(prompt, /characters omitted/);
-	assert.ok(prompt.length < 5_000);
-});
-
-test("buildFailureContext keeps raw failure details without manual-instruction framing", () => {
-	const context = buildFailureContext(
-		{
-			step: "Commit",
-			command: "git",
-			args: ["commit", "-m", "fix: thing"],
-			stderr: "hook failed",
-		},
-		{ branch: "feat/thing" },
-	);
-
-	assert.doesNotMatch(context, /Write a concise instruction for Pi/);
-	assert.match(context, /## Workflow context/);
-	assert.match(context, /Command: git commit -m fix: thing/);
-});
-
-test("truncateForPrompt preserves short text and marks omitted long text", () => {
-	assert.equal(truncateForPrompt("short", 10), "short");
-	const long = truncateForPrompt("a".repeat(100), 40);
-	assert.match(long, /characters omitted/);
-	assert.ok(long.length < 120);
 });

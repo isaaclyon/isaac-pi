@@ -1,43 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import { createDefaultSnapshot, decideResumePlan, invalidateForResume } from "./auto.ts";
+import { createDefaultSnapshot } from "./auto.ts";
 import { createInitialState, runWorkflow } from "./workflow.ts";
-import type { RepairAttemptSummary } from "./repair-runner.ts";
 import type { ExecResult } from "./types.ts";
-
-test("merge unchanged head resumes at merge without clearing downstream state", () => {
-	const plan = decideResumePlan("merge", false);
-	assert.equal(plan.resumeFrom, "merge");
-	assert.deepEqual(plan.clearSteps, []);
-	assert.equal(plan.clearPr, false);
-	assert.equal(plan.clearChecks, false);
-});
-
-test("return changed head resumes at push and clears PR plus checks", () => {
-	const state = createDefaultSnapshot(true);
-	state.pr = { number: 42, title: "Repair", url: "https://example.test/pr/42", headRefName: "feat/x", headRefOid: "abc" };
-	state.checks = [{ name: "test", status: "failed" } as any];
-	for (const step of state.steps) step.status = "done";
-
-	const resumed = invalidateForResume(state, decideResumePlan("return", true));
-	assert.equal(resumed.auto.resumeFromCheckpoint, "push");
-	assert.equal(resumed.pr, undefined);
-	assert.deepEqual(resumed.checks, []);
-	assert.equal(resumed.steps.find((step) => step.id === "push")?.status, "pending");
-	assert.equal(resumed.steps.find((step) => step.id === "return")?.status, "pending");
-});
-
-test("auto repair prompt is wired to raw failure context, not the manual handoff prompt", () => {
-	const source = readFileSync(new URL("./workflow.ts", import.meta.url), "utf8");
-	const blockMatch = source.match(/export function buildRepairPrompt[\s\S]*?\n}\n\nasync function appendRepairSummary/);
-	assert.ok(blockMatch, "buildRepairPrompt block should exist");
-	const block = blockMatch[0];
-	assert.match(block, /const context = buildFailureContext\(/);
-	assert.doesNotMatch(block, /const context = buildFailurePrompt\(/);
-	assert.match(block, /Make the smallest code or file changes needed to address the failure\./);
-	assert.match(block, /focused local autofix commands/);
-});
 
 test("scoped commit run executes branch through commit", async () => {
 	const state = createInitialState({ startFrom: "branch", stopAfter: "commit" });
@@ -89,6 +54,45 @@ test("scoped commit run executes branch through commit", async () => {
 		"git diff --cached --stat",
 		"git commit -m chore: productionize changes",
 	]);
+});
+
+test("persisted scoped auto run keeps stopAfter cap when resumed", async () => {
+	const state = createInitialState({ auto: true, startFrom: "branch", stopAfter: "commit" });
+	state.auto.resumeFromCheckpoint = "branch";
+	const seen: Array<{ command: string; args: string[] }> = [];
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{ auto: true },
+		{
+			execCommand: async (command, args) => {
+				seen.push({ command, args: [...args] });
+				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "rev-parse --is-inside-work-tree") return ok("true\n");
+				if (joined === "branch --show-current") return ok("feat/scoped\n");
+				if (["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
+				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
+				if (joined === "ls-files --stage -- agent/settings.json") return ok("100644 abc 0\tagent/settings.json\n");
+				if (joined === "add -A") return ok();
+				if (joined === "diff --cached --name-status") return ok("M\tagent/settings.json\n");
+				if (joined === "diff --cached --stat") return ok(" agent/settings.json | 1 +\n 1 file changed, 1 insertion(+)\n");
+				if (joined === "commit -m chore: productionize changes") return ok();
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+			completeSpark: async () => "chore: productionize changes",
+		},
+	);
+
+	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.auto.stopAfterCheckpoint, "commit");
+	assert.equal(state.steps.find((step) => step.id === "commit")?.status, "done");
+	assert.equal(state.steps.find((step) => step.id === "push")?.status, "skipped");
+	assert.match(state.status, /Commit step finished/);
+	assert.ok(!seen.some(({ command, args }) => command === "git" && args.join(" ") === "push"));
 });
 
 test("scoped pr run executes branch through pr", async () => {
@@ -157,172 +161,6 @@ test("scoped pr run executes branch through pr", async () => {
 	]);
 	assert.match(commandLines[15] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
 	assert.equal(commandLines[16], "gh pr view --json number,title,url,headRefName,headRefOid");
-});
-
-test("pr resume always clears downstream state", () => {
-	const state = createDefaultSnapshot(true);
-	state.pr = { number: 7, title: "PR", url: "https://example.test/pr/7", headRefName: "feat/x", headRefOid: "abc" };
-	for (const step of state.steps) step.status = "done";
-
-	const resumed = invalidateForResume(state, decideResumePlan("pr", false));
-	assert.equal(resumed.auto.resumeFromCheckpoint, "pr");
-	assert.equal(resumed.pr, undefined);
-	assert.equal(resumed.steps.find((step) => step.id === "ci")?.status, "pending");
-	assert.equal(resumed.steps.find((step) => step.id === "merge")?.status, "pending");
-});
-
-test("auto repair stops if the base branch advances during repair", async () => {
-	const state = createDefaultSnapshot(true);
-	state.branch = "feat/test";
-	state.baseBranch = "main";
-	state.auto.activeCheckpoint = "ci";
-	state.auto.currentRepair = {
-		stepId: "ci",
-		attempt: 1,
-		maxAttempts: 3,
-		status: "running",
-		lastPrompt: "fix it",
-	};
-
-	let repairCalls = 0;
-	await runWorkflow(
-		createFakePi(),
-		createFakeContext(),
-		state,
-		new AbortController().signal,
-		() => undefined,
-		{ auto: true },
-		{
-			repairRunnerFactory: () => ({
-				abort() {},
-				async start() {
-					repairCalls += 1;
-					return makeSummary({ stepId: "ci", baseBranch: "main", baseShaBefore: "base-before", patch: "" });
-				},
-			}),
-			execCommand: async (command, args) => {
-				assert.equal(command, "git");
-				assert.deepEqual(args, ["rev-parse", "main"]);
-				return ok("base-after\n");
-			},
-		},
-	);
-
-	assert.equal(repairCalls, 1);
-	assert.equal(state.outcome, "failed");
-	assert.equal(state.auto.currentRepair, undefined);
-	assert.match(state.failure?.message ?? "", /base branch main advanced during repair/i);
-	assert.match(state.status, /Productionize failed during CI Checks/);
-	assert.equal(state.steps.find((step) => step.id === "ci")?.status, "failed");
-});
-
-test("auto repair stops if the pull request closes or merges during repair", async () => {
-	const state = createDefaultSnapshot(true);
-	state.branch = "feat/test";
-	state.baseBranch = "main";
-	state.pr = { number: 99, title: "PR", url: "https://example.test/pr/99", headRefName: "feat/test", headRefOid: "head-oid" };
-	state.auto.activeCheckpoint = "merge";
-	state.auto.currentRepair = {
-		stepId: "merge",
-		attempt: 1,
-		maxAttempts: 3,
-		status: "running",
-		lastPrompt: "fix it",
-	};
-
-	let repairCalls = 0;
-	const seen: Array<{ command: string; args: string[] }> = [];
-	await runWorkflow(
-		createFakePi(),
-		createFakeContext(),
-		state,
-		new AbortController().signal,
-		() => undefined,
-		{ auto: true },
-		{
-			repairRunnerFactory: () => ({
-				abort() {},
-				async start() {
-					repairCalls += 1;
-					return makeSummary({ stepId: "merge", baseBranch: "main", baseShaBefore: "base-before", patch: "" });
-				},
-			}),
-			execCommand: async (command, args) => {
-				seen.push({ command, args: [...args] });
-				if (command === "git" && args[0] === "rev-parse") return ok("base-before\n");
-				if (command === "gh" && args.join(" ") === "pr view 99 --json state,mergedAt") return ok('{"state":"CLOSED","mergedAt":null}\n');
-				throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
-			},
-		},
-	);
-
-	assert.equal(repairCalls, 1);
-	assert.deepEqual(seen, [
-		{ command: "git", args: ["rev-parse", "main"] },
-		{ command: "gh", args: ["pr", "view", "99", "--json", "state,mergedAt"] },
-	]);
-	assert.equal(state.outcome, "failed");
-	assert.equal(state.auto.currentRepair, undefined);
-	assert.match(state.failure?.message ?? "", /pull request is no longer open/i);
-	assert.match(state.status, /Productionize failed during Pull Request/);
-});
-
-test("reconcile clears a persisted repair without lastPrompt and resumes from the saved checkpoint", async () => {
-	const state = createDefaultSnapshot(true);
-	state.branch = "feat/test";
-	state.baseBranch = "main";
-	state.auto.resumeFromCheckpoint = "push";
-	state.auto.currentRepair = {
-		stepId: "push",
-		attempt: 2,
-		maxAttempts: 3,
-		status: "running",
-	};
-	for (const step of state.steps) {
-		if (step.id === "branch" || step.id === "commit") step.status = "done";
-	}
-
-	let repairCalls = 0;
-	const seen: Array<{ command: string; args: string[] }> = [];
-	await runWorkflow(
-		createFakePi(),
-		createFakeContext(),
-		state,
-		new AbortController().signal,
-		() => undefined,
-		{ auto: true },
-		{
-			repairRunnerFactory: () => ({
-				abort() {},
-				async start() {
-					repairCalls += 1;
-					return makeSummary();
-				},
-			}),
-			execCommand: async (command, args) => {
-				seen.push({ command, args: [...args] });
-				if (command === "git" && args.join(" ") === "rev-parse --abbrev-ref --symbolic-full-name @{u}") return ok("origin/feat/test\n");
-				if (command === "git" && args.join(" ") === "push") return ok();
-				if (command === "git" && args.join(" ") === "fetch origin main") return ok();
-				if (command === "git" && args.join(" ") === "diff --name-status FETCH_HEAD...HEAD") return ok();
-				if (command === "git" && args.join(" ") === "rev-list --count FETCH_HEAD..HEAD") return ok("0\n");
-				throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
-			},
-		},
-	);
-
-	assert.equal(repairCalls, 0);
-	assert.equal(state.outcome, "succeeded");
-	assert.equal(state.auto.currentRepair, undefined);
-	assert.equal(state.auto.resumeFromCheckpoint, undefined);
-	assert.match(state.status, /no productionize changes to merge/i);
-	assert.deepEqual(seen, [
-		{ command: "git", args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"] },
-		{ command: "git", args: ["push"] },
-		{ command: "git", args: ["fetch", "origin", "main"] },
-		{ command: "git", args: ["diff", "--name-status", "FETCH_HEAD...HEAD"] },
-		{ command: "git", args: ["rev-list", "--count", "FETCH_HEAD..HEAD"] },
-	]);
 });
 
 test("protected branches with local-only commits fail before productionize branches off", async () => {
@@ -600,34 +438,4 @@ function createReturnState() {
 	state.pr = { number: 16, title: "PR", url: "https://example.test/pr/16", headRefName: "feat/test", headRefOid: "abc" };
 	for (const step of state.steps) step.status = step.id === "return" ? "pending" : "done";
 	return state;
-}
-
-function makeSummary(overrides: Partial<RepairAttemptSummary> = {}): RepairAttemptSummary {
-	return {
-		stepId: overrides.stepId ?? "ci",
-		headShaBefore: overrides.headShaBefore ?? "head-before",
-		baseBranch: overrides.baseBranch ?? "main",
-		baseShaBefore: overrides.baseShaBefore ?? "base-before",
-		sessionFile: overrides.sessionFile ?? "/tmp/repair.jsonl",
-		childToken: overrides.childToken ?? "token",
-		spawnTimestamp: overrides.spawnTimestamp ?? "2026-06-05T00:00:00.000Z",
-		outcome: overrides.outcome ?? "succeeded",
-		summary: overrides.summary ?? "repair succeeded",
-		patchFile: overrides.patchFile ?? "/tmp/repair.patch",
-		patch: overrides.patch ?? "",
-		tempRoot: overrides.tempRoot ?? "/tmp/repair-root",
-		tempWorktree: overrides.tempWorktree ?? "/tmp/repair-worktree",
-		verifiedCommand: overrides.verifiedCommand ?? {
-			command: "pi",
-			args: [],
-			cwd: "/tmp/repair-worktree",
-			tools: ["read", "edit", "write", "bash"],
-		},
-		protocol: overrides.protocol ?? {
-			sawSessionHeader: true,
-			sawAssistantMessageEnd: true,
-			sawToolExecutionEnd: true,
-			terminalState: "completed",
-		},
-	};
 }

@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	buildRetryKey,
 	createDefaultSnapshot,
-	decideResumePlan,
-	invalidateForResume,
 	parseProductionizeArgs,
+	prepareStateForModelRun,
 	reconstructAutoState,
-	recordRetryAttempt,
 	serializeStateEntry,
-	serializeSummaryEntry,
 } from "./auto.ts";
 
 test("/productionize args parse auto and single-stage manual targets", () => {
@@ -22,62 +18,63 @@ test("/productionize args parse auto and single-stage manual targets", () => {
 	assert.match(parseProductionizeArgs("auto commit").usageError ?? "", /Usage/);
 });
 
-test("retry keys increment for same step and sha but reset for a new sha", () => {
-	let counts: Record<string, number> = {};
-	const firstKey = buildRetryKey("ci", "abc123");
-	counts = recordRetryAttempt(counts, firstKey);
-	counts = recordRetryAttempt(counts, firstKey);
-	const secondKey = buildRetryKey("ci", "def456");
-	counts = recordRetryAttempt(counts, secondKey);
+test("prepareStateForModelRun rewinds late failures through commit and clears stale failure state", () => {
+	const state = createDefaultSnapshot(true);
+	state.outcome = "failed";
+	state.status = "Productionize failed during CI Checks.";
+	state.failure = { step: "CI Checks", message: "Tests failed" };
+	state.cancelRequested = true;
+	state.auto.activeCheckpoint = "ci";
+	state.auto.resumeFromCheckpoint = "ci";
+	state.auto.startFromCheckpoint = "branch";
+	state.auto.stopAfterCheckpoint = "ci";
 
-	assert.equal(counts[firstKey], 2);
-	assert.equal(counts[secondKey], 1);
+	const next = prepareStateForModelRun(state);
+
+	assert.equal(next.outcome, "running");
+	assert.equal(next.status, "Resuming productionize from commit...");
+	assert.equal(next.failure, undefined);
+	assert.equal(next.cancelRequested, false);
+	assert.equal(next.auto.enabled, true);
+	assert.equal(next.auto.activeCheckpoint, undefined);
+	assert.equal(next.auto.resumeFromCheckpoint, "commit");
+	assert.equal(next.auto.startFromCheckpoint, "branch");
+	assert.equal(next.auto.stopAfterCheckpoint, "ci");
 });
 
-test("resume plan for changed CI head resumes from push and clears downstream state", () => {
-	const state = createDefaultSnapshot(true);
-	state.pr = { number: 12, title: "PR", url: "https://example.test/pr/12", headRefName: "feat/x", headRefOid: "abc" };
-	state.checks = [{ name: "lint", status: "failed" } as any];
-	for (const step of state.steps) step.status = "done";
+test("prepareStateForModelRun keeps branch and return resumes narrow", () => {
+	const branchFailure = createDefaultSnapshot(true);
+	branchFailure.auto.resumeFromCheckpoint = "branch";
+	assert.equal(prepareStateForModelRun(branchFailure).auto.resumeFromCheckpoint, "branch");
 
-	const next = invalidateForResume(state, decideResumePlan("ci", true));
-	assert.equal(next.auto.resumeFromCheckpoint, "push");
-	assert.equal(next.pr, undefined);
-	assert.deepEqual(next.checks, []);
-	assert.equal(next.steps.find((step) => step.id === "push")?.status, "pending");
-	assert.equal(next.steps.find((step) => step.id === "pr")?.status, "pending");
-	assert.equal(next.steps.find((step) => step.id === "merge")?.status, "pending");
+	const returnFailure = createDefaultSnapshot(true);
+	returnFailure.auto.resumeFromCheckpoint = "return";
+	assert.equal(prepareStateForModelRun(returnFailure).auto.resumeFromCheckpoint, "return");
 });
 
-test("reconstruction restores retry state, side-session reference, and repair summaries", () => {
-	const state = createDefaultSnapshot(true);
-	state.auto.retryCounts = { "ci:abc": 2 };
-	state.auto.latestSideSessionFile = "/tmp/repair.jsonl";
-	state.auto.currentRepair = {
-		stepId: "ci",
-		attempt: 2,
-		maxAttempts: 3,
-		status: "running",
-		sessionFile: "/tmp/repair.jsonl",
-	};
-	const summary = {
-		stepId: "ci" as const,
-		attempt: 2,
-		headShaBefore: "abc",
-		outcome: "failed" as const,
-		sessionFile: "/tmp/repair.jsonl",
-		persistedAt: "2026-06-04T00:00:00.000Z",
-		summary: "Repair failed",
-	};
+test("reconstruction restores latest auto run state", () => {
+	const state = createDefaultSnapshot(true) as any;
+	state.auto.startTimestamp = "2026-06-04T00:00:00.000Z";
+	state.auto.activeCheckpoint = "ci";
+	state.auto.resumeFromCheckpoint = "ci";
+	state.auto.startFromCheckpoint = "branch";
+	state.auto.stopAfterCheckpoint = "ci";
+	state.auto.currentRepair = { stepId: "ci" };
+	state.fixInstruction = "legacy fix text";
+	state.branch = "feat/test";
+	state.status = "Polling GitHub checks...";
 
 	const restored = reconstructAutoState([
 		{ type: "custom", customType: "productionize-auto-state", data: serializeStateEntry(state, "2026-06-04T00:00:00.000Z") },
-		{ type: "custom", customType: "productionize-auto-state", data: serializeSummaryEntry(summary, summary.persistedAt) },
 	]);
 
 	assert.equal(restored.state?.auto.reconstructed, true);
-	assert.equal(restored.state?.auto.retryCounts["ci:abc"], 2);
-	assert.equal(restored.state?.auto.latestSideSessionFile, "/tmp/repair.jsonl");
-	assert.equal(restored.state?.auto.lastRepairSummary?.summary, "Repair failed");
-	assert.equal(restored.summaries.length, 1);
+	assert.equal(restored.state?.auto.enabled, true);
+	assert.equal(restored.state?.auto.activeCheckpoint, "ci");
+	assert.equal(restored.state?.auto.resumeFromCheckpoint, "ci");
+	assert.equal(restored.state?.auto.startFromCheckpoint, "branch");
+	assert.equal(restored.state?.auto.stopAfterCheckpoint, "ci");
+	assert.equal(restored.state?.branch, "feat/test");
+	assert.equal("currentRepair" in (restored.state?.auto ?? {}), false);
+	assert.equal("fixInstruction" in (restored.state ?? {}), false);
 });
