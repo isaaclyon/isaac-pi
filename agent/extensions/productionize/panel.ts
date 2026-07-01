@@ -1,7 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { checkLabel, type DisplayCheck, type StepStatus, type WorkflowStep } from "./core.ts";
-import type { PanelResult, ProductionizeState, WorkflowOutcome } from "./types.ts";
+import type { ProductionizeState, WorkflowOutcome } from "./types.ts";
 
 export class ProductionizePanel {
 	private cachedWidth?: number;
@@ -9,13 +8,13 @@ export class ProductionizePanel {
 	private cachedLines?: string[];
 	private readonly state: ProductionizeState;
 	private readonly theme: Theme;
-	private readonly done: (result: PanelResult) => void;
+	private readonly done: (result: { action: "close" | "handoff" }) => void;
 	private readonly abort: () => void;
 
 	constructor(
 		state: ProductionizeState,
 		theme: Theme,
-		done: (result: PanelResult) => void,
+		done: (result: { action: "close" | "handoff" }) => void,
 		abort: () => void,
 	) {
 		this.state = state;
@@ -35,13 +34,11 @@ export class ProductionizePanel {
 			return;
 		}
 
-		if (!this.state.auto.enabled && this.state.outcome === "failed" && (data === "f" || data === "F" || matchesKey(data, "enter"))) {
-			if (this.state.fixInstruction) {
-				this.done({ action: "fix", instruction: this.state.fixInstruction });
-			}
+
+		if (this.state.outcome === "failed" && this.state.failure && (data === "f" || data === "F")) {
+			this.done({ action: "handoff" });
 			return;
 		}
-
 		if (matchesKey(data, "escape") || matchesKey(data, "enter") || data === "q" || data === "Q") {
 			this.done({ action: "close" });
 		}
@@ -57,7 +54,6 @@ export class ProductionizePanel {
 			returnToBranch: this.state.returnToBranch,
 			pr: this.state.pr?.url,
 			failure: this.state.failure,
-			fix: this.state.fixInstruction,
 			cancel: this.state.cancelRequested,
 			auto: this.state.auto,
 			log: this.state.log.slice(-8),
@@ -80,7 +76,6 @@ export class ProductionizePanel {
 
 		for (const step of this.state.steps) {
 			add(this.renderStep(step));
-			for (const detail of this.renderAutoStepDetails(step.id)) add(detail);
 		}
 		add("");
 
@@ -145,21 +140,6 @@ export class ProductionizePanel {
 		return `${this.theme.fg(color, `${icon} ${label}`)}${link}`;
 	}
 
-	private renderAutoStepDetails(stepId: string): string[] {
-		if (!this.state.auto.enabled) return [];
-		const repair = this.state.auto.currentRepair;
-		if (!repair || repair.stepId !== stepId) return [];
-		const lines: string[] = [];
-		const prefix = this.theme.fg("dim", "   ↳ ");
-		lines.push(`${prefix}${this.theme.fg("warning", `repair attempt ${repair.attempt}/${repair.maxAttempts}`)}`);
-		lines.push(`${prefix}${this.theme.fg("dim", `status: ${repair.status}`)}`);
-		if (repair.sessionFile) lines.push(`${prefix}${this.theme.fg("dim", `side session: ${repair.sessionFile}`)}`);
-		if (repair.lastSeenEventType) lines.push(`${prefix}${this.theme.fg("dim", `last event: ${repair.lastSeenEventType}`)}`);
-		if (repair.resumeCheckpoint) lines.push(`${prefix}${this.theme.fg("dim", `resuming from ${repair.resumeCheckpoint}`)}`);
-		if (repair.lastSummarizedText) lines.push(`${prefix}${this.theme.fg("dim", repair.lastSummarizedText)}`);
-		return lines;
-	}
-
 	private renderFailure(add: (line?: string) => void): void {
 		const failure = this.state.failure;
 		if (!failure) return;
@@ -169,18 +149,8 @@ export class ProductionizePanel {
 		if (failure.code !== undefined) add(`Exit code: ${failure.code}`);
 		if (failure.message) add(`Error: ${failure.message}`);
 		add("");
-		if (this.state.auto.enabled) {
-			const summary = this.state.auto.lastRepairSummary;
-			if (summary) add(`Latest repair: ${summary.outcome} attempt ${summary.attempt} (${summary.stepId})`);
-			add(this.theme.fg("dim", "Esc closes the panel after the run stops."));
-			return;
-		}
-		add(this.theme.fg("accent", this.theme.bold("Fix instruction preview")));
-		for (const line of (this.state.fixInstruction ?? "Generating fix instructions...").split("\n").slice(0, 12)) {
-			add(`  ${line}`);
-		}
-		add("");
-		add(this.theme.fg("success", "[F] Fix in Pi") + this.theme.fg("dim", "  Esc close"));
+		add(this.theme.fg("dim", "Press F to ask the model to fix this in-band."));
+		add(this.theme.fg("dim", "Press Enter or Escape to close."));
 	}
 }
 
@@ -212,4 +182,44 @@ function statusColor(outcome: WorkflowOutcome): "success" | "error" | "warning" 
 		default:
 			return "accent";
 	}
+}
+
+function matchesKey(data: string, key: "escape" | "enter"): boolean {
+	if (key === "escape") return data === "\u001B" || data === "\x1B" || data === "\u001B\u001B";
+	return data === "\r" || data === "\n" || data === "\r\n";
+}
+
+function truncateToWidth(line: string, width: number): string {
+	if (width <= 0) return "";
+	let visible = 0;
+	let index = 0;
+	let sawAnsi = false;
+	while (index < line.length && visible < width) {
+		const ansi = /^\x1B\[[0-?]*[ -/]*[@-~]/.exec(line.slice(index));
+		if (ansi) {
+			sawAnsi = true;
+			index += ansi[0].length;
+			continue;
+		}
+		const codePoint = line.codePointAt(index);
+		if (codePoint === undefined) break;
+		visible += isWideCodePoint(codePoint) ? 2 : 1;
+		if (visible > width) break;
+		index += codePoint > 0xffff ? 2 : 1;
+	}
+	if (index >= line.length) return line;
+	return `${line.slice(0, index)}${sawAnsi ? "\x1B[0m" : ""}`;
+}
+
+function isWideCodePoint(codePoint: number): boolean {
+	return (
+		(codePoint >= 0x1100 && codePoint <= 0x115f) ||
+		(codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
+		(codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+		(codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+		(codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+		(codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+		(codePoint >= 0xff00 && codePoint <= 0xff60) ||
+		(codePoint >= 0xffe0 && codePoint <= 0xffe6)
+	);
 }

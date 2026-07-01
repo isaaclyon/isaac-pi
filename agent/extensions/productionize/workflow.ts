@@ -1,27 +1,14 @@
-import { complete, type Message } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
-	AUTO_RETRY_LIMIT,
 	PRODUCTIONIZE_STATE_CUSTOM_TYPE,
-	PRODUCTIONIZE_SUMMARY_MESSAGE_TYPE,
-	buildRetryKey,
 	createDefaultSnapshot,
-	decideResumePlan,
-	invalidateForResume,
-	recordRetryAttempt,
 	serializeStateEntry,
-	serializeSummaryEntry,
-	type ActiveRepairState,
 	type ProductionizeStateSnapshot,
-	type RepairSummaryEntry,
 } from "./auto.ts";
 import {
-	buildFailureContext,
-	buildFailurePrompt,
 	buildPrBody,
 	checkLabel,
 	evaluateChecks,
-	fallbackFixInstruction,
 	hasDirtyFiles,
 	hasPrChanges,
 	isLikelyNoChecks,
@@ -38,7 +25,6 @@ import {
 	type StepId,
 	type StepStatus,
 } from "./core.ts";
-import { cleanupRepairArtifacts, createRepairRunner, type RepairAttemptSummary, type RepairRunner } from "./repair-runner.ts";
 import { WorkflowFailure, type ExecResult, type PrInfo, type ProductionizeState } from "./types.ts";
 
 const SPARK_PROVIDER = "openai-codex";
@@ -50,9 +36,13 @@ const CHECK_TIMEOUT_MS = 30 * 60_000;
 const NO_CHECKS_GRACE_MS = 20_000;
 const CHECK_FIELDS = "name,workflow,bucket,state,link,description,startedAt,completedAt";
 const PR_FIELDS = "number,title,url,headRefName,headRefOid";
-const SUMMARY_FIELDS = "state,mergedAt";
 const STEP_ORDER: StepId[] = ["branch", "commit", "push", "pr", "ci", "merge", "return"];
-const COMMIT_DOWNSTREAM: StepId[] = ["push", "pr", "ci", "merge", "return"];
+
+type SparkMessage = {
+	role: "user";
+	content: Array<{ type: "text"; text: string }>;
+	timestamp: number;
+};
 
 export interface ProductionizeRunOptions {
 	auto?: boolean;
@@ -61,7 +51,6 @@ export interface ProductionizeRunOptions {
 }
 
 export interface WorkflowHooks {
-	repairRunnerFactory?: () => RepairRunner;
 	execCommand?: (
 		command: string,
 		args: string[],
@@ -80,7 +69,6 @@ interface WorkflowRuntime {
 	signal: AbortSignal;
 	render: () => void;
 	hooks: WorkflowHooks;
-	repairRunner: RepairRunner;
 }
 
 interface StepResult {
@@ -90,6 +78,8 @@ interface StepResult {
 
 export function createInitialState(options: ProductionizeRunOptions = {}): ProductionizeState {
 	const state = createDefaultSnapshot(Boolean(options.auto));
+	state.auto.startFromCheckpoint = options.startFrom;
+	state.auto.stopAfterCheckpoint = options.stopAfter;
 	applyStepScope(state, options);
 	return state;
 }
@@ -104,6 +94,11 @@ export async function runWorkflow(
 	hooks: WorkflowHooks = {},
 ): Promise<void> {
 	state.auto.enabled = options.auto ?? state.auto.enabled;
+	state.auto.startFromCheckpoint = options.startFrom ?? state.auto.startFromCheckpoint;
+	state.auto.stopAfterCheckpoint = options.stopAfter ?? state.auto.stopAfterCheckpoint;
+	const startFrom = options.startFrom ?? state.auto.startFromCheckpoint;
+	const stopAfter = options.stopAfter ?? state.auto.stopAfterCheckpoint;
+	applyStepScope(state, { startFrom, stopAfter });
 	const runtime: WorkflowRuntime = {
 		pi,
 		ctx,
@@ -111,7 +106,6 @@ export async function runWorkflow(
 		signal,
 		render,
 		hooks,
-		repairRunner: hooks.repairRunnerFactory?.() ?? createRepairRunner(),
 	};
 
 	try {
@@ -119,13 +113,7 @@ export async function runWorkflow(
 			state.auto.startTimestamp ??= timestamp(hooks);
 			await persistState(runtime);
 		}
-
-		if (state.auto.enabled && shouldReconcileRepair(state)) {
-			const recovered = await reconcileActiveRepair(runtime);
-			if (!recovered) return;
-		}
-
-		let currentStep = state.auto.resumeFromCheckpoint ?? options.startFrom ?? firstPendingStep(state) ?? "branch";
+		let currentStep = state.auto.resumeFromCheckpoint ?? startFrom ?? firstPendingStep(state) ?? "branch";
 		while (true) {
 			if (signal.aborted || state.cancelRequested) throw new Error("cancelled");
 			state.auto.activeCheckpoint = currentStep;
@@ -142,7 +130,7 @@ export async function runWorkflow(
 					render();
 					return;
 				}
-				if (options.stopAfter === currentStep) {
+				if (stopAfter === currentStep) {
 					markScopedSuccess(state, currentStep);
 					if (state.auto.enabled) await persistState(runtime);
 					render();
@@ -152,20 +140,7 @@ export async function runWorkflow(
 				continue;
 			} catch (error) {
 				if (signal.aborted || state.cancelRequested) throw error;
-				const failure = error instanceof WorkflowFailure ? error : unknownFailure(currentStep, labelForStep(currentStep), error);
-				if (state.auto.enabled || isAutofixableFailure(state, failure.failure)) {
-					try {
-						const recovered = await attemptAutoRepair(runtime, failure, state.auto.enabled ? AUTO_RETRY_LIMIT : 1);
-						if (recovered) {
-							currentStep = state.auto.resumeFromCheckpoint ?? currentStep;
-							continue;
-						}
-					} catch (repairError) {
-						if (state.auto.enabled) throw repairError;
-						log(state, "Automatic autofix retry failed; falling back to manual fix preview");
-					}
-				}
-				throw failure;
+				throw error instanceof WorkflowFailure ? error : unknownFailure(currentStep, labelForStep(currentStep), error);
 			}
 		}
 	} catch (error) {
@@ -173,7 +148,6 @@ export async function runWorkflow(
 			state.outcome = "cancelled";
 			state.status = "Productionize cancelled.";
 			markRunningCancelled(state);
-			state.auto.currentRepair = undefined;
 			if (state.auto.enabled) await persistState(runtime);
 			render();
 			return;
@@ -181,15 +155,11 @@ export async function runWorkflow(
 
 		const failure = error instanceof WorkflowFailure ? error : unknownFailure(state.auto.activeCheckpoint ?? "branch", "Workflow", error);
 		stateForFailure(runtime, failure);
-		state.auto.currentRepair = undefined;
 		if (state.auto.enabled) {
 			await persistState(runtime);
 			render();
 			return;
 		}
-		render();
-		state.fixInstruction = await generateFixInstruction(runtime, failure.failure);
-		log(state, "Generated fix instruction preview");
 		render();
 	}
 }
@@ -610,305 +580,6 @@ async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, b
 	});
 }
 
-async function attemptAutoRepair(runtime: WorkflowRuntime, failure: WorkflowFailure, maxAttempts = AUTO_RETRY_LIMIT): Promise<boolean> {
-	const classification = classifyFailure(failure.failure);
-	if (classification === "unrecoverable") {
-		stateForFailure(runtime, failure);
-		return false;
-	}
-
-	const { state, ctx } = runtime;
-	const cwd = ctx.cwd;
-	const headShaBefore = await revParse(runtime, cwd, "HEAD");
-	const baseBranch = state.baseBranch ?? (!state.auto.enabled ? state.branch : undefined) ?? (await detectDefaultBranch(runtime, cwd));
-	state.baseBranch = baseBranch;
-	const retryKey = buildRetryKey(failure.stepId, headShaBefore);
-	const attempt = (state.auto.retryCounts[retryKey] ?? 0) + 1;
-	if (attempt > maxAttempts) {
-		state.failure = {
-			...failure.failure,
-			message: `Auto repair exhausted ${maxAttempts} attempt${maxAttempts === 1 ? "" : "s"} for ${retryKey}.`,
-		};
-		state.outcome = "failed";
-		state.status = state.failure.message;
-		state.auto.currentRepair = undefined;
-		setStep(state, failure.stepId, "failed", state.failure.message);
-		log(state, state.failure.message);
-		await persistState(runtime);
-		return false;
-	}
-
-	const prompt = buildRepairPrompt(state, failure.failure, failure.stepId, headShaBefore, attempt, maxAttempts);
-	state.auto.latestHandoffPrompt = prompt;
-	state.auto.retryCounts = recordRetryAttempt(state.auto.retryCounts, retryKey);
-	state.auto.currentRepair = {
-		stepId: failure.stepId,
-		attempt,
-		maxAttempts,
-		status: "starting",
-		headShaBefore,
-		baseBranch,
-		sessionFile: state.auto.latestSideSessionFile,
-		lastPrompt: prompt,
-	};
-	state.status = `Starting repair attempt ${attempt}/${maxAttempts} for ${failure.stepId}...`;
-	log(state, state.status);
-	await persistState(runtime);
-	await update(runtime);
-
-	const summary = await runRepairAttempt(runtime, failure.stepId, prompt, attempt);
-	return await resumeAfterRepair(runtime, failure.stepId, summary);
-}
-
-async function reconcileActiveRepair(runtime: WorkflowRuntime): Promise<boolean> {
-	const repair = stateRepair(runtime.state);
-	if (!repair) return true;
-	const prompt = repair.lastPrompt;
-	if (!prompt) {
-		runtime.state.auto.currentRepair = undefined;
-		return true;
-	}
-	const stepId = repair.stepId;
-	const summary = await runRepairAttempt(runtime, stepId, prompt, repair.attempt, repair);
-	return await resumeAfterRepair(runtime, stepId, summary);
-}
-
-async function runRepairAttempt(
-	runtime: WorkflowRuntime,
-	stepId: StepId,
-	prompt: string,
-	attempt: number,
-	previousRepair?: ActiveRepairState,
-): Promise<RepairAttemptSummary> {
-	const { state, ctx, signal } = runtime;
-	const cwd = ctx.cwd;
-	const branch = requiredState(state.branch, "Auto repair requires current branch state.");
-	const baseBranch = state.baseBranch ?? (await detectDefaultBranch(runtime, cwd));
-	let summary: RepairAttemptSummary | undefined;
-	try {
-		summary = await runtime.repairRunner.start(
-			{ cwd, stepId, branch, baseBranch, prompt, model: modelSpecifier(ctx), abortSignal: signal, previousRepair },
-			(update) => {
-				const current = state.auto.currentRepair;
-				if (!current) return;
-				state.auto.currentRepair = {
-					...current,
-					status: current.status === "starting" ? "running" : current.status,
-					sessionFile: update.sessionFile ?? current.sessionFile,
-					childToken: update.childToken ?? current.childToken,
-					spawnTimestamp: update.spawnTimestamp ?? current.spawnTimestamp,
-					pid: update.pid ?? current.pid,
-					verifiedCommand: update.verifiedCommand ?? current.verifiedCommand,
-					tempWorktree: update.tempWorktree ?? current.tempWorktree,
-					lastSeenEventType: update.lastSeenEventType ?? current.lastSeenEventType,
-					lastSummarizedText: update.lastSummarizedText ?? current.lastSummarizedText,
-				};
-				state.auto.latestSideSessionFile = state.auto.currentRepair.sessionFile;
-				void persistState(runtime);
-				runtime.render();
-			},
-		);
-		return summary;
-	} finally {
-		if (summary?.sessionFile) state.auto.latestSideSessionFile = summary.sessionFile;
-	}
-}
-
-async function resumeAfterRepair(runtime: WorkflowRuntime, failedStepId: StepId, summary: RepairAttemptSummary): Promise<boolean> {
-	const { state, ctx } = runtime;
-	const cwd = ctx.cwd;
-	try {
-		const maxAttempts = state.auto.currentRepair?.maxAttempts ?? AUTO_RETRY_LIMIT;
-		state.auto.currentRepair = {
-			stepId: failedStepId,
-			attempt: state.auto.currentRepair?.attempt ?? 1,
-			maxAttempts,
-			status: summary.outcome === "cancelled" ? "cancelled" : "importing",
-			headShaBefore: summary.headShaBefore,
-			baseBranch: summary.baseBranch,
-			baseShaBefore: summary.baseShaBefore,
-			sessionFile: summary.sessionFile,
-			childToken: summary.childToken,
-			spawnTimestamp: summary.spawnTimestamp,
-			verifiedCommand: summary.verifiedCommand,
-			tempWorktree: summary.tempWorktree,
-			lastSeenEventType: summary.lastSeenEventType,
-			lastSummarizedText: summary.lastSummarizedText,
-		};
-		await appendRepairSummary(runtime, summary, state.auto.currentRepair.attempt);
-		if (summary.outcome === "cancelled") {
-			state.cancelRequested = true;
-			state.status = "Productionize cancelled during auto repair.";
-			state.auto.currentRepair = undefined;
-			await persistState(runtime);
-			return false;
-		}
-		if (summary.outcome === "failed") {
-			state.outcome = "failed";
-			state.failure = {
-				step: labelForStep(failedStepId),
-				message: summary.summary,
-			};
-			state.status = summary.summary;
-			state.auto.currentRepair = undefined;
-			setStep(state, failedStepId, "failed", summary.summary);
-			log(state, summary.summary);
-			await persistState(runtime);
-			await update(runtime);
-			return false;
-		}
-
-		await verifyResumeSafety(runtime, summary.baseBranch, summary.baseShaBefore);
-		if (summary.patch.trim()) {
-			await importRepairPatch(runtime, summary.patchFile);
-		}
-		const hasDirty = await repoHasDirtyFiles(runtime, cwd);
-		let plan = decideResumePlan(failedStepId, false);
-		if (hasDirty && failedStepId !== "branch") {
-			plan = { resumeFrom: "commit", clearSteps: [...COMMIT_DOWNSTREAM], clearPr: true, clearChecks: true };
-		}
-		const nextState = invalidateForResume(state, plan) as ProductionizeState;
-		Object.assign(state, nextState);
-		state.auto.currentRepair = {
-			...(state.auto.currentRepair ?? { stepId: failedStepId, attempt: 1, maxAttempts, status: "resuming" as const }),
-			status: "resuming",
-			resumeCheckpoint: plan.resumeFrom,
-		};
-		state.status = `Resuming from ${plan.resumeFrom} after repair attempt ${state.auto.currentRepair.attempt}/${maxAttempts}...`;
-		state.failure = undefined;
-		state.outcome = "running";
-		log(state, state.status);
-		await persistState(runtime);
-		await update(runtime);
-		return true;
-	} finally {
-		await cleanupRepairArtifacts(summary).catch(() => undefined);
-	}
-}
-
-async function verifyResumeSafety(runtime: WorkflowRuntime, baseBranch: string, baseShaBefore: string): Promise<void> {
-	const { state, ctx } = runtime;
-	const cwd = ctx.cwd;
-	const baseShaAfter = await revParse(runtime, cwd, baseBranch);
-	if (baseShaAfter !== baseShaBefore) {
-		throw new WorkflowFailure(state.auto.activeCheckpoint ?? "branch", {
-			step: labelForStep(state.auto.activeCheckpoint ?? "branch"),
-			message: `Auto repair stopped because base branch ${baseBranch} advanced during repair.`,
-		});
-	}
-	if (!state.pr) return;
-	const result = await execOrFail(runtime, "pr", "Inspect PR merge state", "gh", ["pr", "view", String(state.pr.number), "--json", SUMMARY_FIELDS], cwd);
-	const data = parseJson<{ state?: string; mergedAt?: string | null }>(result.stdout, "PR state", "pr", "Pull Request", "gh", ["pr", "view", String(state.pr.number), "--json", SUMMARY_FIELDS], cwd);
-	if (data.mergedAt || (data.state && data.state.toUpperCase() !== "OPEN")) {
-		throw new WorkflowFailure(state.auto.activeCheckpoint ?? "pr", {
-			step: "Pull Request",
-			message: "Auto repair stopped because the pull request is no longer open.",
-		});
-	}
-}
-
-async function importRepairPatch(runtime: WorkflowRuntime, patchFile: string): Promise<void> {
-	const { ctx } = runtime;
-	const cwd = ctx.cwd;
-	const result = await execCommand(runtime, "git", ["apply", "--index", "--3way", patchFile], cwd, runtime.signal, COMMAND_TIMEOUT_MS);
-	if (result.code !== 0) {
-		throw new WorkflowFailure(runtime.state.auto.activeCheckpoint ?? "commit", {
-			step: labelForStep(runtime.state.auto.activeCheckpoint ?? "commit"),
-			command: "git",
-			args: ["apply", "--index", "--3way", patchFile],
-			cwd,
-			code: result.code,
-			stdout: result.stdout,
-			stderr: result.stderr,
-			message: "Failed to import repair patch.",
-		});
-	}
-}
-
-function isAutofixableFailure(state: ProductionizeState, failure: CommandFailure): boolean {
-	if (["Branch", "Pull Request", "Merge", "Pull base branch"].includes(failure.step)) return false;
-	const checks = state.checks.map((check) => checkLabel(check)).join("\n");
-	const text = [failure.command, failure.args?.join(" "), failure.stdout, failure.stderr, failure.message, checks]
-		.filter(Boolean)
-		.join("\n")
-		.toLowerCase();
-	return /\bruff\b|\bprettier\b|\beslint\b|\bbiome\b|\bblack\b|\bisort\b|\bautopep8\b|\byapf\b|\bshfmt\b|\bgofmt\b|\bswiftformat\b|\bstylua\b|\bcargo fmt\b|\bclippy\b|\bterraform fmt\b|\blint\b|\bformat(?:ter|ting)?\b/.test(text);
-}
-
-function classifyFailure(failure: CommandFailure): "recoverable" | "unrecoverable" {
-	const stderr = `${failure.stderr ?? ""}\n${failure.stdout ?? ""}\n${failure.message ?? ""}`.toLowerCase();
-	const args = failure.args?.join(" ") ?? "";
-	if (failure.command === "git" && args.includes("rev-parse --is-inside-work-tree")) return "unrecoverable";
-	if (failure.command === "git" && args.includes("branch --show-current") && !failure.stdout?.trim()) return "unrecoverable";
-	if (stderr.includes("detached head")) return "unrecoverable";
-	if (failure.command === "gh" && /auth|not logged in|authentication required|gh auth login/.test(stderr)) return "unrecoverable";
-	if (stderr.includes("no git remote is configured") || stderr.includes("no remote configured")) return "unrecoverable";
-	if (failure.command === "gh" && /not a github repository|no git remotes configured/.test(stderr)) return "unrecoverable";
-	return failure.step !== "Branch" ? "recoverable" : "unrecoverable";
-}
-
-export function buildRepairPrompt(state: ProductionizeState, failure: CommandFailure, stepId: StepId, headShaBefore: string, attempt: number, maxAttempts = AUTO_RETRY_LIMIT): string {
-	const context = buildFailureContext(failure, {
-		branch: state.branch,
-		remote: state.remote,
-		prUrl: state.pr?.url,
-		checks: state.checks,
-		recentLog: state.log,
-	});
-	return [
-		`You are fixing a /productionize auto repair handoff for step ${stepId}.`,
-		"Work only in the current temporary worktree using read/edit/write tools plus focused local autofix commands when needed.",
-		"Do not run /productionize, do not try to push, and do not use GitHub commands.",
-		"Make the smallest code or file changes needed to address the failure.",
-		"Prefer targeted autofix commands such as ruff --fix or formatter --write when they directly repair the failure.",
-		"When done, stop after a concise summary of what you changed.",
-		`Attempt: ${attempt}/${maxAttempts}`,
-		`Current branch: ${state.branch ?? "unknown"}`,
-		`Current HEAD before repair: ${headShaBefore}`,
-		"Foreground productionize will import your patch, rerun the safe checkpoint, and verify the result itself.",
-		"Resume rules: branch->branch, commit->commit, push->push, pr->pr, ci/merge/return rerun from the nearest safe checkpoint after import.",
-		"",
-		context,
-	].join("\n");
-}
-
-async function appendRepairSummary(runtime: WorkflowRuntime, summary: RepairAttemptSummary, attempt: number): Promise<void> {
-	const entry: RepairSummaryEntry = {
-		stepId: summary.stepId,
-		attempt,
-		headShaBefore: summary.headShaBefore,
-		outcome: summary.outcome,
-		sessionFile: summary.sessionFile,
-		persistedAt: timestamp(runtime.hooks),
-		summary: summary.summary,
-	};
-	runtime.state.auto.lastRepairSummary = entry;
-	runtime.state.auto.repairHistory = [...runtime.state.auto.repairHistory, entry];
-	runtime.state.auto.latestSideSessionFile = summary.sessionFile;
-	runtime.pi.appendEntry(PRODUCTIONIZE_STATE_CUSTOM_TYPE, serializeSummaryEntry(entry, entry.persistedAt));
-	runtime.pi.sendMessage({
-		customType: PRODUCTIONIZE_SUMMARY_MESSAGE_TYPE,
-		content: `${summary.summary}\nSide session: ${summary.sessionFile}`,
-		display: true,
-		details: entry,
-	});
-}
-
-async function generateFixInstruction(runtime: WorkflowRuntime, failure: CommandFailure): Promise<string> {
-	const prompt = buildFailurePrompt(failure, {
-		branch: runtime.state.branch,
-		remote: runtime.state.remote,
-		prUrl: runtime.state.pr?.url,
-		checks: runtime.state.checks,
-		recentLog: runtime.state.log,
-	});
-	try {
-		return await completeSparkWithHooks(runtime, "You write concise repair instructions for a coding agent. Output only the instruction to paste into Pi.", prompt, fallbackFixInstruction(failure));
-	} catch {
-		return fallbackFixInstruction(failure);
-	}
-}
-
 async function completeSparkWithHooks(
 	runtime: WorkflowRuntime,
 	systemPrompt: string,
@@ -931,11 +602,12 @@ async function completeSpark(
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 	if (!auth.ok || !auth.apiKey) return fallback;
 
-	const message: Message = {
+	const message: SparkMessage = {
 		role: "user",
 		content: [{ type: "text", text: userText }],
 		timestamp: Date.now(),
 	};
+	const { complete } = await import("@earendil-works/pi-ai");
 	const response = await complete(model, { systemPrompt, messages: [message] }, { apiKey: auth.apiKey, headers: auth.headers, signal });
 	if (response.stopReason === "aborted") return fallback;
 	const text = response.content
@@ -1114,10 +786,6 @@ async function countCommits(runtime: WorkflowRuntime, cwd: string, range: string
 	return Number.isFinite(count) ? count : 0;
 }
 
-async function revParse(runtime: WorkflowRuntime, cwd: string, rev: string): Promise<string> {
-	const result = await execOrFail(runtime, "branch", "Resolve revision", "git", ["rev-parse", rev], cwd);
-	return result.stdout.trim();
-}
 
 async function execOrFail(
 	runtime: WorkflowRuntime,
@@ -1245,14 +913,6 @@ function nextStep(stepId: StepId): StepId {
 	return STEP_ORDER[Math.min(index + 1, STEP_ORDER.length - 1)] ?? "return";
 }
 
-function shouldReconcileRepair(state: ProductionizeState): boolean {
-	const repair = state.auto.currentRepair;
-	return Boolean(repair && ["starting", "running", "importing", "resuming"].includes(repair.status));
-}
-
-function stateRepair(state: ProductionizeState): ActiveRepairState | undefined {
-	return state.auto.currentRepair;
-}
 
 function requiredState<T>(value: T | undefined, message: string): T {
 	if (value === undefined || value === null) throw new Error(message);
@@ -1306,13 +966,9 @@ function failureStatus(state: ProductionizeState, failure: WorkflowFailure): str
 	return `Productionize failed during ${failure.failure.step}.`;
 }
 
-function modelSpecifier(ctx: ExtensionContext): string | undefined {
-	return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-}
 
 function markSuccess(state: ProductionizeState): void {
 	state.outcome = "succeeded";
-	state.auto.currentRepair = undefined;
 	state.auto.activeCheckpoint = undefined;
 	state.auto.resumeFromCheckpoint = undefined;
 	state.failure = undefined;
@@ -1335,7 +991,6 @@ function markSuccess(state: ProductionizeState): void {
 
 function markScopedSuccess(state: ProductionizeState, stepId: StepId): void {
 	state.outcome = "succeeded";
-	state.auto.currentRepair = undefined;
 	state.auto.activeCheckpoint = undefined;
 	state.auto.resumeFromCheckpoint = undefined;
 	state.failure = undefined;
