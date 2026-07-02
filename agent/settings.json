@@ -36,9 +36,11 @@
     },
     "./packages/pi-interactive-subagents",
     "npm:@juicesharp/rpiv-advisor",
-    "npm:pi-claude-bridge"
+    "npm:pi-claude-bridge",
+    "npm:pi-lcm-memory",
+    "npm:pi-lcm"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "treeFilterMode": "no-tools",
@@ -55,7 +57,7 @@
     "hookMode": "agent_end"
   },
   "lcm": {
-    "enabled": false,
+    "enabled": true,
     "leafChunkTokens": 4000,
     "condensationThreshold": 6,
     "maxDepth": 5,

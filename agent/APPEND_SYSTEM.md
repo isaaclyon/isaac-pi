@@ -84,3 +84,7 @@ You will have access to user/global and potentially project-level skills. Use th
 - Choose the smallest reviewer combination that fits the task.
 - For material work, include `intent-validator`.
 - Do not claim completion just because tests passed; finish only after the review pass is complete and useful feedback has been reconciled.
+- Do not use subagent review for trivial, easily verified changes unless the user asks.
+  Examples: adding/removing one allowlist entry, updating a typo, running a documented
+  one-line command, or making a tiny config change with direct command/output verification.
+- For those trivial cases, verify directly and report the result without extra process.
