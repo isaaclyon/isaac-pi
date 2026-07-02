@@ -14,6 +14,20 @@ const PRODUCTIONIZE_RUN_DESCRIPTION =
 	"If a run fails, fix it in-band in this same session before calling productionize_run again. " +
 	"Do not use side sessions, imported patches, or autonomous retry loops.";
 
+class ToolText {
+	private readonly text: string;
+
+	constructor(text: string) {
+		this.text = text;
+	}
+
+	render(_width: number): string[] {
+		return this.text ? this.text.split("\n") : [];
+	}
+
+	invalidate(): void {}
+}
+
 interface ActiveRun {
 	sessionFile: string;
 	controller: AbortController;
@@ -224,9 +238,9 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 		},
 		renderResult(result) {
 			const details = result.details as Record<string, unknown> | undefined;
-			if (details?.status === "started") return "productionize_run — started";
-			if (details?.status === "already_running") return "productionize_run — already running";
-			return typeof result.content[0]?.text === "string" ? result.content[0].text : "";
+			if (details?.status === "started") return new ToolText("productionize_run — started");
+			if (details?.status === "already_running") return new ToolText("productionize_run — already running");
+			return new ToolText(typeof result.content[0]?.text === "string" ? result.content[0].text : "");
 		},
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			await ctx.waitForIdle?.();
