@@ -69,6 +69,19 @@ test("productionize_run is registered with async no-poll guidance", () => {
 	assert.match(tool.description, /Do not poll for status/i);
 	assert.match(tool.description, /fix it in-band/i);
 	assert.match(tool.description, /Do not use side sessions/i);
+
+	const rendered = tool.renderResult({ content: [], details: { status: "started" } });
+	assert.equal(typeof rendered.invalidate, "function");
+	assert.deepEqual(rendered.render(80), ["productionize_run — started"]);
+
+	assert.deepEqual(
+		tool.renderResult({ content: [], details: { status: "already_running" } }).render(80),
+		["productionize_run — already running"],
+	);
+	assert.deepEqual(
+		tool.renderResult({ content: [{ type: "text", text: "fallback" }], details: {} }).render(80),
+		["fallback"],
+	);
 });
 
 test("productionize_run starts immediately, resumes failed state, and steers completion", async () => {
