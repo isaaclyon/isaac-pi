@@ -8,10 +8,12 @@ import {
 	formatChangedFilesByDirectory,
 	hasDirtyFiles,
 	hasPrChanges,
+	isLikelyAlreadyMergedPr,
 	isLikelyNoChecks,
 	isLikelyNonFastForwardPull,
 	parseBranchUsedByWorktreeError,
 	parseNameStatus,
+	parseWorktreeBlockedBranchDelete,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
 	sanitizePrTitle,
@@ -120,6 +122,20 @@ test("parseBranchUsedByWorktreeError extracts retry target", () => {
 		{ branch: "main", path: "/Users/isaaclyon/Developer/lola-data-platform" },
 	);
 	assert.equal(parseBranchUsedByWorktreeError("", "authentication required"), undefined);
+});
+
+test("merge cleanup parsers detect already-merged worktree branch deletion failures", () => {
+	const stderr = [
+		"! Pull request isaaclyon/photosort#3 was already merged",
+		"failed to delete local branch favorites-guardrail: failed to run git: error: cannot delete branch 'favorites-guardrail' used by worktree at '/repo/.worktrees/favorites-guardrail'",
+	].join("\n");
+	assert.equal(isLikelyAlreadyMergedPr("", stderr), true);
+	assert.deepEqual(parseWorktreeBlockedBranchDelete("", stderr), {
+		branch: "favorites-guardrail",
+		path: "/repo/.worktrees/favorites-guardrail",
+	});
+	assert.equal(isLikelyAlreadyMergedPr("", "failed to merge pull request"), false);
+	assert.equal(parseWorktreeBlockedBranchDelete("", "authentication required"), undefined);
 });
 
 test("isLikelyNonFastForwardPull detects only git pull divergence", () => {

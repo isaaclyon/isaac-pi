@@ -404,6 +404,39 @@ test("return step reports remote merge success separately when local cleanup is 
 	assert.equal(state.steps.find((step) => step.id === "return")?.status, "failed");
 });
 
+test("merge step treats already-merged PR with worktree-blocked local branch cleanup as done", async () => {
+	const state = createMergeState();
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			execCommand: async (command, args) => {
+				if (command !== "gh") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "pr merge 3 --squash --delete-branch --match-head-commit f9f76b --subject Favorites guardrail --body ") {
+					return fail(
+						"",
+						[
+							"! Pull request isaaclyon/photosort#3 was already merged",
+							"failed to delete local branch favorites-guardrail: failed to run git: error: cannot delete branch 'favorites-guardrail' used by worktree at '/repo/.worktrees/favorites-guardrail'",
+						].join("\n"),
+					);
+				}
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.steps.find((step) => step.id === "merge")?.status, "done");
+	assert.match(state.steps.find((step) => step.id === "merge")?.detail ?? "", /already merged/i);
+	assert.match(state.log.join("\n"), /favorites-guardrail/);
+});
+
 function createFakePi(): any {
 	return {
 		appendEntry() {},
@@ -437,5 +470,15 @@ function createReturnState() {
 	state.returnToBranch = "main";
 	state.pr = { number: 16, title: "PR", url: "https://example.test/pr/16", headRefName: "feat/test", headRefOid: "abc" };
 	for (const step of state.steps) step.status = step.id === "return" ? "pending" : "done";
+	return state;
+}
+
+function createMergeState() {
+	const state = createDefaultSnapshot();
+	state.remote = "origin";
+	state.branch = "favorites-guardrail";
+	state.baseBranch = "main";
+	state.pr = { number: 3, title: "Favorites guardrail", url: "https://example.test/pr/3", headRefName: "favorites-guardrail", headRefOid: "f9f76b" };
+	for (const step of state.steps) step.status = step.id === "merge" || step.id === "return" ? "pending" : "done";
 	return state;
 }

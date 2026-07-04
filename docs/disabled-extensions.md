@@ -49,3 +49,11 @@ This file records extensions that were removed or disabled so they can be recall
 - Reason: Configured with empty `extensions`, `skills`, `prompts`, and `themes`, so it was effectively disabled and removed for cleanup.
 - Reinstall command: `pi install git:github.com/sasha-computer/pi-cmux`
 - Config note: Re-adding the package entry to `agent/settings.json` is also enough to restore it.
+
+## pi-vcc package
+
+- Package: `npm:@sting8k/pi-vcc`
+- Removed: 2026-07-04
+- Reason: Removed on request.
+- Reinstall command: `pi install npm:@sting8k/pi-vcc`
+- Config note: `agent/pi-vcc-config.json` is deleted.

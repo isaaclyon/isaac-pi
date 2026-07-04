@@ -14,6 +14,14 @@
         "cd /Users/isaaclyon/Developer/lola/bi/generative-data-apps/.worktrees/components && exec pnpm mcp"
       ],
       "mode": "index"
+    },
+    "ynab-local-dev": {
+      "baseUrl": "http://localhost:3000/mcp",
+      "description": "Local dev YNAB MCP over Streamable HTTP with DEV_AUTH_BYPASS=true."
+    },
+    "ynab_smoke_mcp": {
+      "baseUrl": "http://localhost:3000/mcp",
+      "description": "Local dev YNAB MCP over Streamable HTTP with DEV_AUTH_BYPASS=true."
     }
   }
 }
