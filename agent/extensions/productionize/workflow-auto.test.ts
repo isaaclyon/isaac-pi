@@ -437,6 +437,43 @@ test("merge step treats already-merged PR with worktree-blocked local branch cle
 	assert.match(state.log.join("\n"), /favorites-guardrail/);
 });
 
+test("merge step confirms remote merge when local checkout cleanup fails", async () => {
+	const state = createMergeState();
+	state.pr = { number: 56, title: "Productionize workflow", url: "https://example.test/pr/56", headRefName: "productionize/workflow", headRefOid: "59b34b" };
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{},
+		{
+			execCommand: async (command, args) => {
+				if (command !== "gh") throw new Error(`Unexpected command: ${command}`);
+				const joined = args.join(" ");
+				if (joined === "pr merge 56 --squash --delete-branch --match-head-commit 59b34b --subject Productionize workflow --body ") {
+					return fail(
+						"",
+						[
+							"failed to run git: error: Your local changes to the following files would be overwritten by checkout:",
+							"\tagent/logs/subagents/2026-07-04.jsonl",
+							"Please commit your changes or stash them before you switch branches.",
+							"Aborting",
+						].join("\n"),
+					);
+				}
+				if (joined === "pr view 56 --json state,mergedAt") return ok('{"state":"MERGED","mergedAt":"2026-07-04T21:40:54Z"}\n');
+				throw new Error(`Unexpected command: ${command} ${joined}`);
+			},
+		},
+	);
+
+	assert.equal(state.outcome, "succeeded");
+	assert.equal(state.steps.find((step) => step.id === "merge")?.status, "done");
+	assert.equal(state.steps.find((step) => step.id === "merge")?.detail, "Merged; local cleanup failed");
+	assert.match(state.log.join("\n"), /local cleanup failed after merge/i);
+});
+
 function createFakePi(): any {
 	return {
 		appendEntry() {},

@@ -38,6 +38,7 @@ const CHECK_TIMEOUT_MS = 30 * 60_000;
 const NO_CHECKS_GRACE_MS = 20_000;
 const CHECK_FIELDS = "name,workflow,bucket,state,link,description,startedAt,completedAt";
 const PR_FIELDS = "number,title,url,headRefName,headRefOid";
+const PR_MERGE_STATUS_FIELDS = "state,mergedAt";
 const STEP_ORDER: StepId[] = ["branch", "commit", "push", "pr", "ci", "merge", "return"];
 
 type SparkMessage = {
@@ -497,6 +498,21 @@ async function runMergeStep(runtime: WorkflowRuntime): Promise<void> {
 			await update(runtime);
 			return;
 		}
+
+		if (await isPrMerged(runtime, cwd, pr.number)) {
+			const blockedDelete = parseWorktreeBlockedBranchDelete(result.stdout, result.stderr);
+			if (blockedDelete) {
+				setStep(state, "merge", "done", `Merged; ${blockedDelete.branch} checked out in worktree`);
+				log(state, `PR #${pr.number} merged; local branch ${blockedDelete.branch} was not deleted because it is checked out at ${blockedDelete.path}`);
+			} else {
+				const cleanupMessage = firstNonEmptyLine(result.stderr) ?? firstNonEmptyLine(result.stdout) ?? "unknown cleanup error";
+				setStep(state, "merge", "done", "Merged; local cleanup failed");
+				log(state, `PR #${pr.number} merged; local cleanup failed after merge: ${cleanupMessage}`);
+			}
+			await update(runtime);
+			return;
+		}
+
 		const usedWorktree = parseBranchUsedByWorktreeError(result.stdout, result.stderr);
 		if (!usedWorktree || (usedWorktree.branch !== state.baseBranch && !PROTECTED_BRANCHES.has(usedWorktree.branch))) {
 			throw commandFailure("merge", "Squash merge", "gh", mergeArgs, cwd, result);
@@ -692,6 +708,18 @@ async function fetchPrInfo(runtime: WorkflowRuntime, cwd: string): Promise<PrInf
 	return parseJson<PrInfo>(result.stdout, "PR", "pr", "Pull Request", "gh", ["pr", "view", "--json", PR_FIELDS], cwd);
 }
 
+async function isPrMerged(runtime: WorkflowRuntime, cwd: string, prNumber: number): Promise<boolean> {
+	const args = ["pr", "view", String(prNumber), "--json", PR_MERGE_STATUS_FIELDS];
+	const result = await execCommand(runtime, "gh", args, cwd, runtime.signal, 30_000);
+	if (result.code !== 0) return false;
+	try {
+		const status = JSON.parse(result.stdout) as { state?: string; mergedAt?: string | null };
+		return status.state === "MERGED" || Boolean(status.mergedAt);
+	} catch {
+		return false;
+	}
+}
+
 async function fetchChecks(runtime: WorkflowRuntime, cwd: string, prNumber: number): Promise<GitHubCheck[]> {
 	const args = ["pr", "checks", String(prNumber), "--json", CHECK_FIELDS];
 	const result = await execCommand(runtime, "gh", args, cwd, runtime.signal, COMMAND_TIMEOUT_MS);
@@ -859,6 +887,10 @@ function parseJson<T>(stdout: string, label: string, stepId: StepId, step: strin
 			message: `Could not parse ${label} JSON: ${error instanceof Error ? error.message : String(error)}`,
 		});
 	}
+}
+
+function firstNonEmptyLine(text: string): string | undefined {
+	return text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
 }
 
 function setStep(state: ProductionizeState, id: StepId, status: StepStatus, detail?: string): void {
