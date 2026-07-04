@@ -271,6 +271,16 @@ export function parseBranchUsedByWorktreeError(stdout: string, stderr: string): 
 	return { branch: match[1], path: match[2] };
 }
 
+export function isLikelyAlreadyMergedPr(stdout: string, stderr: string): boolean {
+	return /pull request\b[\s\S]*\bwas already merged\b/i.test(`${stdout}\n${stderr}`);
+}
+
+export function parseWorktreeBlockedBranchDelete(stdout: string, stderr: string): { branch: string; path: string } | undefined {
+	const match = `${stdout}\n${stderr}`.match(/cannot delete branch\s+'([^']+)'\s+used by worktree at\s+'([^']+)'/s);
+	if (!match) return undefined;
+	return { branch: match[1], path: match[2] };
+}
+
 export function isLikelyNonFastForwardPull(stdout: string, stderr: string): boolean {
 	const text = `${stdout}\n${stderr}`;
 	return /^fatal: Not possible to fast-forward, aborting\.$/m.test(text);

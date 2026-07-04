@@ -1,6 +1,7 @@
 {
   "lastChangelogVersion": "0.80.3",
   "packages": [
+    "./extensions/native-module-abi-guard.js",
     "npm:lsp-pi",
     {
       "source": "npm:pi-rtk-optimizer@0.7.1",
@@ -16,7 +17,6 @@
       "skills": []
     },
     "npm:@narumitw/pi-goal",
-    "npm:@sting8k/pi-vcc",
     "npm:pi-web-access",
     "npm:@howaboua/pi-codex-conversion",
     "npm:@aliou/pi-processes",
@@ -36,7 +36,6 @@
     },
     "./packages/pi-interactive-subagents",
     "npm:@juicesharp/rpiv-advisor",
-    "npm:pi-claude-bridge",
     "npm:pi-lcm-memory",
     "npm:pi-lcm"
   ],
@@ -68,7 +67,11 @@
     "compactionModels": [
       {
         "provider": "openai-codex",
-        "id": "gpt-5.4-mini"
+        "id": "gpt-5.3-codex-spark"
+      },
+      {
+        "provider": "groq",
+        "id": "openai/gpt-oss-120b"
       }
     ]
   },
@@ -78,5 +81,8 @@
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.4-mini"
   ],
-  "theme": "dark/dark"
+  "theme": "dark/dark",
+  "npmCommand": [
+    "/Users/isaaclyon/.pi/agent/bin/pi-npm-current-node"
+  ]
 }

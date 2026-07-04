@@ -12,10 +12,12 @@ import {
 	hasDirtyFiles,
 	hasPrChanges,
 	isLikelyNoChecks,
+	isLikelyAlreadyMergedPr,
 	isLikelyNoPr,
 	isLikelyNonFastForwardPull,
 	parseBranchUsedByWorktreeError,
 	parseNameStatus,
+	parseWorktreeBlockedBranchDelete,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
 	sanitizePrTitle,
@@ -483,6 +485,18 @@ async function runMergeStep(runtime: WorkflowRuntime): Promise<void> {
 	const mergeArgs = ["pr", "merge", String(pr.number), "--squash", "--delete-branch", "--match-head-commit", pr.headRefOid, "--subject", pr.title, "--body", ""];
 	const result = await execCommand(runtime, "gh", mergeArgs, cwd, runtime.signal, 180_000);
 	if (result.code !== 0) {
+		if (isLikelyAlreadyMergedPr(result.stdout, result.stderr)) {
+			const blockedDelete = parseWorktreeBlockedBranchDelete(result.stdout, result.stderr);
+			if (blockedDelete) {
+				setStep(state, "merge", "done", `Already merged; ${blockedDelete.branch} checked out in worktree`);
+				log(state, `PR #${pr.number} was already merged; local branch ${blockedDelete.branch} was not deleted because it is checked out at ${blockedDelete.path}`);
+			} else {
+				setStep(state, "merge", "done", "Already merged");
+				log(state, `PR #${pr.number} was already merged`);
+			}
+			await update(runtime);
+			return;
+		}
 		const usedWorktree = parseBranchUsedByWorktreeError(result.stdout, result.stderr);
 		if (!usedWorktree || (usedWorktree.branch !== state.baseBranch && !PROTECTED_BRANCHES.has(usedWorktree.branch))) {
 			throw commandFailure("merge", "Squash merge", "gh", mergeArgs, cwd, result);

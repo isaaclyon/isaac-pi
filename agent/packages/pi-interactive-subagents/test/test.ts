@@ -6,6 +6,7 @@ import {
 	readFileSync,
 	mkdirSync,
 	rmSync,
+	existsSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -59,6 +60,8 @@ import {
 	default as subagentDoneExtension,
 	shouldMarkUserTookOver,
 	shouldAutoExitOnAgentEnd,
+	isTransientProviderTransportError,
+	shouldDeferAutoExitForTransientError,
 	findLatestAssistantError,
 	findLatestAssistantSummary,
 	writeAutoExitSidecar,
@@ -1489,6 +1492,175 @@ describe("subagent-done.ts", () => {
 				},
 			];
 			assert.equal(shouldAutoExitOnAgentEnd(false, messages), true);
+		});
+	});
+
+	describe("transient provider error auto-exit deferral", () => {
+		function withAutoExitSubagent(
+			run: (params: {
+				handler: (event: any, ctx: { shutdown: () => void }) => void;
+				ctx: { shutdown: () => void };
+				shutdowns: number[];
+				sessionFile: string;
+			}) => void,
+		) {
+			withTempDir((dir) => {
+				const previousAutoExit = process.env.PI_SUBAGENT_AUTO_EXIT;
+				const previousSession = process.env.PI_SUBAGENT_SESSION;
+				process.env.PI_SUBAGENT_AUTO_EXIT = "1";
+				const sessionFile = join(dir, "subagent.jsonl");
+				process.env.PI_SUBAGENT_SESSION = sessionFile;
+
+				try {
+					const { api, registeredEventHandlers } = createMockExtensionApi();
+					subagentDoneExtension(api);
+					const shutdowns: number[] = [];
+					const ctx = { shutdown: () => shutdowns.push(Date.now()) };
+					const handler = registeredEventHandlers.agent_end[0];
+					assert.equal(typeof handler, "function");
+
+					run({ handler, ctx, shutdowns, sessionFile });
+				} finally {
+					restoreEnvVar("PI_SUBAGENT_AUTO_EXIT", previousAutoExit);
+					restoreEnvVar("PI_SUBAGENT_SESSION", previousSession);
+				}
+			});
+		}
+
+		const websocketErrorEvent = {
+			messages: [
+				{
+					role: "assistant",
+					stopReason: "error",
+					errorMessage: "Connection error: WebSocket error",
+				},
+			],
+		};
+		const diagnosticWebsocketErrorEvent = {
+			messages: [
+				{
+					role: "assistant",
+					stopReason: "error",
+					errorMessage: "fetch failed",
+					diagnostics: [
+						{
+							type: "provider_transport_failure",
+							error: {
+								message: "WebSocket closed 1000",
+							},
+						},
+					],
+				},
+			],
+		};
+
+		it("recognizes websocket transport failures", () => {
+			assert.equal(
+				isTransientProviderTransportError("Connection error: WebSocket error"),
+				true,
+			);
+			assert.equal(
+				isTransientProviderTransportError(
+					"Connection error: WebSocket closed 1000",
+				),
+				true,
+			);
+			assert.equal(isTransientProviderTransportError("Request was aborted"), true);
+			assert.equal(isTransientProviderTransportError("fetch failed"), true);
+		});
+
+		it("does not treat ordinary provider errors as transient websocket failures", () => {
+			assert.equal(isTransientProviderTransportError("529 overloaded"), false);
+			assert.equal(isTransientProviderTransportError("permission denied"), false);
+		});
+
+		it("defers auto-exit for the first three websocket failures", () => {
+			const messages = [
+				{
+					role: "assistant",
+					stopReason: "error",
+					errorMessage: "Connection error: WebSocket error",
+				},
+			];
+
+			assert.equal(
+				shouldDeferAutoExitForTransientError({ messages, deferralsUsed: 0 }),
+				true,
+			);
+			assert.equal(
+				shouldDeferAutoExitForTransientError({ messages, deferralsUsed: 2 }),
+				true,
+			);
+			assert.equal(
+				shouldDeferAutoExitForTransientError({ messages, deferralsUsed: 3 }),
+				false,
+			);
+		});
+
+		it("defers when websocket details are only present in diagnostics", () => {
+			assert.equal(
+				shouldDeferAutoExitForTransientError({
+					messages: diagnosticWebsocketErrorEvent.messages,
+					deferralsUsed: 0,
+				}),
+				true,
+			);
+		});
+
+		it("does not shut down the auto-exit subagent for the first three websocket failures", () => {
+			withAutoExitSubagent(({ handler, ctx, shutdowns, sessionFile }) => {
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+
+				assert.equal(shutdowns.length, 0);
+				assert.equal(existsSync(`${sessionFile}.exit`), false);
+			});
+		});
+
+		it("does not shut down when a transient websocket failure is surfaced through diagnostics", () => {
+			withAutoExitSubagent(({ handler, ctx, shutdowns, sessionFile }) => {
+				handler(diagnosticWebsocketErrorEvent, ctx);
+
+				assert.equal(shutdowns.length, 0);
+				assert.equal(existsSync(`${sessionFile}.exit`), false);
+			});
+		});
+
+		it("shuts down and writes the error sidecar after the retry budget is exhausted", () => {
+			withAutoExitSubagent(({ handler, ctx, shutdowns, sessionFile }) => {
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+
+				assert.equal(shutdowns.length, 1);
+				assert.deepEqual(
+					JSON.parse(readFileSync(`${sessionFile}.exit`, "utf8")),
+					{
+						type: "error",
+						errorMessage: "Connection error: WebSocket error",
+						stopReason: "error",
+					},
+				);
+			});
+		});
+
+		it("resets the deferral counter after a non-error non-exiting agent_end", () => {
+			withAutoExitSubagent(({ handler, ctx, shutdowns }) => {
+				const abortedEvent = {
+					messages: [{ role: "assistant", stopReason: "aborted" }],
+				};
+
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+				handler(abortedEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+				handler(websocketErrorEvent, ctx);
+
+				assert.equal(shutdowns.length, 0);
+			});
 		});
 	});
 

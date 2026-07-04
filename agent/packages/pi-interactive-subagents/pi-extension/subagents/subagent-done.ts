@@ -42,6 +42,74 @@ export interface SubagentErrorInfo {
   stopReason: "error";
 }
 
+export const TRANSIENT_PROVIDER_ERROR_AUTO_EXIT_DEFERRALS = 3;
+
+/**
+ * Provider websocket failures are already retryable by Pi core, but auto-exit
+ * subagents see the intermediate `agent_end` event before Pi schedules that
+ * retry. If we shut down immediately, we cancel the built-in retry path and the
+ * parent receives a false terminal failure. Keep the child alive for the first
+ * few transient transport failures so Pi can retry in-place.
+ */
+export function isTransientProviderTransportError(
+  errorMessage: string | undefined,
+): boolean {
+  const message = (errorMessage ?? "").toLowerCase();
+  return (
+    message.includes("websocket error") ||
+    message.includes("websocket closed") ||
+    message.includes("request was aborted") ||
+    message.includes("fetch failed") ||
+    message.includes("socket hang up") ||
+    message.includes("econnreset") ||
+    message.includes("etimedout")
+  );
+}
+
+function findLatestAssistantErrorMessage(messages: any[] | undefined): any | null {
+  if (!messages) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role !== "assistant") continue;
+    return msg.stopReason === "error" ? msg : null;
+  }
+  return null;
+}
+
+function hasTransientProviderTransportDiagnostic(message: any): boolean {
+  const diagnostics = Array.isArray(message?.diagnostics)
+    ? message.diagnostics
+    : [];
+
+  return diagnostics.some((diagnostic: any) => {
+    if (diagnostic?.type !== "provider_transport_failure") return false;
+
+    return (
+      isTransientProviderTransportError(diagnostic?.error?.message) ||
+      isTransientProviderTransportError(diagnostic?.error?.name) ||
+      isTransientProviderTransportError(diagnostic?.error?.stack)
+    );
+  });
+}
+
+export function shouldDeferAutoExitForTransientError(params: {
+  messages: any[] | undefined;
+  deferralsUsed: number;
+  maxDeferrals?: number;
+}): boolean {
+  const maxDeferrals =
+    params.maxDeferrals ?? TRANSIENT_PROVIDER_ERROR_AUTO_EXIT_DEFERRALS;
+  if (params.deferralsUsed >= maxDeferrals) return false;
+
+  const message = findLatestAssistantErrorMessage(params.messages);
+  if (!message) return false;
+
+  return (
+    isTransientProviderTransportError(message.errorMessage) ||
+    hasTransientProviderTransportDiagnostic(message)
+  );
+}
+
 /**
  * If the last assistant message in the turn ended with `stopReason: "error"`
  * (typically auto-retry exhausted on an overload / rate limit / server error),
@@ -190,6 +258,7 @@ export default function (pi: ExtensionAPI) {
 
   let userTookOver = false;
   let agentStarted = false;
+  let transientProviderErrorDeferrals = 0;
 
   // Show widget + status bar on session start
   pi.on("session_start", (_event, ctx) => {
@@ -220,6 +289,18 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("agent_end", (event, ctx) => {
     const messages = (event as any).messages as any[] | undefined;
+    if (
+      autoExit &&
+      shouldDeferAutoExitForTransientError({
+        messages,
+        deferralsUsed: transientProviderErrorDeferrals,
+      })
+    ) {
+      transientProviderErrorDeferrals++;
+      recorder.agentEndWaiting();
+      return;
+    }
+
     const shouldExit = autoExit && shouldAutoExitOnAgentEnd(userTookOver, messages);
 
     if (shouldExit) {
@@ -243,6 +324,9 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    if (!findLatestAssistantError(messages)) {
+      transientProviderErrorDeferrals = 0;
+    }
     recorder.agentEndWaiting();
     if (autoExit) {
       // Reset any recorded manual input marker. Auto-exit is decided by whether

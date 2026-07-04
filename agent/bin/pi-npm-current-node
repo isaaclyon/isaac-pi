@@ -1,0 +1,74 @@
+#!/bin/sh
+set -eu
+
+has_bundled_npm() {
+  node_path="$1"
+  node_bin_dir="$(dirname "$node_path")"
+  npm_cli="$(dirname "$node_bin_dir")/lib/node_modules/npm/bin/npm-cli.js"
+  [ -f "$npm_cli" ]
+}
+
+find_parent_node() {
+  parent_exe="$(lsof -a -p "${PPID}" -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true)"
+  [ -n "$parent_exe" ] || return 1
+  case "$(basename "$parent_exe")" in
+    node)
+      [ -x "$parent_exe" ] || return 1
+      has_bundled_npm "$parent_exe" || return 1
+      printf '%s\n' "$parent_exe"
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+find_pi_sibling_node() {
+  pi_cmd="$(command -v pi 2>/dev/null || true)"
+  [ -n "$pi_cmd" ] || return 1
+
+  candidate="$(cd "$(dirname "$pi_cmd")" && pwd -P)/node"
+  if [ -x "$candidate" ]; then
+    has_bundled_npm "$candidate" || return 1
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  # Resolve symlinks without relying on GNU readlink -f. Some pi shims in bin/
+  # point into lib/node_modules; in that case the matching node is under the
+  # install root's bin/ directory.
+  while [ -L "$pi_cmd" ]; do
+    link="$(readlink "$pi_cmd")"
+    case "$link" in
+      /*) pi_cmd="$link" ;;
+      *) pi_cmd="$(dirname "$pi_cmd")/$link" ;;
+    esac
+  done
+
+  case "$pi_cmd" in
+    */lib/node_modules/*)
+      install_root="${pi_cmd%%/lib/node_modules/*}"
+      candidate="$install_root/bin/node"
+      [ -x "$candidate" ] || return 1
+      has_bundled_npm "$candidate" || return 1
+      printf '%s\n' "$candidate"
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+PI_NODE="${PI_NODE:-}"
+if [ -z "$PI_NODE" ]; then
+  PI_NODE="$(find_parent_node || find_pi_sibling_node || true)"
+fi
+
+if [ -z "$PI_NODE" ]; then
+  echo "pi-npm-current-node: could not find the active Pi Node runtime" >&2
+  exit 1
+fi
+
+PI_BIN_DIR="$(dirname "$PI_NODE")"
+PI_NPM_CLI="$(dirname "$PI_BIN_DIR")/lib/node_modules/npm/bin/npm-cli.js"
+export PATH="$PI_BIN_DIR:$PATH"
+exec "$PI_NODE" "$PI_NPM_CLI" "$@"
