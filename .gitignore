@@ -4,6 +4,7 @@ agent/auth.json
 memory/
 agent/memory/
 agent/sessions/
+agent/logs/
 agent/lcm/
 agent/update-cache.json
 agent/run-history.jsonl
