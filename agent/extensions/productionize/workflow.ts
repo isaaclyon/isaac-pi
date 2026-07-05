@@ -18,6 +18,7 @@ import {
 	parseBranchUsedByWorktreeError,
 	parseNameStatus,
 	parseWorktreeBlockedBranchDelete,
+	sanitizeMarkdownDescription,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
 	sanitizePrTitle,
@@ -36,6 +37,7 @@ const COMMAND_TIMEOUT_MS = 120_000;
 const CHECK_POLL_INTERVAL_MS = 5_000;
 const CHECK_TIMEOUT_MS = 30 * 60_000;
 const NO_CHECKS_GRACE_MS = 20_000;
+const SPARK_DIFF_MAX_CHARS = 24_000;
 const CHECK_FIELDS = "name,workflow,bucket,state,link,description,startedAt,completedAt";
 const PR_FIELDS = "number,title,url,headRefName,headRefOid";
 const STEP_ORDER: StepId[] = ["branch", "commit", "push", "pr", "ci", "merge", "return"];
@@ -76,6 +78,20 @@ interface WorkflowRuntime {
 interface StepResult {
 	next?: StepId;
 	finished?: true;
+}
+
+interface SparkChangeContext {
+	status?: string;
+	nameStatus: string;
+	stat: string;
+	diff: string;
+	log?: string;
+}
+
+interface PrDelta extends SparkChangeContext {
+	files: ChangedFile[];
+	commitCount: number;
+	hasChanges: boolean;
 }
 
 export function createInitialState(options: ProductionizeRunOptions = {}): ProductionizeState {
@@ -307,23 +323,38 @@ async function runCommitStep(runtime: WorkflowRuntime): Promise<void> {
 	}
 
 	await execOrFail(runtime, "commit", "Stage files", "git", ["add", "-A"], cwd);
+	const stagedStatus = await execOrFail(runtime, "commit", "Staged status", "git", ["status", "--short"], cwd);
 	const nameStatus = await execOrFail(runtime, "commit", "Staged file list", "git", ["diff", "--cached", "--name-status"], cwd);
 	const stat = await execOrFail(runtime, "commit", "Staged diff stat", "git", ["diff", "--cached", "--stat"], cwd);
+	const diff = await execOrFail(runtime, "commit", "Staged diff", "git", ["diff", "--cached", "--no-ext-diff", "--unified=40"], cwd);
 	state.changedFiles = parseNameStatus(nameStatus.stdout);
+	const changeContext = buildSparkChangeContext({ status: stagedStatus.stdout, nameStatus: nameStatus.stdout, stat: stat.stdout, diff: diff.stdout });
 
 	const subject = sanitizeCommitSubject(
 		await completeSparkWithHooks(
 			runtime,
 			"Generate one Conventional Commit subject. Output only the subject line.",
-			`Create a concise commit subject for these staged changes.\n\nStatus:\n${nameStatus.stdout}\n\nStat:\n${stat.stdout}`,
+			`Create a concise commit subject for these staged changes. Use the git status and diff context; do not invent behavior that is not shown.\n\n${changeContext}`,
 			"chore: productionize changes",
 		),
+	);
+	const body = sanitizeMarkdownDescription(
+		await completeSparkWithHooks(
+			runtime,
+			"Generate one git commit body. Output only the body, with no subject line.",
+			`Create a concise commit body for these staged changes. Use 2-5 short bullets when useful. Explain what changed and why when it is evident from the diff. Do not invent validation or implementation details that are not shown. If the subject is sufficient, output nothing.\n\nCommit subject: ${subject}\n\n${changeContext}`,
+			"",
+		),
+		"",
+		1_400,
 	);
 
 	setStep(state, "commit", "running", subject);
 	state.status = "Committing dirty files...";
 	await update(runtime);
-	await execOrFail(runtime, "commit", "Commit", "git", ["commit", "-m", subject], cwd);
+	const commitArgs = ["commit", "-m", subject];
+	if (body) commitArgs.push("-m", body);
+	await execOrFail(runtime, "commit", "Commit", "git", commitArgs, cwd);
 	setStep(state, "commit", "done", subject);
 	log(state, `Committed changes: ${subject}`);
 	await update(runtime);
@@ -379,12 +410,22 @@ async function runPrStep(runtime: WorkflowRuntime): Promise<PrInfo | undefined> 
 		await update(runtime);
 		return undefined;
 	}
-	const body = buildPrBody(state.changedFiles, { branch, base });
+	const prContext = buildSparkChangeContext(prDelta);
+	const description = sanitizeMarkdownDescription(
+		await completeSparkWithHooks(
+			runtime,
+			"Generate GitHub pull request summary markdown. Output only the Summary section body, not a full PR template.",
+			`Create a concise pull request description from this git status, commit log, and diff context. Cover what changed, why it matters when evident, and user/developer impact. Do not invent tests or validation.\n\nBranch: ${branch}\nBase: ${base}\n\n${prContext}`,
+			"Prepared by Pi `/productionize`.",
+		),
+		"Prepared by Pi `/productionize`.",
+	);
+	const body = buildPrBody(state.changedFiles, { branch, base, description });
 	const title = sanitizePrTitle(
 		await completeSparkWithHooks(
 			runtime,
 			"Generate one GitHub pull request title. Output only the title.",
-			`Create a concise PR title for this branch and changed-file list.\n\nBranch: ${branch}\nBase: ${base}\n\n${body}`,
+			`Create a concise PR title for this branch. Use this git status and diff context; do not invent behavior that is not shown.\n\nBranch: ${branch}\nBase: ${base}\n\n${prContext}`,
 			"Productionize changes",
 		),
 	);
@@ -677,14 +718,20 @@ async function detectDefaultBranch(runtime: WorkflowRuntime, cwd: string): Promi
 	return data.defaultBranchRef?.name || "main";
 }
 
-async function inspectPrDelta(runtime: WorkflowRuntime, cwd: string, remote: string, base: string): Promise<{ files: ChangedFile[]; commitCount: number; hasChanges: boolean }> {
+async function inspectPrDelta(runtime: WorkflowRuntime, cwd: string, remote: string, base: string): Promise<PrDelta> {
 	await execOrFail(runtime, "pr", "Fetch PR base", "git", ["fetch", remote, base], cwd, 180_000);
 	const diff = await execOrFail(runtime, "pr", "Changed files", "git", ["diff", "--name-status", "FETCH_HEAD...HEAD"], cwd, COMMAND_TIMEOUT_MS);
 	const commits = await execOrFail(runtime, "pr", "Changed commit count", "git", ["rev-list", "--count", "FETCH_HEAD..HEAD"], cwd, COMMAND_TIMEOUT_MS);
 	const files = parseNameStatus(diff.stdout);
 	const commitCount = Number.parseInt(commits.stdout.trim(), 10);
 	const safeCommitCount = Number.isFinite(commitCount) ? commitCount : files.length;
-	return { files, commitCount: safeCommitCount, hasChanges: hasPrChanges(files, safeCommitCount) };
+	const hasChanges = hasPrChanges(files, safeCommitCount);
+	if (!hasChanges) return { files, commitCount: safeCommitCount, hasChanges, nameStatus: diff.stdout, stat: "", diff: "", log: "" };
+
+	const stat = await execOrFail(runtime, "pr", "Changed diff stat", "git", ["diff", "--stat", "FETCH_HEAD...HEAD"], cwd, COMMAND_TIMEOUT_MS);
+	const patch = await execOrFail(runtime, "pr", "Changed diff", "git", ["diff", "--no-ext-diff", "--unified=40", "FETCH_HEAD...HEAD"], cwd, COMMAND_TIMEOUT_MS);
+	const log = await execOrFail(runtime, "pr", "Changed commit log", "git", ["log", "--oneline", "--no-decorate", "FETCH_HEAD..HEAD"], cwd, COMMAND_TIMEOUT_MS);
+	return { files, commitCount: safeCommitCount, hasChanges, nameStatus: diff.stdout, stat: stat.stdout, diff: patch.stdout, log: log.stdout };
 }
 
 async function fetchPrInfo(runtime: WorkflowRuntime, cwd: string): Promise<PrInfo> {
@@ -903,6 +950,25 @@ function messageText(message: { content: unknown }): string {
 		.map((part) => (part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part ? String(part.text) : ""))
 		.filter(Boolean)
 		.join("\n");
+}
+
+function buildSparkChangeContext(context: SparkChangeContext): string {
+	return [
+		formatPromptSection("Git status", context.status),
+		formatPromptSection("Name-status", context.nameStatus),
+		formatPromptSection("Diff stat", context.stat),
+		formatPromptSection("Commit log", context.log),
+		formatPromptSection("Diff", context.diff, SPARK_DIFF_MAX_CHARS),
+	]
+		.filter(Boolean)
+		.join("\n\n");
+}
+
+function formatPromptSection(label: string, value: string | undefined, maxLength = 6_000): string {
+	const text = (value ?? "").trim();
+	if (!text) return `## ${label}\n(empty)`;
+	if (text.length <= maxLength) return `## ${label}\n${text}`;
+	return `## ${label}\n${text.slice(0, maxLength).trimEnd()}\n\n[${label} truncated after ${maxLength} characters]`;
 }
 
 function firstPendingStep(state: ProductionizeState): StepId | undefined {

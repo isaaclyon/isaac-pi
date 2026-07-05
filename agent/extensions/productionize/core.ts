@@ -142,6 +142,22 @@ export function sanitizePrTitle(raw: string, fallback = "Productionize changes")
 	return sanitizeOneLine(raw, fallback, 120);
 }
 
+export function sanitizeMarkdownDescription(raw: string, fallback = "", maxLength = 4_000): string {
+	const normalized = raw
+		.replace(/\r\n?/g, "\n")
+		.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+		.trim()
+		.replace(/^```[a-zA-Z]*\n?/, "")
+		.replace(/```$/g, "")
+		.replace(/^#{1,6}\s*summary\s*\n+/i, "")
+		.replace(/^summary\s*:\s*/i, "")
+		.trim();
+	const value = normalized || fallback;
+	if (value.length <= maxLength) return value;
+	const truncated = value.slice(0, maxLength).replace(/\s+\S*$/g, "").trimEnd();
+	return `${truncated || value.slice(0, maxLength).trimEnd()}\n\n…`;
+}
+
 export function parseNameStatus(output: string): ChangedFile[] {
 	return output
 		.split("\n")
@@ -193,12 +209,13 @@ export function hasPrChanges(files: ChangedFile[], commitCount: number): boolean
 	return files.length > 0 || commitCount > 0;
 }
 
-export function buildPrBody(files: ChangedFile[], options: { branch: string; base: string; generatedAt?: Date }): string {
+export function buildPrBody(files: ChangedFile[], options: { branch: string; base: string; description?: string; generatedAt?: Date }): string {
 	const generatedAt = options.generatedAt ?? new Date();
+	const description = sanitizeMarkdownDescription(options.description ?? "", "Prepared by Pi `/productionize`.");
 	return [
 		"## Summary",
 		"",
-		"Prepared by Pi `/productionize`.",
+		description,
 		"",
 		"## Branch",
 		"",
