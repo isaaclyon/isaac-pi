@@ -39,7 +39,7 @@
     "npm:pi-lcm-memory",
     "npm:pi-lcm"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "treeFilterMode": "no-tools",

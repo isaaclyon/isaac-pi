@@ -3,7 +3,7 @@ name: architecture-reviewer
 description: Read-only quality reviewer for boundaries, coupling, domain model fit, maintainability, and design shape.
 model: openai-codex/gpt-5.4
 thinking: medium
-tools: read,bash
+tools: exec_command,grep,find,ls
 spawning: false
 auto-exit: true
 ---
