@@ -16,6 +16,7 @@ import {
 	parseWorktreeBlockedBranchDelete,
 	sanitizeBranchName,
 	sanitizeCommitSubject,
+	sanitizeMarkdownDescription,
 	sanitizePrTitle,
 } from "./core.ts";
 
@@ -36,6 +37,14 @@ test("AI one-line sanitizers collapse malformed output", () => {
 	assert.equal(sanitizeCommitSubject("repair tests"), "chore: repair tests");
 	assert.equal(sanitizeCommitSubject("\n"), "chore: productionize changes");
 	assert.equal(sanitizePrTitle("PR title: Add productionize flow\nmore"), "Add productionize flow");
+});
+
+test("sanitizeMarkdownDescription bounds multiline AI descriptions", () => {
+	assert.equal(sanitizeMarkdownDescription("```markdown\n- changed thing\n```"), "- changed thing");
+	assert.equal(sanitizeMarkdownDescription("## Summary\n\n- changed thing"), "- changed thing");
+	assert.equal(sanitizeMarkdownDescription("Summary: changed thing"), "changed thing");
+	assert.equal(sanitizeMarkdownDescription("\n", "fallback"), "fallback");
+	assert.equal(sanitizeMarkdownDescription("word ".repeat(20), "", 24), "word word word word\n\n…");
 });
 
 test("default workflow includes return step after merge", () => {
@@ -93,6 +102,17 @@ test("buildPrBody is deterministic apart from injected timestamp", () => {
 	assert.match(body, /- Head: `feat\/productionize`/);
 	assert.match(body, /### agent/);
 	assert.match(body, /Generated at: 2026-05-24T00:00:00.000Z/);
+});
+
+test("buildPrBody includes generated descriptions when provided", () => {
+	const body = buildPrBody([], {
+		branch: "feat/productionize",
+		base: "main",
+		description: "- Adds generated PR summaries from git diff context.",
+		generatedAt: new Date("2026-05-24T00:00:00.000Z"),
+	});
+	assert.match(body, /## Summary\n\n- Adds generated PR summaries from git diff context\./);
+	assert.doesNotMatch(body, /Prepared by Pi/);
 });
 
 test("classifyCheck maps GitHub buckets to display status", () => {

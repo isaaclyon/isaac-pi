@@ -7,6 +7,7 @@ import type { ExecResult } from "./types.ts";
 test("scoped commit run executes branch through commit", async () => {
 	const state = createInitialState({ startFrom: "branch", stopAfter: "commit" });
 	const seen: Array<{ command: string; args: string[] }> = [];
+	const sparkPrompts: Array<{ systemPrompt: string; userText: string }> = [];
 	await runWorkflow(
 		createFakePi(),
 		createFakeContext(),
@@ -25,12 +26,17 @@ test("scoped commit run executes branch through commit", async () => {
 				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
 				if (joined === "ls-files --stage -- agent/settings.json") return ok("100644 abc 0\tagent/settings.json\n");
 				if (joined === "add -A") return ok();
+				if (joined === "status --short") return ok("M  agent/settings.json\n");
 				if (joined === "diff --cached --name-status") return ok("M\tagent/settings.json\n");
 				if (joined === "diff --cached --stat") return ok(" agent/settings.json | 1 +\n 1 file changed, 1 insertion(+)\n");
-				if (joined === "commit -m chore: productionize changes") return ok();
+				if (joined === "diff --cached --no-ext-diff --unified=40") return ok("diff --git a/agent/settings.json b/agent/settings.json\n");
+				if (joined === "commit -m chore: productionize changes -m - Records diff context.") return ok();
 				throw new Error(`Unexpected command: ${command} ${joined}`);
 			},
-			completeSpark: async () => "chore: productionize changes",
+			completeSpark: async (_ctx, systemPrompt, userText) => {
+				sparkPrompts.push({ systemPrompt, userText });
+				return systemPrompt.includes("commit body") ? "- Records diff context." : "chore: productionize changes";
+			},
 		},
 	);
 
@@ -50,10 +56,15 @@ test("scoped commit run executes branch through commit", async () => {
 		"git ls-files --stage -- agent/settings.json",
 		"git status --porcelain",
 		"git add -A",
+		"git status --short",
 		"git diff --cached --name-status",
 		"git diff --cached --stat",
-		"git commit -m chore: productionize changes",
+		"git diff --cached --no-ext-diff --unified=40",
+		"git commit -m chore: productionize changes -m - Records diff context.",
 	]);
+	assert.match(sparkPrompts[0]?.userText ?? "", /## Git status\nM  agent\/settings\.json/);
+	assert.match(sparkPrompts[0]?.userText ?? "", /## Diff\ndiff --git/);
+	assert.match(sparkPrompts[1]?.userText ?? "", /Commit subject: chore: productionize changes/);
 });
 
 test("persisted scoped auto run keeps stopAfter cap when resumed", async () => {
@@ -78,12 +89,14 @@ test("persisted scoped auto run keeps stopAfter cap when resumed", async () => {
 				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
 				if (joined === "ls-files --stage -- agent/settings.json") return ok("100644 abc 0\tagent/settings.json\n");
 				if (joined === "add -A") return ok();
+				if (joined === "status --short") return ok("M  agent/settings.json\n");
 				if (joined === "diff --cached --name-status") return ok("M\tagent/settings.json\n");
 				if (joined === "diff --cached --stat") return ok(" agent/settings.json | 1 +\n 1 file changed, 1 insertion(+)\n");
+				if (joined === "diff --cached --no-ext-diff --unified=40") return ok("diff --git a/agent/settings.json b/agent/settings.json\n");
 				if (joined === "commit -m chore: productionize changes") return ok();
 				throw new Error(`Unexpected command: ${command} ${joined}`);
 			},
-			completeSpark: async () => "chore: productionize changes",
+			completeSpark: async (_ctx, systemPrompt) => systemPrompt.includes("commit body") ? "" : "chore: productionize changes",
 		},
 	);
 
@@ -98,6 +111,7 @@ test("persisted scoped auto run keeps stopAfter cap when resumed", async () => {
 test("scoped pr run executes branch through pr", async () => {
 	const state = createInitialState({ startFrom: "branch", stopAfter: "pr" });
 	const seen: Array<{ command: string; args: string[] }> = [];
+	const sparkPrompts: Array<{ systemPrompt: string; userText: string }> = [];
 	await runWorkflow(
 		createFakePi(),
 		createFakeContext(),
@@ -118,6 +132,9 @@ test("scoped pr run executes branch through pr", async () => {
 				if (command === "gh" && joined === "repo view --json defaultBranchRef") return ok('{"defaultBranchRef":{"name":"main"}}\n');
 				if (command === "git" && joined === "fetch origin main") return ok();
 				if (command === "git" && joined === "diff --name-status FETCH_HEAD...HEAD") return ok("M\tagent/settings.json\n");
+				if (command === "git" && joined === "diff --stat FETCH_HEAD...HEAD") return ok(" agent/settings.json | 1 +\n 1 file changed, 1 insertion(+)\n");
+				if (command === "git" && joined === "diff --no-ext-diff --unified=40 FETCH_HEAD...HEAD") return ok("diff --git a/agent/settings.json b/agent/settings.json\n");
+				if (command === "git" && joined === "log --oneline --no-decorate FETCH_HEAD..HEAD") return ok("abc123 chore: scoped change\n");
 				if (command === "git" && joined === "rev-list --count FETCH_HEAD..HEAD") return ok("1\n");
 				if (command === "gh" && joined === "pr view --json number,title,url,headRefName,headRefOid") {
 					return seen.filter((entry) => entry.command === "gh" && entry.args[0] === "pr" && entry.args[1] === "view").length === 1
@@ -127,7 +144,10 @@ test("scoped pr run executes branch through pr", async () => {
 				if (command === "gh" && args[0] === "pr" && args[1] === "create") return ok();
 				throw new Error(`Unexpected command: ${command} ${joined}`);
 			},
-			completeSpark: async () => "Scoped PR",
+			completeSpark: async (_ctx, systemPrompt, userText) => {
+				sparkPrompts.push({ systemPrompt, userText });
+				return "Scoped PR";
+			},
 		},
 	);
 
@@ -142,7 +162,7 @@ test("scoped pr run executes branch through pr", async () => {
 	assert.equal(state.steps.find((step) => step.id === "ci")?.status, "skipped");
 	assert.match(state.status, /Pull Request step finished/);
 	const commandLines = seen.map(({ command, args }) => `${command} ${args.join(" ")}`);
-	assert.deepEqual(commandLines.slice(0, 15), [
+	assert.deepEqual(commandLines.slice(0, 19), [
 		"git rev-parse --is-inside-work-tree",
 		"git branch --show-current",
 		"git rev-parse -q --verify MERGE_HEAD",
@@ -157,10 +177,17 @@ test("scoped pr run executes branch through pr", async () => {
 		"git fetch origin main",
 		"git diff --name-status FETCH_HEAD...HEAD",
 		"git rev-list --count FETCH_HEAD..HEAD",
+		"git diff --stat FETCH_HEAD...HEAD",
+		"git diff --no-ext-diff --unified=40 FETCH_HEAD...HEAD",
+		"git log --oneline --no-decorate FETCH_HEAD..HEAD",
 		"gh pr view --json number,title,url,headRefName,headRefOid",
+		commandLines[18] ?? "",
 	]);
-	assert.match(commandLines[15] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
-	assert.equal(commandLines[16], "gh pr view --json number,title,url,headRefName,headRefOid");
+	assert.match(commandLines[18] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
+	assert.equal(commandLines[19], "gh pr view --json number,title,url,headRefName,headRefOid");
+	assert.match(sparkPrompts[0]?.userText ?? "", /## Commit log\nabc123 chore: scoped change/);
+	assert.match(sparkPrompts[0]?.userText ?? "", /## Diff\ndiff --git/);
+	assert.match(sparkPrompts[1]?.userText ?? "", /## Diff stat\nagent\/settings\.json \| 1 \+/);
 });
 
 test("protected branches with local-only commits fail before productionize branches off", async () => {
@@ -278,6 +305,9 @@ test("starting on main branches to a timestamped productionize branch before pus
 				if (joined === `push -u origin ${branchName}`) return ok();
 				if (joined === "fetch origin main") return ok();
 				if (joined === "diff --name-status FETCH_HEAD...HEAD") return ok();
+				if (joined === "diff --stat FETCH_HEAD...HEAD") return ok();
+				if (joined === "diff --no-ext-diff --unified=40 FETCH_HEAD...HEAD") return ok();
+				if (joined === "log --oneline --no-decorate FETCH_HEAD..HEAD") return ok();
 				if (joined === "rev-list --count FETCH_HEAD..HEAD") return ok("0\n");
 				if (joined === "switch main") return ok();
 				if (joined === "pull --ff-only origin main") return ok();
