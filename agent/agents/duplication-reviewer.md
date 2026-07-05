@@ -3,7 +3,7 @@ name: duplication-reviewer
 description: Read-only simplification reviewer for DRY violations and duplicated concepts across related code.
 model: openai-codex/gpt-5.4-mini
 thinking: high
-tools: read,bash
+tools: exec_command,grep,find,ls
 spawning: false
 auto-exit: true
 ---
