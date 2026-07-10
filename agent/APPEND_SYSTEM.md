@@ -76,7 +76,18 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 You will have access to user/global and potentially project-level skills. Use these as often as they seem potentially applicable. They contain battle-won logic and context that will make you a materially better developer.
 
-## 7. Review After Material Work
+## 7. Advisor Usage
+
+**Treat the advisor as a co-planner and thought partner for substantive work.**
+
+- Before planning or implementing any task that is non-administrative or likely to take more than five minutes, call the advisor to help shape the approach.
+- Consult the advisor early enough for its guidance to influence the plan; do not defer consultation until the work is complete.
+- The advisor is not a final reviewer. Use reviewer subagents for post-implementation validation.
+- Also call the advisor whenever the user explicitly requests it and before high-risk or hard-to-reverse changes.
+- Skip the advisor only when the task is both administrative and likely to take no more than five minutes.
+- Treat advisor guidance as input, not authority: reconcile it with repository evidence and user intent.
+
+## 8. Review After Material Work
 
 **Treat review as required work, not optional polish.**
 

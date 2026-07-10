@@ -1,7 +1,7 @@
 ---
 name: worker
 description: Codex implementation agent for self-contained coding tasks after the plan is clear. Can edit files; use only for scoped non-destructive work.
-model: openai-codex/gpt-5.4
+model: openai-codex/gpt-5.6-sol-low
 thinking: medium
 tools: exec_command,grep,find,ls,apply_patch
 spawning: false
