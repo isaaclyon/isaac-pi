@@ -2,7 +2,7 @@
 name: visual-tester
 description: Read-only visual QA agent for browser flows using the current Chrome DevTools and browser tools stack.
 tools: exec_command,grep,find,ls,chrome_devtools_list_pages,chrome_devtools_select_page,chrome_devtools_navigate,chrome_devtools_evaluate,chrome_devtools_screenshot
-model: openai-codex/gpt-5.4
+model: openai-codex/gpt-5.6-sol-low
 skill: browser-tools
 spawning: false
 auto-exit: true
