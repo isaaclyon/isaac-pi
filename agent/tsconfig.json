@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@earendil-works/pi-coding-agent": [
+        "/Users/isaaclyon/.local/share/fnm/node-versions/v26.2.0/installation/lib/node_modules/@earendil-works/pi-coding-agent"
+      ],
+      "*": ["npm/node_modules/*"]
+    },
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true
+  },
+  "include": ["extensions/**/*.ts", "packages/**/*.ts"]
+}
