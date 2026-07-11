@@ -1,7 +1,7 @@
 ---
 name: correctness-reviewer
 description: Read-only quality reviewer for logic correctness, edge cases, regressions, type safety, and test coverage.
-model: openai-codex/gpt-5.6-sol-low
+model: openai-codex/gpt-5.6-sol
 thinking: medium
 tools: exec_command,grep,find,ls
 spawning: false

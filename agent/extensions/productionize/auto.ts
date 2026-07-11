@@ -1,5 +1,6 @@
 import {
 	cloneDefaultSteps,
+	STEP_IDS,
 	type ChangedFile,
 	type CommandFailure,
 	type DisplayCheck,
@@ -17,6 +18,12 @@ export interface PersistedPrInfo {
 	url: string;
 	headRefName: string;
 	headRefOid: string;
+}
+
+export interface PersistedRepositoryIdentity {
+	root: string;
+	gitDir: string;
+	commonDir: string;
 }
 
 export interface ProductionizeAutoState {
@@ -39,8 +46,10 @@ export interface ProductionizeStateSnapshot {
 	branch?: string;
 	baseBranch?: string;
 	returnToBranch?: string;
+	returnRemote?: string;
 	returnWarning?: string;
 	remote?: string;
+	repository?: PersistedRepositoryIdentity;
 	pr?: PersistedPrInfo;
 	changedFiles: ChangedFile[];
 	failure?: CommandFailure;
@@ -60,8 +69,6 @@ export interface SessionEntryLike {
 	customType?: string;
 	data?: unknown;
 }
-
-const STEP_ORDER: StepId[] = ["branch", "commit", "push", "pr", "ci", "merge", "return"];
 
 export function createDefaultAutoState(enabled = false): ProductionizeAutoState {
 	return {
@@ -147,7 +154,7 @@ function resumeCheckpointAfterInBandFix(checkpoint?: StepId): StepId | undefined
 }
 
 function isStepId(value: string): value is StepId {
-	return STEP_ORDER.includes(value as StepId);
+	return STEP_IDS.includes(value as StepId);
 }
 
 function isPersistedStateEntry(value: unknown): value is ProductionizePersistedStateEntry {
@@ -166,8 +173,10 @@ function clonePersistedState(state: ProductionizeStateSnapshot): ProductionizeSt
 		branch: state.branch,
 		baseBranch: state.baseBranch,
 		returnToBranch: state.returnToBranch,
+		returnRemote: state.returnRemote,
 		returnWarning: state.returnWarning,
 		remote: state.remote,
+		repository: state.repository ? { ...state.repository } : undefined,
 		pr: state.pr ? { ...state.pr } : undefined,
 		changedFiles: (state.changedFiles ?? []).map((file) => ({ ...file })),
 		failure: state.failure ? { ...state.failure } : undefined,

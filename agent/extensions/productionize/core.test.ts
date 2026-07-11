@@ -6,6 +6,7 @@ import {
 	classifyCheck,
 	evaluateChecks,
 	formatChangedFilesByDirectory,
+	formatGitCommandFailure,
 	hasDirtyFiles,
 	hasPrChanges,
 	isLikelyAlreadyMergedPr,
@@ -162,6 +163,32 @@ test("isLikelyNonFastForwardPull detects only git pull divergence", () => {
 	assert.equal(isLikelyNonFastForwardPull("", "fatal: Not possible to fast-forward, aborting."), true);
 	assert.equal(isLikelyNonFastForwardPull("", "error: Your local changes would be overwritten by merge"), false);
 	assert.equal(isLikelyNonFastForwardPull("", "rejected because remote contains non-fast-forward updates"), false);
+});
+
+test("formatGitCommandFailure gives safe remediation for locks and rejected pushes", () => {
+	assert.match(
+		formatGitCommandFailure(
+			["add", "-A"],
+			"",
+			"fatal: Unable to create '/repo/.git/index.lock': File exists. Another git process seems to be running",
+		) ?? "",
+		/Productionize did not remove.*index\.lock.*Confirm no Git process is running/si,
+	);
+	assert.match(
+		formatGitCommandFailure(["push"], "", "! [rejected] feat/x -> feat/x (non-fast-forward)") ?? "",
+		/never force-push.*fetch.*rebase/si,
+	);
+});
+
+test("formatGitCommandFailure explains worktree branch conflicts", () => {
+	assert.match(
+		formatGitCommandFailure(
+			["switch", "main"],
+			"",
+			"fatal: 'main' is already used by worktree at '/repo-main'",
+		) ?? "",
+		/main.*\/repo-main.*worktree/si,
+	);
 });
 
 test("evaluateChecks requires at least one non-skipped passing check", () => {

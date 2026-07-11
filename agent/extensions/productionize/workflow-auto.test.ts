@@ -17,6 +17,8 @@ test("scoped commit run executes branch through commit", async () => {
 		{ startFrom: "branch", stopAfter: "commit" },
 		{
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
@@ -80,6 +82,8 @@ test("persisted scoped auto run keeps stopAfter cap when resumed", async () => {
 		{ auto: true },
 		{
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
@@ -121,6 +125,8 @@ test("scoped pr run executes branch through pr", async () => {
 		{ startFrom: "branch", stopAfter: "pr" },
 		{
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				const joined = args.join(" ");
 				if (command === "git" && joined === "rev-parse --is-inside-work-tree") return ok("true\n");
@@ -128,7 +134,10 @@ test("scoped pr run executes branch through pr", async () => {
 				if (command === "git" && ["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
 				if (command === "git" && joined === "status --porcelain") return ok("");
 				if (command === "git" && joined === "rev-parse --abbrev-ref --symbolic-full-name @{u}") return ok("origin/feat/scoped\n");
+				if (command === "git" && joined === "for-each-ref --format=%(upstream:remotename)%00%(upstream:remoteref) refs/heads/feat/scoped") return ok("origin\0refs/heads/feat/scoped\n");
 				if (command === "git" && joined === "push") return ok();
+				if (command === "git" && joined === "rev-parse HEAD") return ok("abc\n");
+				if (command === "git" && joined === "ls-remote --heads origin refs/heads/feat/scoped") return ok("abc\trefs/heads/feat/scoped\n");
 				if (command === "gh" && joined === "repo view --json defaultBranchRef") return ok('{"defaultBranchRef":{"name":"main"}}\n');
 				if (command === "git" && joined === "fetch origin main") return ok();
 				if (command === "git" && joined === "diff --name-status FETCH_HEAD...HEAD") return ok("M\tagent/settings.json\n");
@@ -162,7 +171,7 @@ test("scoped pr run executes branch through pr", async () => {
 	assert.equal(state.steps.find((step) => step.id === "ci")?.status, "skipped");
 	assert.match(state.status, /Pull Request step finished/);
 	const commandLines = seen.map(({ command, args }) => `${command} ${args.join(" ")}`);
-	assert.deepEqual(commandLines.slice(0, 19), [
+	assert.deepEqual(commandLines.slice(0, 22), [
 		"git rev-parse --is-inside-work-tree",
 		"git branch --show-current",
 		"git rev-parse -q --verify MERGE_HEAD",
@@ -172,7 +181,10 @@ test("scoped pr run executes branch through pr", async () => {
 		"git status --porcelain",
 		"git status --porcelain",
 		"git rev-parse --abbrev-ref --symbolic-full-name @{u}",
+		"git for-each-ref --format=%(upstream:remotename)%00%(upstream:remoteref) refs/heads/feat/scoped",
 		"git push",
+		"git rev-parse HEAD",
+		"git ls-remote --heads origin refs/heads/feat/scoped",
 		"gh repo view --json defaultBranchRef",
 		"git fetch origin main",
 		"git diff --name-status FETCH_HEAD...HEAD",
@@ -181,10 +193,10 @@ test("scoped pr run executes branch through pr", async () => {
 		"git diff --no-ext-diff --unified=40 FETCH_HEAD...HEAD",
 		"git log --oneline --no-decorate FETCH_HEAD..HEAD",
 		"gh pr view --json number,title,url,headRefName,headRefOid",
-		commandLines[18] ?? "",
+		commandLines[21] ?? "",
 	]);
-	assert.match(commandLines[18] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
-	assert.equal(commandLines[19], "gh pr view --json number,title,url,headRefName,headRefOid");
+	assert.match(commandLines[21] ?? "", /^gh pr create --base main --head feat\/scoped --title Scoped PR --body\b/);
+	assert.equal(commandLines[22], "gh pr view --json number,title,url,headRefName,headRefOid");
 	assert.match(sparkPrompts[0]?.userText ?? "", /## Commit log\nabc123 chore: scoped change/);
 	assert.match(sparkPrompts[0]?.userText ?? "", /## Diff\ndiff --git/);
 	assert.match(sparkPrompts[1]?.userText ?? "", /## Diff stat\nagent\/settings\.json \| 1 \+/);
@@ -202,6 +214,8 @@ test("protected branches with local-only commits fail before productionize branc
 		{},
 		{
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
@@ -246,6 +260,8 @@ test("dirty gitlinks block productionize before commit or branch creation", asyn
 		{},
 		{
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
@@ -289,20 +305,26 @@ test("starting on main branches to a timestamped productionize branch before pus
 			now: () => new Date("2026-06-05T22:00:00.000Z"),
 			completeSpark: async () => "fix/safe-return-rebase",
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
 				if (joined === "rev-parse --is-inside-work-tree") return ok("true\n");
-				if (joined === "branch --show-current") return ok("main\n");
+				if (joined === "branch --show-current") return ok(`${state.branch ?? "main"}\n`);
 				if (["rev-parse -q --verify MERGE_HEAD", "rev-parse -q --verify CHERRY_PICK_HEAD", "rev-parse -q --verify REBASE_HEAD", "rev-parse -q --verify REVERT_HEAD"].includes(joined)) return fail();
 				if (joined === "status --porcelain") return ok();
 				if (joined === "rev-parse --abbrev-ref --symbolic-full-name @{u}") return state.branch === branchName ? fail() : ok("origin/main\n");
 				if (joined === "rev-list --count origin/main..HEAD") return ok("0\n");
+				if (joined === "for-each-ref --format=%(upstream:remotename)%00%(upstream:remoteref) refs/heads/main") return ok("origin\0refs/heads/main\n");
 				if (joined === `show-ref --verify --quiet refs/heads/${branchName}`) return fail();
-				if (joined === `checkout -b ${branchName}`) return ok();
+				if (joined === "show-ref --verify --quiet refs/heads/main") return ok();
+				if (joined === `switch -c ${branchName}`) return ok();
 				if (joined === `config branch.${branchName}.remote`) return fail();
 				if (joined === "remote") return ok("origin\n");
 				if (joined === `push -u origin ${branchName}`) return ok();
+				if (joined === "rev-parse HEAD") return ok("abc\n");
+				if (joined === `ls-remote --heads origin refs/heads/${branchName}`) return ok(`abc\trefs/heads/${branchName}\n`);
 				if (joined === "fetch origin main") return ok();
 				if (joined === "diff --name-status FETCH_HEAD...HEAD") return ok();
 				if (joined === "diff --stat FETCH_HEAD...HEAD") return ok();
@@ -320,7 +342,7 @@ test("starting on main branches to a timestamped productionize branch before pus
 	assert.equal(state.returnToBranch, "main");
 	assert.equal(state.steps.find((step) => step.id === "branch")?.detail, `Created ${branchName}`);
 	assert.match(state.status, /local checkout returned to main/i);
-	assert.ok(seen.some((entry) => entry.args.join(" ") === `checkout -b ${branchName}`));
+	assert.ok(seen.some((entry) => entry.args.join(" ") === `switch -c ${branchName}`));
 	assert.ok(seen.some((entry) => entry.args.join(" ") === `push -u origin ${branchName}`));
 });
 
@@ -337,9 +359,12 @@ test("return step rebases a diverged branch after creating a backup branch", asy
 		{
 			now: () => new Date("2026-06-05T22:00:00.000Z"),
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
+				if (joined === "show-ref --verify --quiet refs/heads/main") return ok();
 				if (joined === "switch main") return ok();
 				if (joined === "pull --ff-only origin main") return fail("", "fatal: Not possible to fast-forward, aborting.");
 				if (joined === "status --porcelain") return ok();
@@ -355,6 +380,7 @@ test("return step rebases a diverged branch after creating a backup branch", asy
 	assert.equal(state.returnWarning, undefined);
 	assert.match(state.status, /returned to main/i);
 	assert.deepEqual(seen, [
+		{ command: "git", args: ["show-ref", "--verify", "--quiet", "refs/heads/main"] },
 		{ command: "git", args: ["switch", "main"] },
 		{ command: "git", args: ["pull", "--ff-only", "origin", "main"] },
 		{ command: "git", args: ["status", "--porcelain"] },
@@ -378,9 +404,12 @@ test("return step aborts and fails safely when automatic rebase conflicts", asyn
 		{
 			now: () => new Date("2026-06-05T22:00:00.000Z"),
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				seen.push({ command, args: [...args] });
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
+				if (joined === "show-ref --verify --quiet refs/heads/main") return ok();
 				if (joined === "switch main") return ok();
 				if (joined === "pull --ff-only origin main") return fail("", "fatal: Not possible to fast-forward, aborting.");
 				if (joined === "status --porcelain") return ok();
@@ -397,6 +426,7 @@ test("return step aborts and fails safely when automatic rebase conflicts", asyn
 	assert.match(state.failure?.message ?? "", /Backup branch created: productionize-backup\/main-2026-06-05T22-00-00-000Z/);
 	assert.equal(state.steps.find((step) => step.id === "return")?.status, "failed");
 	assert.deepEqual(seen, [
+		{ command: "git", args: ["show-ref", "--verify", "--quiet", "refs/heads/main"] },
 		{ command: "git", args: ["switch", "main"] },
 		{ command: "git", args: ["pull", "--ff-only", "origin", "main"] },
 		{ command: "git", args: ["status", "--porcelain"] },
@@ -418,8 +448,11 @@ test("return step reports remote merge success separately when local cleanup is 
 		{},
 		{
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				if (command !== "git") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
+				if (joined === "show-ref --verify --quiet refs/heads/main") return ok();
 				if (joined === "switch main") return ok();
 				if (joined === "pull --ff-only origin main") return fail("", "fatal: Not possible to fast-forward, aborting.");
 				if (joined === "status --porcelain") return ok(" M agent/settings.json\n");
@@ -445,6 +478,8 @@ test("merge step treats already-merged PR with worktree-blocked local branch cle
 		{},
 		{
 			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
 				if (command !== "gh") throw new Error(`Unexpected command: ${command}`);
 				const joined = args.join(" ");
 				if (joined === "pr merge 3 --squash --delete-branch --match-head-commit f9f76b --subject Favorites guardrail --body ") {
@@ -485,6 +520,13 @@ function createFakeContext(): any {
 	};
 }
 
+function repositoryPreflight(command: string, args: string[]): ExecResult | undefined {
+	if (command === "git" && args.join(" ") === "rev-parse --path-format=absolute --show-toplevel --git-dir --git-common-dir") {
+		return ok("/repo\n/repo/.git\n/repo/.git\n");
+	}
+	return undefined;
+}
+
 function ok(stdout = "", stderr = ""): ExecResult {
 	return { code: 0, stdout, stderr };
 }
@@ -498,6 +540,7 @@ function createReturnState() {
 	state.remote = "origin";
 	state.branch = "feat/test";
 	state.returnToBranch = "main";
+	state.returnRemote = "origin";
 	state.pr = { number: 16, title: "PR", url: "https://example.test/pr/16", headRefName: "feat/test", headRefOid: "abc" };
 	for (const step of state.steps) step.status = step.id === "return" ? "pending" : "done";
 	return state;
