@@ -62,6 +62,8 @@ test("reconstruction restores latest auto run state", () => {
 	state.auto.currentRepair = { stepId: "ci" };
 	state.fixInstruction = "legacy fix text";
 	state.branch = "feat/test";
+	state.returnRemote = "upstream";
+	state.repository = { root: "/repo", gitDir: "/repo/.git/worktrees/test", commonDir: "/repo/.git" };
 	state.status = "Polling GitHub checks...";
 
 	const restored = reconstructAutoState([
@@ -75,6 +77,8 @@ test("reconstruction restores latest auto run state", () => {
 	assert.equal(restored.state?.auto.startFromCheckpoint, "branch");
 	assert.equal(restored.state?.auto.stopAfterCheckpoint, "ci");
 	assert.equal(restored.state?.branch, "feat/test");
+	assert.equal(restored.state?.returnRemote, "upstream");
+	assert.deepEqual(restored.state?.repository, { root: "/repo", gitDir: "/repo/.git/worktrees/test", commonDir: "/repo/.git" });
 	assert.equal("currentRepair" in (restored.state?.auto ?? {}), false);
 	assert.equal("fixInstruction" in (restored.state ?? {}), false);
 });

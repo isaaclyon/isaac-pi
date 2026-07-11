@@ -2,7 +2,7 @@
 name: reviewer
 description: Legacy disabled alias shadowing the bundled generic reviewer
 disable-model-invocation: true
-model: openai-codex/gpt-5.6-sol-low
+model: openai-codex/gpt-5.6-sol
 auto-exit: true
 spawning: false
 deny-tools: claude

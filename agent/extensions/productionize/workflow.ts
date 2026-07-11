@@ -22,12 +22,28 @@ import {
 	sanitizeBranchName,
 	sanitizeCommitSubject,
 	sanitizePrTitle,
+	STEP_IDS,
 	type ChangedFile,
 	type CommandFailure,
 	type GitHubCheck,
 	type StepId,
 	type StepStatus,
 } from "./core.ts";
+import {
+	assertNoRepositoryBlockers,
+	assertRelatedWorktree,
+	assertRepositoryIdentity,
+	availableBranchName,
+	commandFailure,
+	execCommand,
+	execOrFail,
+	inspectRepository,
+	localBranchExists,
+	readUpstreamTarget,
+	verifyCurrentBranch,
+	verifyRemoteBranch,
+	type GitExecutionHooks,
+} from "./git-runtime.ts";
 import { WorkflowFailure, type ExecResult, type PrInfo, type ProductionizeState } from "./types.ts";
 
 const SPARK_PROVIDER = "openai-codex";
@@ -40,7 +56,7 @@ const NO_CHECKS_GRACE_MS = 20_000;
 const SPARK_DIFF_MAX_CHARS = 24_000;
 const CHECK_FIELDS = "name,workflow,bucket,state,link,description,startedAt,completedAt";
 const PR_FIELDS = "number,title,url,headRefName,headRefOid";
-const STEP_ORDER: StepId[] = ["branch", "commit", "push", "pr", "ci", "merge", "return"];
+const STEP_ORDER: StepId[] = [...STEP_IDS];
 
 type SparkMessage = {
 	role: "user";
@@ -54,14 +70,7 @@ export interface ProductionizeRunOptions {
 	stopAfter?: StepId;
 }
 
-export interface WorkflowHooks {
-	execCommand?: (
-		command: string,
-		args: string[],
-		cwd: string,
-		signal: AbortSignal,
-		timeout: number,
-	) => Promise<ExecResult>;
+export interface WorkflowHooks extends GitExecutionHooks {
 	completeSpark?: (ctx: ExtensionContext, systemPrompt: string, userText: string, fallback: string, signal: AbortSignal) => Promise<string>;
 	now?: () => Date;
 }
@@ -127,6 +136,9 @@ export async function runWorkflow(
 	};
 
 	try {
+		const repository = await inspectRepository(runtime, ctx.cwd);
+		assertRepositoryIdentity(runtime, repository, ctx.cwd);
+		await assertNoRepositoryBlockers(runtime, repository, ctx.cwd);
 		if (state.auto.enabled) {
 			state.auto.startTimestamp ??= timestamp(hooks);
 			await persistState(runtime);
@@ -164,7 +176,7 @@ export async function runWorkflow(
 	} catch (error) {
 		if (signal.aborted || state.cancelRequested) {
 			state.outcome = "cancelled";
-			state.status = "Productionize cancelled.";
+			state.status = state.returnWarning ? `Productionize cancelled. ${state.returnWarning}` : "Productionize cancelled.";
 			markRunningCancelled(state);
 			if (state.auto.enabled) await persistState(runtime);
 			render();
@@ -264,7 +276,7 @@ async function runBranchStep(runtime: WorkflowRuntime): Promise<void> {
 		});
 	}
 
-	await ensureSafeStartState(runtime, currentBranch);
+	const returnRemote = await ensureSafeStartState(runtime, currentBranch);
 	if (!PROTECTED_BRANCHES.has(currentBranch)) {
 		state.branch = currentBranch;
 		setStep(state, "branch", "done", `Reusing ${currentBranch}`);
@@ -273,7 +285,8 @@ async function runBranchStep(runtime: WorkflowRuntime): Promise<void> {
 		return;
 	}
 
-	const branchName = buildProductionizeBranchName(
+	const persistedBranch = state.returnToBranch === currentBranch && state.branch?.startsWith("productionize/") ? state.branch : undefined;
+	const generatedBranch = persistedBranch ?? buildProductionizeBranchName(
 		await completeSparkWithHooks(
 			runtime,
 			"Generate one git branch name. Output only the branch name.",
@@ -282,17 +295,20 @@ async function runBranchStep(runtime: WorkflowRuntime): Promise<void> {
 		),
 		runtime.hooks,
 	);
+	const branchName = persistedBranch ?? await availableBranchName(runtime, cwd, generatedBranch);
 
 	state.baseBranch = currentBranch;
 	state.returnToBranch = currentBranch;
-	if (await localBranchExists(runtime, cwd, branchName)) {
+	state.returnRemote = requiredState(returnRemote, `Protected branch ${currentBranch} has no upstream remote.`);
+	state.branch = branchName;
+	if (persistedBranch && await localBranchExists(runtime, cwd, branchName)) {
 		setStep(state, "branch", "running", `Switching to existing ${branchName}`);
 		state.status = `Switching to existing branch ${branchName}...`;
 		await update(runtime);
-		await execOrFail(runtime, "branch", "Switch branch", "git", ["checkout", branchName], cwd);
-		state.branch = branchName;
+		await execOrFail(runtime, "branch", "Switch branch", "git", ["switch", branchName], cwd);
+		await verifyCurrentBranch(runtime, cwd, branchName);
 		setStep(state, "branch", "done", `Reused ${branchName}`);
-		log(state, `Switched to existing branch ${branchName}`);
+		log(state, `Switched to persisted branch ${branchName}`);
 		await update(runtime);
 		return;
 	}
@@ -300,8 +316,8 @@ async function runBranchStep(runtime: WorkflowRuntime): Promise<void> {
 	setStep(state, "branch", "running", `Creating ${branchName}`);
 	state.status = `Creating branch ${branchName}...`;
 	await update(runtime);
-	await execOrFail(runtime, "branch", "Create branch", "git", ["checkout", "-b", branchName], cwd);
-	state.branch = branchName;
+	await execOrFail(runtime, "branch", "Create branch", "git", ["switch", "-c", branchName], cwd);
+	await verifyCurrentBranch(runtime, cwd, branchName);
 	setStep(state, "branch", "done", `Created ${branchName}`);
 	log(state, `Created branch ${branchName}`);
 	await update(runtime);
@@ -370,9 +386,10 @@ async function runPushStep(runtime: WorkflowRuntime): Promise<void> {
 
 	const upstream = await execCommand(runtime, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd, runtime.signal, 30_000);
 	if (upstream.code === 0 && upstream.stdout.trim()) {
-		const remote = upstream.stdout.trim().split("/")[0] ?? "origin";
-		state.remote = remote;
+		const target = await readUpstreamTarget(runtime, cwd, branch);
+		state.remote = target.remote;
 		await execOrFail(runtime, "push", "Push", "git", ["push"], cwd);
+		await verifyRemoteBranch(runtime, cwd, target.remote, target.remoteRef, branch);
 		setStep(state, "push", "done", `Pushed to ${upstream.stdout.trim()}`);
 		log(state, `Pushed to existing upstream ${upstream.stdout.trim()}`);
 		await update(runtime);
@@ -382,8 +399,9 @@ async function runPushStep(runtime: WorkflowRuntime): Promise<void> {
 	const remote = await choosePushRemote(runtime, cwd, branch);
 	state.remote = remote;
 	await execOrFail(runtime, "push", "Push with upstream", "git", ["push", "-u", remote, branch], cwd);
+	await verifyRemoteBranch(runtime, cwd, remote, `refs/heads/${branch}`, branch);
 	setStep(state, "push", "done", `Pushed to ${remote}/${branch}`);
-	log(state, `Pushed and set upstream ${remote}/${branch}`);
+	log(state, `Pushed and verified ${remote}/${branch}`);
 	await update(runtime);
 }
 
@@ -524,42 +542,104 @@ async function runMergeStep(runtime: WorkflowRuntime): Promise<void> {
 	await update(runtime);
 
 	const mergeArgs = ["pr", "merge", String(pr.number), "--squash", "--delete-branch", "--match-head-commit", pr.headRefOid, "--subject", pr.title, "--body", ""];
-	const result = await execCommand(runtime, "gh", mergeArgs, cwd, runtime.signal, 180_000);
+	const result = await executeMergeCommand(runtime, mergeArgs, pr.number, cwd);
 	if (result.code !== 0) {
-		if (isLikelyAlreadyMergedPr(result.stdout, result.stderr)) {
-			const blockedDelete = parseWorktreeBlockedBranchDelete(result.stdout, result.stderr);
-			if (blockedDelete) {
-				setStep(state, "merge", "done", `Already merged; ${blockedDelete.branch} checked out in worktree`);
-				log(state, `PR #${pr.number} was already merged; local branch ${blockedDelete.branch} was not deleted because it is checked out at ${blockedDelete.path}`);
-			} else {
-				setStep(state, "merge", "done", "Already merged");
-				log(state, `PR #${pr.number} was already merged`);
-			}
-			await update(runtime);
-			return;
-		}
+		if (await acceptMergedPrFailure(runtime, pr.number, cwd, result)) return;
 		const usedWorktree = parseBranchUsedByWorktreeError(result.stdout, result.stderr);
 		if (!usedWorktree || (usedWorktree.branch !== state.baseBranch && !PROTECTED_BRANCHES.has(usedWorktree.branch))) {
 			throw commandFailure("merge", "Squash merge", "gh", mergeArgs, cwd, result);
 		}
 
+		await assertRelatedWorktree(runtime, usedWorktree.path, "merge");
+		const worktreeBranch = await execOrFail(runtime, "merge", "Verify merge worktree branch", "git", ["branch", "--show-current"], usedWorktree.path, 30_000);
+		if (worktreeBranch.stdout.trim() !== usedWorktree.branch) {
+			throw new WorkflowFailure("merge", {
+				step: "Merge",
+				command: "git",
+				args: ["branch", "--show-current"],
+				cwd: usedWorktree.path,
+				message: `Worktree ${usedWorktree.path} switched to ${worktreeBranch.stdout.trim() || "detached HEAD"}; expected ${usedWorktree.branch}. Refusing to retry the merge there.`,
+			});
+		}
 		setStep(state, "merge", "running", `Retrying from ${usedWorktree.branch} worktree`);
 		log(state, `Retrying merge from worktree ${usedWorktree.path}`);
 		await update(runtime);
-		const retry = await execCommand(runtime, "gh", mergeArgs, usedWorktree.path, runtime.signal, 180_000);
-		if (retry.code !== 0) {
+		const retry = await executeMergeCommand(runtime, mergeArgs, pr.number, usedWorktree.path);
+		if (retry.code !== 0 && !(await acceptMergedPrFailure(runtime, pr.number, usedWorktree.path, retry))) {
 			throw commandFailure("merge", "Squash merge", "gh", mergeArgs, usedWorktree.path, retry);
 		}
+		if (retry.code !== 0) return;
 	}
 	setStep(state, "merge", "done", "Squash merged; delete branch requested");
 	log(state, `Merged PR #${pr.number}`);
 	await update(runtime);
 }
 
+async function executeMergeCommand(runtime: WorkflowRuntime, args: string[], prNumber: number, cwd: string): Promise<ExecResult> {
+	let result: ExecResult;
+	try {
+		result = await execCommand(runtime, "gh", args, cwd, runtime.signal, 180_000);
+	} catch (error) {
+		if (runtime.signal.aborted || runtime.state.cancelRequested) await reconcileInterruptedMerge(runtime, prNumber, cwd);
+		throw error;
+	}
+	if (runtime.signal.aborted || runtime.state.cancelRequested) {
+		await reconcileInterruptedMerge(runtime, prNumber, cwd);
+		throw new Error("cancelled");
+	}
+	return result;
+}
+
+async function reconcileInterruptedMerge(runtime: WorkflowRuntime, prNumber: number, cwd: string): Promise<void> {
+	let merged = false;
+	try {
+		merged = await isPrMerged(runtime, prNumber, cwd, new AbortController().signal);
+	} catch {
+		merged = false;
+	}
+	if (merged) {
+		setStep(runtime.state, "merge", "done", "Merged remotely before cancellation");
+		runtime.state.returnWarning = "PR merged remotely before cancellation; local return and branch cleanup may be incomplete.";
+		log(runtime.state, `PR #${prNumber} merged before cancellation was observed`);
+	} else {
+		runtime.state.returnWarning = "Merge was interrupted and remote merge state could not be confirmed. Verify the PR before retrying.";
+		log(runtime.state, `Could not confirm whether PR #${prNumber} merged before cancellation`);
+	}
+	await update(runtime);
+}
+
+async function isPrMerged(runtime: WorkflowRuntime, prNumber: number, cwd: string, signal: AbortSignal): Promise<boolean> {
+	const args = ["pr", "view", String(prNumber), "--json", "state,mergedAt"];
+	const status = await execCommand(runtime, "gh", args, cwd, signal, COMMAND_TIMEOUT_MS);
+	if (status.code !== 0) return false;
+	try {
+		const data = JSON.parse(status.stdout) as { state?: string; mergedAt?: string | null };
+		return data.state?.toUpperCase() === "MERGED" || Boolean(data.mergedAt);
+	} catch {
+		return false;
+	}
+}
+
+async function acceptMergedPrFailure(runtime: WorkflowRuntime, prNumber: number, cwd: string, failure: ExecResult): Promise<boolean> {
+	const wasAlreadyMerged = isLikelyAlreadyMergedPr(failure.stdout, failure.stderr);
+	const merged = wasAlreadyMerged || await isPrMerged(runtime, prNumber, cwd, runtime.signal);
+	if (!merged) return false;
+
+	const blockedDelete = parseWorktreeBlockedBranchDelete(failure.stdout, failure.stderr);
+	if (blockedDelete) {
+		setStep(runtime.state, "merge", "done", `${wasAlreadyMerged ? "Already merged" : "Merged"}; ${blockedDelete.branch} remains in worktree`);
+		log(runtime.state, `PR #${prNumber} merged; local branch ${blockedDelete.branch} remains checked out at ${blockedDelete.path}`);
+	} else {
+		setStep(runtime.state, "merge", "done", "Merged; cleanup command reported an error");
+		log(runtime.state, `PR #${prNumber} is merged; ignored a post-merge cleanup error from gh`);
+	}
+	await update(runtime);
+	return true;
+}
+
 async function runReturnStep(runtime: WorkflowRuntime): Promise<void> {
 	const { state, ctx } = runtime;
 	const cwd = ctx.cwd;
-	const remote = requiredState(state.remote, "Return step requires remote state.");
 	const branch = state.returnToBranch;
 	if (!branch) {
 		setStep(state, "return", "skipped", "Started on existing branch");
@@ -567,10 +647,51 @@ async function runReturnStep(runtime: WorkflowRuntime): Promise<void> {
 		return;
 	}
 
+	const localReturnBranchExisted = await localBranchExists(runtime, cwd, branch);
+	const remote = state.returnRemote ?? (localReturnBranchExisted ? (await readUpstreamTarget(runtime, cwd, branch)).remote : undefined);
+	if (!remote) {
+		throw new WorkflowFailure("return", {
+			step: "Return",
+			command: "git",
+			cwd,
+			message: `Cannot safely recreate deleted branch ${branch} because its original upstream remote was not persisted. Start a fresh productionize run or recreate the branch manually.`,
+		});
+	}
+	state.returnRemote = remote;
+
+	if (!localReturnBranchExisted) {
+		setStep(state, "return", "running", `Recreating ${branch} from ${remote}`);
+		state.status = `Recreating ${branch} from ${remote}...`;
+		await update(runtime);
+		await execOrFail(runtime, "return", "Fetch deleted base branch", "git", ["fetch", remote, branch], cwd, 180_000);
+		await execOrFail(runtime, "return", "Recreate base branch", "git", ["switch", "-c", branch, "--track", `${remote}/${branch}`], cwd);
+		await verifyCurrentBranch(runtime, cwd, branch);
+		state.branch = branch;
+		state.returnWarning = undefined;
+		setStep(state, "return", "done", `Recreated and updated ${branch}`);
+		log(state, `Recreated ${branch} from ${remote}/${branch}`);
+		await update(runtime);
+		return;
+	}
+
 	setStep(state, "return", "running", `Switching to ${branch}`);
 	state.status = `Switching back to ${branch}...`;
 	await update(runtime);
-	await execOrFail(runtime, "return", "Return to base branch", "git", ["switch", branch], cwd);
+	const switchArgs = ["switch", branch];
+	const switched = await execCommand(runtime, "git", switchArgs, cwd, runtime.signal, COMMAND_TIMEOUT_MS);
+	if (switched.code !== 0) {
+		const usedWorktree = parseBranchUsedByWorktreeError(switched.stdout, switched.stderr);
+		if (!usedWorktree || usedWorktree.branch !== branch) {
+			throw commandFailure("return", "Return to base branch", "git", switchArgs, cwd, switched);
+		}
+		await updateReturnBranchInWorktree(runtime, remote, branch, usedWorktree.path);
+		state.returnWarning = `${branch} remains checked out in its existing worktree at ${usedWorktree.path}; the current worktree was left unchanged.`;
+		state.returnToBranch = undefined;
+		setStep(state, "return", "done", `Updated ${branch} in ${usedWorktree.path}`);
+		log(state, state.returnWarning);
+		await update(runtime);
+		return;
+	}
 	state.branch = branch;
 	state.returnWarning = undefined;
 
@@ -595,9 +716,43 @@ async function runReturnStep(runtime: WorkflowRuntime): Promise<void> {
 	await update(runtime);
 }
 
-async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, branch: string): Promise<void> {
-	const { state, ctx } = runtime;
-	const cwd = ctx.cwd;
+async function updateReturnBranchInWorktree(runtime: WorkflowRuntime, remote: string, branch: string, cwd: string): Promise<void> {
+	await assertRelatedWorktree(runtime, cwd, "return");
+	const current = await execOrFail(runtime, "return", "Verify return worktree branch", "git", ["branch", "--show-current"], cwd, 30_000);
+	if (current.stdout.trim() !== branch) {
+		throw new WorkflowFailure("return", {
+			step: "Return",
+			command: "git",
+			args: ["branch", "--show-current"],
+			cwd,
+			stdout: current.stdout,
+			stderr: current.stderr,
+			message: `Worktree ${cwd} switched to ${current.stdout.trim() || "detached HEAD"}; expected ${branch}. Refusing to update it.`,
+		});
+	}
+	const status = await execOrFail(runtime, "return", "Check return worktree status", "git", ["status", "--porcelain"], cwd, 30_000);
+	if (hasDirtyFiles(status.stdout)) {
+		throw new WorkflowFailure("return", {
+			step: "Return",
+			command: "git",
+			args: ["status", "--porcelain"],
+			cwd,
+			stdout: status.stdout,
+			stderr: status.stderr,
+			message: `Worktree ${cwd} has local changes. Productionize left it unchanged instead of pulling ${remote}/${branch}.`,
+		});
+	}
+	const pullArgs = ["pull", "--ff-only", remote, branch];
+	const pull = await execCommand(runtime, "git", pullArgs, cwd, runtime.signal, 180_000);
+	if (pull.code === 0) return;
+	if (!isLikelyNonFastForwardPull(pull.stdout, pull.stderr)) {
+		throw commandFailure("return", "Pull base branch", "git", pullArgs, cwd, pull);
+	}
+	await reconcileReturnBranch(runtime, remote, branch, cwd);
+}
+
+async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, branch: string, cwd = runtime.ctx.cwd): Promise<void> {
+	const { state } = runtime;
 	setStep(state, "return", "running", `Reconciling ${branch}`);
 	state.status = `Rebasing local ${branch} onto ${remote}/${branch}...`;
 	await update(runtime);
@@ -620,17 +775,43 @@ async function reconcileReturnBranch(runtime: WorkflowRuntime, remote: string, b
 	await execOrFail(runtime, "return", "Fetch return branch", "git", ["fetch", remote, branch], cwd, 180_000);
 
 	const rebaseArgs = ["rebase", "FETCH_HEAD"];
-	const rebase = await execCommand(runtime, "git", rebaseArgs, cwd, runtime.signal, 180_000);
-	if (rebase.code === 0) return;
-	void execCommand(runtime, "git", ["rebase", "--abort"], cwd, runtime.signal, 30_000).catch(() => undefined);
+	let rebase: ExecResult | undefined;
+	let rebaseError: unknown;
+	let rebaseThrew = false;
+	try {
+		rebase = await execCommand(runtime, "git", rebaseArgs, cwd, runtime.signal, 180_000);
+	} catch (error) {
+		rebaseThrew = true;
+		rebaseError = error;
+	}
+	if (rebase?.code === 0) return;
+
+	const abortArgs = ["rebase", "--abort"];
+	const abort = await execCommand(runtime, "git", abortArgs, cwd, new AbortController().signal, 30_000);
+	if (abort.code !== 0) {
+		const warning = `Automatic rebase failed and git rebase --abort also failed. The repository may still be mid-rebase. Backup branch created: ${backupBranch}. Recover Git manually before rerunning /productionize.`;
+		state.returnWarning = warning;
+		if (rebaseThrew) throw rebaseError;
+		throw new WorkflowFailure("return", {
+			step: "Pull base branch",
+			command: "git",
+			args: abortArgs,
+			cwd,
+			code: abort.code,
+			stdout: abort.stdout,
+			stderr: abort.stderr,
+			message: warning,
+		});
+	}
+	if (rebaseThrew) throw rebaseError;
 	throw new WorkflowFailure("return", {
 		step: "Pull base branch",
 		command: "git",
 		args: rebaseArgs,
 		cwd,
-		code: rebase.code,
-		stdout: rebase.stdout,
-		stderr: rebase.stderr,
+		code: rebase?.code,
+		stdout: rebase?.stdout,
+		stderr: rebase?.stderr,
 		message: `Automatic rebase of ${branch} onto ${remote}/${branch} failed. Backup branch created: ${backupBranch}. Resolve manually.`,
 	});
 }
@@ -662,25 +843,21 @@ async function completeSpark(
 		content: [{ type: "text", text: userText }],
 		timestamp: Date.now(),
 	};
+	// @ts-ignore Pi supplies this package to global extensions at runtime.
 	const { complete } = await import("@earendil-works/pi-ai");
 	const response = await complete(model, { systemPrompt, messages: [message] }, { apiKey: auth.apiKey, headers: auth.headers, signal });
 	if (response.stopReason === "aborted") return fallback;
 	const text = response.content
-		.filter((part): part is { type: "text"; text: string } => part.type === "text")
-		.map((part) => part.text)
+		.filter((part: { type: string; text?: string }): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
+		.map((part: { type: "text"; text: string }) => part.text)
 		.join("\n")
 		.trim();
 	return text || fallback;
 }
 
-async function localBranchExists(runtime: WorkflowRuntime, cwd: string, branch: string): Promise<boolean> {
-	const result = await execCommand(runtime, "git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], cwd, runtime.signal, 30_000);
-	return result.code === 0;
-}
-
 async function inferBranchRemote(runtime: WorkflowRuntime, cwd: string, branch: string, stepId: StepId): Promise<string> {
 	const upstream = await execCommand(runtime, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd, runtime.signal, 30_000);
-	if (upstream.code === 0 && upstream.stdout.trim()) return upstream.stdout.trim().split("/")[0] ?? "origin";
+	if (upstream.code === 0 && upstream.stdout.trim()) return (await readUpstreamTarget(runtime, cwd, branch)).remote;
 
 	const configured = await execCommand(runtime, "git", ["config", `branch.${branch}.remote`], cwd, runtime.signal, 30_000);
 	if (configured.code === 0 && configured.stdout.trim() && configured.stdout.trim() !== ".") return configured.stdout.trim();
@@ -761,14 +938,9 @@ async function fetchChecks(runtime: WorkflowRuntime, cwd: string, prNumber: numb
 	});
 }
 
-async function repoHasDirtyFiles(runtime: WorkflowRuntime, cwd: string): Promise<boolean> {
-	const status = await execOrFail(runtime, "commit", "Git status", "git", ["status", "--porcelain"], cwd);
-	return hasDirtyFiles(status.stdout);
-}
-
-async function ensureSafeStartState(runtime: WorkflowRuntime, currentBranch: string): Promise<void> {
+async function ensureSafeStartState(runtime: WorkflowRuntime, currentBranch: string): Promise<string | undefined> {
 	const cwd = runtime.ctx.cwd;
-	await assertNoGitOperationInProgress(runtime, cwd);
+	await assertNoGitOperationRefs(runtime, cwd);
 	const dirtyGitlinks = await listDirtyGitlinks(runtime, cwd);
 	if (dirtyGitlinks.length > 0) {
 		throw new WorkflowFailure("branch", {
@@ -779,7 +951,7 @@ async function ensureSafeStartState(runtime: WorkflowRuntime, currentBranch: str
 			message: `Cannot run /productionize with dirty gitlinks or nested worktrees: ${dirtyGitlinks.join(", ")}. Restore or commit them first.`,
 		});
 	}
-	if (!PROTECTED_BRANCHES.has(currentBranch)) return;
+	if (!PROTECTED_BRANCHES.has(currentBranch)) return undefined;
 
 	const upstream = await branchUpstreamRef(runtime, cwd);
 	if (!upstream) {
@@ -801,9 +973,10 @@ async function ensureSafeStartState(runtime: WorkflowRuntime, currentBranch: str
 			message: `Protected branch ${currentBranch} has ${ahead} local commit(s) not on ${upstream}. Move them to a feature branch before running /productionize.`,
 		});
 	}
+	return (await readUpstreamTarget(runtime, cwd, currentBranch)).remote;
 }
 
-async function assertNoGitOperationInProgress(runtime: WorkflowRuntime, cwd: string): Promise<void> {
+async function assertNoGitOperationRefs(runtime: WorkflowRuntime, cwd: string): Promise<void> {
 	for (const [ref, label] of [
 		["MERGE_HEAD", "merge"],
 		["CHERRY_PICK_HEAD", "cherry-pick"],
@@ -847,51 +1020,6 @@ async function countCommits(runtime: WorkflowRuntime, cwd: string, range: string
 	return Number.isFinite(count) ? count : 0;
 }
 
-
-async function execOrFail(
-	runtime: WorkflowRuntime,
-	stepId: StepId,
-	step: string,
-	command: string,
-	args: string[],
-	cwd: string,
-	timeout = COMMAND_TIMEOUT_MS,
-): Promise<ExecResult> {
-	const result = await execCommand(runtime, command, args, cwd, runtime.signal, timeout);
-	if (result.code !== 0) throw commandFailure(stepId, step, command, args, cwd, result);
-	return result;
-}
-
-function commandFailure(stepId: StepId, step: string, command: string, args: string[], cwd: string, result: ExecResult): WorkflowFailure {
-	return new WorkflowFailure(stepId, {
-		step,
-		command,
-		args,
-		cwd,
-		code: result.code,
-		stdout: result.stdout,
-		stderr: result.stderr,
-		message: `${command} ${args.join(" ")} exited ${result.code}`,
-	});
-}
-
-async function execCommand(
-	runtime: WorkflowRuntime,
-	command: string,
-	args: string[],
-	cwd: string,
-	signal: AbortSignal,
-	timeout = COMMAND_TIMEOUT_MS,
-): Promise<ExecResult> {
-	if (runtime.hooks.execCommand) return runtime.hooks.execCommand(command, args, cwd, signal, timeout);
-	try {
-		const result = await runtime.pi.exec(command, args, { cwd, timeout, signal });
-		return { code: result.code, stdout: result.stdout, stderr: result.stderr, killed: result.killed };
-	} catch (error) {
-		if (signal.aborted) throw error;
-		return { code: 1, stdout: "", stderr: error instanceof Error ? error.message : String(error) };
-	}
-}
 
 function parseJson<T>(stdout: string, label: string, stepId: StepId, step: string, command: string, args: string[], cwd: string): T {
 	try {
@@ -1081,9 +1209,23 @@ function markScopedSuccess(state: ProductionizeState, stepId: StepId): void {
 function stateForFailure(runtime: WorkflowRuntime, failure: WorkflowFailure): void {
 	runtime.state.outcome = "failed";
 	runtime.state.status = failureStatus(runtime.state, failure);
-	runtime.state.failure = failure.failure;
+	runtime.state.failure = boundedFailure(failure.failure);
 	setStep(runtime.state, failure.stepId, "failed", failure.failure.message ?? "failed");
 	log(runtime.state, runtime.state.status);
+}
+
+function boundedFailure(failure: CommandFailure): CommandFailure {
+	return {
+		...failure,
+		stdout: boundFailureText(failure.stdout),
+		stderr: boundFailureText(failure.stderr),
+	};
+}
+
+function boundFailureText(value: string | undefined): string | undefined {
+	const maxLength = 8_000;
+	if (!value || value.length <= maxLength) return value;
+	return `[truncated ${value.length - maxLength} earlier characters]\n${value.slice(-maxLength)}`;
 }
 
 async function persistState(runtime: WorkflowRuntime): Promise<void> {
@@ -1107,9 +1249,14 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 			reject(new Error("cancelled"));
 			return;
 		}
-		const timeout = setTimeout(resolve, ms);
+		const onComplete = () => {
+			signal.removeEventListener("abort", onAbort);
+			resolve();
+		};
+		const timeout = setTimeout(onComplete, ms);
 		const onAbort = () => {
 			clearTimeout(timeout);
+			signal.removeEventListener("abort", onAbort);
 			reject(new Error("cancelled"));
 		};
 		signal.addEventListener("abort", onAbort, { once: true });

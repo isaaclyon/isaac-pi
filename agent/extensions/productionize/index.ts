@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { reconstructAutoState, parseProductionizeArgs, prepareStateForModelRun } from "./auto.ts";
-import type { StepId } from "./core.ts";
+import { STEP_IDS, type StepId } from "./core.ts";
 import { buildProductionizeCompletionMessage, buildProductionizeFailurePrompt } from "./handoff.ts";
 import { ProductionizePanel } from "./panel.ts";
 import type { ProductionizeState } from "./types.ts";
@@ -31,7 +31,6 @@ class ToolText {
 interface ActiveRun {
 	sessionFile: string;
 	controller: AbortController;
-	state: ProductionizeState;
 }
 
 interface ProductionizeDependencies {
@@ -72,11 +71,11 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 		if (activeRun?.sessionFile === sessionFile) activeRun = undefined;
 	};
 
-	const createController = (ctx: ExtensionContext, state: ProductionizeState): AbortController | undefined => {
+	const createController = (ctx: ExtensionContext): AbortController | undefined => {
 		const sessionFile = getSessionFile(ctx);
 		if (activeRun) return undefined;
 		const controller = new AbortController();
-		activeRun = { sessionFile, controller, state };
+		activeRun = { sessionFile, controller };
 		return controller;
 	};
 
@@ -87,7 +86,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 	): Promise<{ action: "close" | "handoff" } | undefined> => {
 		if (!ctx.hasUI) return;
 		const sessionFile = getSessionFile(ctx);
-		const controller = createController(ctx, state);
+		const controller = createController(ctx);
 		if (!controller) return;
 
 		let requestRender: (() => void) | undefined;
@@ -129,7 +128,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 		options: ProductionizeRunOptions,
 	): Promise<{ content: Array<{ type: "text"; text: string }>; details: Record<string, unknown> }> => {
 		const sessionFile = getSessionFile(ctx);
-		const controller = createController(ctx, state);
+		const controller = createController(ctx);
 		if (!controller) {
 			return {
 				content: [{ type: "text", text: "Productionize is already running in this session." }],
@@ -230,7 +229,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 				},
 				targetStep: {
 					type: "string",
-					enum: ["branch", "commit", "push", "pr", "ci", "merge", "return"],
+					enum: [...STEP_IDS],
 					description: "Optional stage to run through from branch. Omit for the full workflow or persisted resume.",
 				},
 			},
@@ -240,10 +239,10 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 			const details = result.details as Record<string, unknown> | undefined;
 			if (details?.status === "started") return new ToolText("productionize_run — started");
 			if (details?.status === "already_running") return new ToolText("productionize_run — already running");
-			return new ToolText(typeof result.content[0]?.text === "string" ? result.content[0].text : "");
+			const content = result.content[0];
+			return new ToolText(content?.type === "text" ? content.text : "");
 		},
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			await ctx.waitForIdle?.();
 			const restored = deps.reconstructAutoState(ctx.sessionManager.getEntries() as Array<{ type?: string; customType?: string; data?: unknown }>).state as ProductionizeState | undefined;
 			const shouldResume = params.resume !== false;
 			const targetStep = isStepId(params.targetStep) ? params.targetStep : undefined;
@@ -262,5 +261,5 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 }
 
 function isStepId(value: unknown): value is StepId {
-	return value === "branch" || value === "commit" || value === "push" || value === "pr" || value === "ci" || value === "merge" || value === "return";
+	return typeof value === "string" && STEP_IDS.includes(value as StepId);
 }

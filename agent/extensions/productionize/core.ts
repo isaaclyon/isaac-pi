@@ -1,4 +1,5 @@
-export type StepId = "branch" | "commit" | "push" | "pr" | "ci" | "merge" | "return";
+export const STEP_IDS = ["branch", "commit", "push", "pr", "ci", "merge", "return"] as const;
+export type StepId = (typeof STEP_IDS)[number];
 export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped" | "cancelled";
 export type CheckStatus = "pending" | "passed" | "failed" | "skipped";
 
@@ -301,6 +302,35 @@ export function parseWorktreeBlockedBranchDelete(stdout: string, stderr: string)
 export function isLikelyNonFastForwardPull(stdout: string, stderr: string): boolean {
 	const text = `${stdout}\n${stderr}`;
 	return /^fatal: Not possible to fast-forward, aborting\.$/m.test(text);
+}
+
+export function isLikelyGitLockFailure(stdout: string, stderr: string): boolean {
+	const text = `${stdout}\n${stderr}`;
+	return /(?:unable to create|cannot lock|could not lock|another git process).*?(?:\.lock|ref)|(?:\.lock).*?(?:file exists|another git process)/is.test(text);
+}
+
+export function formatGitCommandFailure(args: string[], stdout: string, stderr: string): string | undefined {
+	const text = `${stdout}\n${stderr}`;
+	if (isLikelyGitLockFailure(stdout, stderr)) {
+		const lockPath = text.match(/['"]([^'"]+\.lock)['"]/)?.[1] ?? text.match(/(?:^|\s)(\S+\.lock)(?:\s|:|$)/m)?.[1];
+		const lock = lockPath ? ` (${lockPath})` : "";
+		return `Git is blocked by a lock. Productionize did not remove the lock${lock}. Confirm no Git process is running, then remove only the verified stale lock and rerun /productionize.`;
+	}
+
+	if (args[0] === "push" && /(?:non-fast-forward|fetch first|stale info|failed to push some refs)/i.test(text)) {
+		return "The remote branch changed and rejected the push. Productionize will never force-push. Fetch the remote branch, rebase or merge it deliberately, then rerun /productionize.";
+	}
+
+	const worktree = parseBranchUsedByWorktreeError(stdout, stderr) ?? parseWorktreeBlockedBranchDelete(stdout, stderr);
+	if (worktree) {
+		return `Branch ${worktree.branch} is checked out in the worktree at ${worktree.path}. Use that worktree or remove it safely before retrying.`;
+	}
+
+	if (/you need to resolve your current index first|unmerged files|fix conflicts and then commit/i.test(text)) {
+		return "Git has unresolved conflicts. Finish or abort the current Git operation before rerunning /productionize.";
+	}
+
+	return undefined;
 }
 
 function sanitizeOneLine(raw: string, fallback: string, maxLength: number): string {
