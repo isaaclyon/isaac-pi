@@ -34,7 +34,10 @@
     },
     "./packages/pi-interactive-subagents",
     "npm:@juicesharp/rpiv-advisor",
-    "npm:pi-lcm-memory",
+    {
+      "source": "npm:pi-lcm-memory",
+      "extensions": []
+    },
     "npm:pi-lcm",
     "npm:pi-tool-display"
   ],

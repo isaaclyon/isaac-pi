@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { beginQuestionAttention } from "./attention.js";
 import { loadConfig, validateGuidanceFields } from "./config.js";
 import { displayLabel } from "./state/i18n-bridge.js";
-import { QuestionnaireSession } from "./state/questionnaire-session.js";
+import type { QuestionnaireSession as QuestionnaireSessionType } from "./state/questionnaire-session.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
 import {
@@ -18,6 +18,21 @@ import { validateQuestionnaire } from "./tool/validate-questionnaire.js";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
 
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
+
+type QuestionnaireSessionModule = {
+	QuestionnaireSession: typeof QuestionnaireSessionType;
+};
+
+type QuestionnaireSessionModuleLoader = () => Promise<QuestionnaireSessionModule>;
+
+export function createQuestionnaireSessionModuleLoader(
+	importModule: QuestionnaireSessionModuleLoader = () => import("./state/questionnaire-session.js"),
+): QuestionnaireSessionModuleLoader {
+	let initialization: Promise<QuestionnaireSessionModule> | undefined;
+	return () => (initialization ??= importModule());
+}
+
+const loadQuestionnaireSessionModule = createQuestionnaireSessionModuleLoader();
 
 export function buildItemsForQuestion(question: QuestionData): WrappingSelectItem[] {
 	const items: WrappingSelectItem[] = question.options.map((option) => ({
@@ -42,7 +57,11 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Group clarifying questions into one ask_user_question call instead of stacking multiple calls back-to-back.",
 ];
 
-export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
+export function registerAskUserQuestionTool(
+	pi: ExtensionAPI,
+	dependencies: { loadQuestionnaireSessionModule?: QuestionnaireSessionModuleLoader } = {},
+): void {
+	const loadSessionModule = dependencies.loadQuestionnaireSessionModule ?? loadQuestionnaireSessionModule;
 	const config = loadConfig();
 	const guidance = validateGuidanceFields(config.guidance);
 	const timeout = config.timeout;
@@ -77,6 +96,7 @@ Use multiSelect: true when multiple answers are valid. Use options[].preview onl
 			const endAttention = beginQuestionAttention(ctx, typed);
 
 			try {
+				const { QuestionnaireSession } = await loadSessionModule();
 				const result = await ctx.ui.custom<QuestionnaireResult>((tui, theme, _kb, done) => {
 					const session = new QuestionnaireSession({
 						tui,
