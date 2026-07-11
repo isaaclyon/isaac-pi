@@ -24,7 +24,7 @@ This file records extensions that were removed or disabled so they can be recall
 - Removed: 2026-05-23
 - Reason: Redundant with `npm:pi-rtk-optimizer@0.7.1`, which provides RTK command rewriting plus output compaction and `/rtk` settings. Keeping both created overlapping RTK behavior and duplicate `/rtk` commands.
 - Reinstall command: `pi install npm:@sherif-fanous/pi-rtk`
-- Config note: Keep `agent/extensions/pi-rtk-optimizer/config.json` as the active RTK configuration.
+- Config note: The replacement optimizer was later removed on 2026-07-11; its local configuration was deleted.
 
 ## Codex fast mode extension
 
@@ -57,3 +57,32 @@ This file records extensions that were removed or disabled so they can be recall
 - Reason: Removed on request.
 - Reinstall command: `pi install npm:@sting8k/pi-vcc`
 - Config note: `agent/pi-vcc-config.json` is deleted.
+
+## pi-rtk-optimizer
+
+- Package: `npm:pi-rtk-optimizer@0.7.1`
+- Removed: 2026-07-11
+- Reason: Removed on request.
+- Reinstall command: `pi install npm:pi-rtk-optimizer@0.7.1`
+- Config note: The global package and local configuration were deleted.
+
+## pi-lcm-memory
+
+- Package: `npm:pi-lcm-memory`
+- Removed: 2026-07-11
+- Reason: Removed on request.
+- Reinstall command: `pi install npm:pi-lcm-memory`
+
+## pi-chrome-devtools
+
+- Package: `npm:@narumitw/pi-chrome-devtools`
+- Removed: 2026-07-11
+- Reason: Removed on request.
+- Reinstall command: `pi install npm:@narumitw/pi-chrome-devtools`
+
+## pi-interactive-subagents
+
+- Package: `./packages/pi-interactive-subagents`
+- Disabled: 2026-07-11
+- Reason: Disabled on request while retaining the local package for possible later re-enablement.
+- Config note: The package remains in `agent/settings.json` with an empty `extensions` list.
