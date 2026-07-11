@@ -1,0 +1,2 @@
+{"at":1783797581700,"kind":"reset","reason":"status-scope-change","scope":{"instanceId":"856630:1783797576750","role":"classic-or-disconnected","lockState":"stale (pid 854838, cwd /home/isaaclyon)"},"previousPath":"/home/isaaclyon/.pi/agent/tmp/telegram/logs._prev.jsonl"}
+{"kind":"event","at":1783797581702,"category":"lock","message":"Telegram auto-start scheduled","details":{"phase":"auto-start-scheduled"}}

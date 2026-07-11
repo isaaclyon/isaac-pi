@@ -3,9 +3,7 @@ name: planner
 description: Read-only planning agent that turns a request into a concrete implementation plan, assumptions, and verification steps.
 model: openai-codex/gpt-5.6-sol
 thinking: xhigh
-prompt_mode: append
-tools: read, bash, grep, find, ls
-extensions: false
+tools: exec_command,grep,find,ls
 spawning: false
 auto-exit: true
 ---
