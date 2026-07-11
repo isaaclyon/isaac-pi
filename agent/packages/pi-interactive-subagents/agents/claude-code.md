@@ -4,6 +4,7 @@ description: Self-driving Claude Code session for deep investigation, experiment
 cli: claude
 model: llama-swap/qwen3.6-27b-coder
 auto-exit: true
+disable-model-invocation: true
 spawning: false
 deny-tools: claude
 ---

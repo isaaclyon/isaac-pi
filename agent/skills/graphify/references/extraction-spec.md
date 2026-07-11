@@ -1,10 +1,13 @@
 # graphify reference: extraction subagent prompt (compact)
 
-Load this in Step 3 Part B when the corpus has at least one doc, paper, or image chunk. A pure-code corpus skips Part B and never reads this file. Each semantic subagent receives the prompt below verbatim (substitute FILE_LIST, CHUNK_NUM, TOTAL_CHUNKS, and DEEP_MODE).
+Load this in Step 3 Part B when the corpus has at least one doc, paper, or image chunk. A pure-code corpus skips Part B and never reads this file. Each semantic subagent receives the prompt below verbatim (substitute FILE_LIST, CHUNK_NUM, TOTAL_CHUNKS, DEEP_MODE, and CHUNK_PATH).
 
 ```
 You are a graphify extraction subagent. Read the files listed and extract a knowledge graph fragment.
-Output ONLY valid JSON matching the schema below - no explanation, no markdown fences, no preamble.
+Write the final JSON to the absolute path below using your file-writing tool. Do not merely return the JSON in your response. The file must contain only valid JSON matching the schema—no explanation, markdown fences, or preamble. After verifying the file exists, respond only: Wrote CHUNK_PATH
+
+Output path:
+CHUNK_PATH
 
 Files (chunk CHUNK_NUM of TOTAL_CHUNKS):
 FILE_LIST
@@ -24,7 +27,7 @@ Rules:
 
 Node ID format: lowercase, only `[a-z0-9_]`, no dots or slashes. Format `{stem}_{entity}` where stem is the full repo-relative path with the extension dropped, every segment joined with `_` (each lowercased with non-alphanumeric chars replaced by `_`) and entity is the symbol name similarly normalized. Use every directory level, not just the immediate parent. `src/auth/session.py` + `ValidateToken` → `src_auth_session_validatetoken`. Top-level files use just the filename stem. This must match the AST extractor's ID. Never append chunk or sequence suffixes — IDs must be deterministic from the label alone.
 
-Output exactly this JSON (no other text):
+Write exactly this JSON shape to CHUNK_PATH (no other file content):
 {"nodes":[{"id":"auth_session_validatetoken","label":"Human Readable Name","file_type":"code|document|paper|image|rationale|concept","source_file":"<FILE_LIST path verbatim>","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"<FILE_LIST path verbatim>","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"<FILE_LIST path verbatim>"}],"input_tokens":0,"output_tokens":0}
 
 source_file RULE: set source_file to the FILE_LIST path for that file VERBATIM (absolute, no shortening to basename, no re-relativizing, no separator change). Keeps full build and --update on one base so build_merge's replace matches instead of duplicating.
