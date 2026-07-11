@@ -158,15 +158,15 @@ This step has two parts: **structural extraction** (deterministic, free) and **s
 
 Print it once, then continue — do not wait for the user to supply a key. If `GEMINI_API_KEY` or `GOOGLE_API_KEY` IS set, use `graphify.llm.extract_corpus_parallel(files, backend="gemini")` for semantic extraction instead of dispatching subagents. The default Gemini model is `gemini-3-flash-preview`; set `GRAPHIFY_GEMINI_MODEL` or pass `--model` in headless CLI flows to override it.
 
-> **No other API keys are read.** When `GEMINI_API_KEY`/`GOOGLE_API_KEY` are unset, semantic extraction falls to the host agent itself — the running session is the LLM. On a host that dispatches subagents (e.g. Claude Code), dispatch them as written in Part B. On a host that runs the CLI directly in a terminal and cannot dispatch subagents, do not stall: a code-only corpus has no semantic work, so write the empty semantic file (Part B "Fast path") and continue to Part C; for a corpus with docs/papers/images, either set a Gemini key or extract those inline yourself, but in no case prompt for `ANTHROPIC_API_KEY` — that prompt is a misread of this skill.
+> **No other API keys are read.** When `GEMINI_API_KEY`/`GOOGLE_API_KEY` are unset, semantic extraction falls to Pi's writable subagents. On a host that cannot dispatch writable subagents, do not stall: a code-only corpus has no semantic work, so write the empty semantic file (Part B "Fast path") and continue to Part C; for a corpus with docs/papers/images, either set a Gemini key or extract those inline yourself. Never prompt for `ANTHROPIC_API_KEY` — that prompt is a misread of this skill.
 
-**Run Part A (AST) and Part B (semantic) in parallel. Dispatch all semantic subagents AND start AST extraction in the same message. Both can run simultaneously since they operate on different file types. Merge results in Part C as before.**
+**Run Part A (AST) and Part B (semantic) concurrently.** Start Part A with Pi's `process` tool, then dispatch all Part B subagents in the same turn. Do not poll the process or subagents; Pi delivers completion messages automatically. Before Part C, confirm the AST process completed successfully and all semantic chunk completions have been handled.
 
-Note: Parallelizing AST + semantic saves 5-15s on large corpora. AST is deterministic and fast; start it while subagents are processing docs/papers.
+Note: Parallelizing AST + semantic saves 5-15s on large corpora. They operate on different file types and write different intermediate files.
 
 #### Part A - Structural extraction for code files
 
-For any code files detected, run AST extraction in parallel with Part B subagents:
+Always start the following command with `process` using `action="start"`, `cwd` set to the current project root, and `alertOnSuccess=true`. Use a descriptive name such as `graphify-ast` so its completion is easy to identify. Run it even when detection found no code: it writes the empty `.graphify_ast.json` that Part C requires. Continue immediately to Part B instead of waiting:
 
 ```bash
 $(cat graphify-out/.graphify_python) -c "
@@ -192,7 +192,7 @@ else:
 
 #### Part B - Semantic extraction (parallel subagents)
 
-**Fast path:** If detection found zero docs, papers, and images (code-only corpus), skip Part B entirely and go straight to Part C. AST handles code - there is nothing for semantic subagents to do. **First write an empty semantic file** so Part C's merge has its input (it reads `.graphify_semantic.json` unconditionally; without this a code-only run hits `FileNotFoundError`):
+**Fast path:** If detection found zero docs, papers, and images (code-only corpus), skip the rest of Part B. AST handles code—there is nothing for semantic subagents to do. **First write an empty semantic file** so Part C's merge has its input (it reads `.graphify_semantic.json` unconditionally; without this a code-only run hits `FileNotFoundError`). Then wait for the `graphify-ast` completion message, verify `.graphify_ast.json`, and continue to Part C:
 
 ```bash
 $(cat graphify-out/.graphify_python) -c "
@@ -202,7 +202,7 @@ Path('graphify-out/.graphify_semantic.json').write_text(json.dumps({'nodes':[],'
 "
 ```
 
-**MANDATORY: You MUST use the Agent tool here. Reading files yourself one-by-one is forbidden - it is 5-10x slower. If you do not use the Agent tool you are doing this wrong.**
+**MANDATORY: Use Pi's `subagent` tool with a writable worker here. Reading files yourself one-by-one is forbidden—it is 5-10x slower.**
 
 Before dispatching subagents, print a timing estimate:
 - Load `total_words` and file counts from `graphify-out/.graphify_detect.json`
@@ -239,25 +239,24 @@ print(f'Cache: {len(all_files)-len(uncached)} files hit, {len(uncached)} files n
 "
 ```
 
-Only dispatch subagents for files listed in `graphify-out/.graphify_uncached.txt`. If all files are cached, skip to Part C directly.
+Only dispatch subagents for files listed in `graphify-out/.graphify_uncached.txt`. If all files are cached, merge the cached data into `.graphify_semantic.json` using Step B3's cached-plus-new merge (with an empty `new` value), wait for the `graphify-ast` completion message, verify `.graphify_ast.json`, and then continue to Part C. Do not dispatch workers or run the new-chunk merge/cache commands.
 
 **Step B1 - Split into chunks**
 
 Load files from `graphify-out/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). When splitting, group files from the same directory together so related artifacts land in the same chunk and cross-file relationships are more likely to be extracted.
 
-**Step B2 - Dispatch ALL subagents in a single message**
+**Step B2 - Dispatch all subagents in one turn**
 
-Call the Agent tool multiple times IN THE SAME RESPONSE - one call per chunk. This is the only way they run in parallel. If you make one Agent call, wait, then make another, you are doing it sequentially and defeating the purpose.
-
-**IMPORTANT - subagent type:** Always use `subagent_type="general-purpose"`. Do NOT use `Explore` - it is read-only and cannot write chunk files to disk, which silently drops extraction results. General-purpose has Write and Bash access which the subagent needs.
+Call Pi's `subagent` tool once per chunk in the same turn so the workers run concurrently. Give each call a unique descriptive `name` such as `graphify-chunk-01`, use `agent="worker"`, set `cwd` to the current project root, and pass the extraction prompt as `task`. The worker must be writable because each task writes its chunk JSON to disk. If `worker` is unavailable, call `subagents_list` and choose another writable implementation agent; do not use read-only agents such as `scout` or reviewers.
 
 Concrete example for 3 chunks:
 ```
-[Agent tool call 1: files 1-15, subagent_type="general-purpose"]
-[Agent tool call 2: files 16-30, subagent_type="general-purpose"]
-[Agent tool call 3: files 31-45, subagent_type="general-purpose"]
+[subagent call 1: name="graphify-chunk-01", agent="worker", cwd=PROJECT_ROOT, task=chunk 1 prompt]
+[subagent call 2: name="graphify-chunk-02", agent="worker", cwd=PROJECT_ROOT, task=chunk 2 prompt]
+[subagent call 3: name="graphify-chunk-03", agent="worker", cwd=PROJECT_ROOT, task=chunk 3 prompt]
 ```
-All three in one message. Not three separate messages.
+
+Subagents are asynchronous. After dispatching all chunks, do not poll, sleep, tail logs, or call listing tools to check status. End the turn or continue only with unrelated work; Pi will deliver each completion as a steer message. Handle every completion before Part C.
 
 Each subagent receives this exact prompt (substitute FILE_LIST, CHUNK_NUM, TOTAL_CHUNKS, DEEP_MODE, and CHUNK_PATH).
 
@@ -273,15 +272,16 @@ See `references/extraction-spec.md` for the exact subagent prompt (JSON schema, 
 
 **Step B3 - Collect, cache, and merge**
 
-Wait for all subagents. For each result:
-- Check that `graphify-out/.graphify_chunk_NN.json` exists on disk — this is the success signal
-- If the file exists and contains valid JSON with `nodes` and `edges`, include it and save to cache
-- If the file is missing, the subagent was likely dispatched as read-only (Explore type) — print a warning: "chunk N missing from disk — subagent may have been read-only. Re-run with general-purpose agent." Do not silently skip.
-- If a subagent failed or returned invalid JSON, print a warning and skip that chunk - do not abort
+As each completion message arrives:
+- Check that its absolute `CHUNK_PATH` exists on disk—the file is the success signal.
+- Validate that it contains JSON objects named `nodes` and `edges`; if valid, include it and save it to cache.
+- If the file is missing, print: "chunk N missing from disk—worker did not write its output. Re-run with a writable implementation agent." Do not silently skip it.
+- If the subagent failed or returned invalid JSON, print a warning and skip that chunk; do not abort unless more than half fail.
+- If the completion payload exposes real input/output token usage, write it into that chunk JSON. If Pi does not expose usage, leave the placeholder zeros and disclose in the final summary that subagent token usage was unavailable; never estimate or invent counts.
 
-If more than half the chunks failed or are missing, stop and tell the user to re-run and ensure `subagent_type="general-purpose"` is used.
+After all semantic completions and the `graphify-ast` process completion have arrived, verify that `graphify-out/.graphify_ast.json` exists and is valid. If the process failed, stop and surface its error. If more than half the semantic chunks failed or are missing, stop and tell the user to re-run with a writable implementation agent.
 
-Merge all chunk files into `.graphify_semantic_new.json`. **After each Agent call completes, read the real token counts from the Agent tool result's `usage` field and write them back into the chunk JSON before merging** — the chunk JSON itself always has placeholder zeros. Then run:
+Merge all valid chunk files into `.graphify_semantic_new.json`, then run:
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import json, glob
