@@ -3,10 +3,6 @@
   "packages": [
     "./extensions/native-module-abi-guard.js",
     "./packages/lsp-pi",
-    {
-      "source": "npm:pi-rtk-optimizer@0.7.1",
-      "extensions": []
-    },
     "npm:pi-updater",
     {
       "source": "git:github.com/tmustier/pi-extensions",
@@ -19,8 +15,6 @@
     "npm:@narumitw/pi-goal",
     "npm:pi-web-access",
     "npm:@aliou/pi-processes",
-    "npm:@narumitw/pi-caffeinate",
-    "npm:@narumitw/pi-chrome-devtools",
     "npm:@narumitw/pi-retry",
     "npm:pi-mcporter",
     {
@@ -32,19 +26,18 @@
         "+skills/usage-analytics/SKILL.md"
       ]
     },
-    "./packages/pi-interactive-subagents",
-    "npm:@juicesharp/rpiv-advisor",
     {
-      "source": "npm:pi-lcm-memory",
+      "source": "./packages/pi-interactive-subagents",
       "extensions": []
     },
+    "npm:@juicesharp/rpiv-advisor",
     "npm:pi-lcm",
     "npm:pi-tool-display",
     "npm:@tintinweb/pi-subagents"
   ],
   "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-sol",
+  "defaultModel": "gpt-5.6-luna",
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
@@ -82,7 +75,8 @@
     "openai-codex/gpt-5.5",
     "openai-codex/gpt-5.6-terra",
     "openai-codex/gpt-5.6-luna",
-    "openai-codex/gpt-5.3-codex-spark"
+    "openai-codex/gpt-5.3-codex-spark",
+    "openai-codex/gpt-5.6-sol"
   ],
   "theme": "dark/dark",
   "npmCommand": [

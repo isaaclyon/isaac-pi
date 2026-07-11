@@ -9,6 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const agentDir = resolve(here, "..");
 const npmRoot = join(agentDir, "npm");
 const nodeModules = join(npmRoot, "node_modules");
+const globalNodeModules = join(dirname(process.execPath), "..", "lib", "node_modules");
 const lockDir = join(agentDir, "state", "native-module-abi-guard.lock");
 const rebuildTimeoutMs = 45_000;
 
@@ -19,12 +20,21 @@ const probes = [
     modulePath: join(nodeModules, "better-sqlite3"),
     rebuild: { cwd: npmRoot, args: ["rebuild", "better-sqlite3"] },
     smoke: smokeBetterSqlite3,
+    optional: true,
   },
   {
     name: "pi-lcm/better-sqlite3",
     packageName: "better-sqlite3",
     modulePath: join(nodeModules, "pi-lcm", "node_modules", "better-sqlite3"),
     rebuild: { cwd: join(nodeModules, "pi-lcm", "node_modules", "better-sqlite3"), args: ["rebuild"] },
+    smoke: smokeBetterSqlite3,
+    optional: true,
+  },
+  {
+    name: "global pi-lcm/better-sqlite3",
+    packageName: "better-sqlite3",
+    modulePath: join(globalNodeModules, "pi-lcm", "node_modules", "better-sqlite3"),
+    rebuild: { cwd: join(globalNodeModules, "pi-lcm", "node_modules", "better-sqlite3"), args: ["rebuild"] },
     smoke: smokeBetterSqlite3,
     optional: true,
   },
