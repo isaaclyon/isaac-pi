@@ -1,7 +1,0 @@
-{"at":1783797582289,"kind":"reset","reason":"status-scope-change","scope":{"instanceId":"856630:1783797576750","role":"classic-or-disconnected","lockState":"active here"},"previousPath":"/home/isaaclyon/.pi/agent/tmp/telegram/logs._prev.jsonl"}
-{"kind":"event","at":1783797582284,"category":"bus","message":"Telegram Threaded Mode unavailable on startup","details":{"phase":"startup-bot-topics-disabled"}}
-{"kind":"event","at":1783797582290,"category":"lock","message":"Telegram auto-start completed","details":{"phase":"auto-start-complete","durationMs":589}}
-{"kind":"event","at":1783797617318,"category":"delivery","message":"Failed to send voice reply: every voice synthesis provider failed.","details":{"phase":"voice-artifacts","chatId":1700247708}}
-{"kind":"event","at":1783797629491,"category":"delivery","message":"Failed to send voice reply: every voice synthesis provider failed.","details":{"phase":"voice-artifacts","chatId":1700247708}}
-{"kind":"event","at":1783797656714,"category":"delivery","message":"Failed to send voice reply: every voice synthesis provider failed.","details":{"phase":"voice-artifacts","chatId":1700247708}}
-{"kind":"event","at":1783797688899,"category":"delivery","message":"Failed to send voice reply: every voice synthesis provider failed.","details":{"phase":"voice-artifacts","chatId":1700247708}}

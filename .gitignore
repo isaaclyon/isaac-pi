@@ -1,6 +1,15 @@
 # Pi local secrets/state
+.env
+.env.*
+!.env.example
 auth.json
+web-search.json
 agent/auth.json
+agent/mcporter.json
+agent/telegram.json
+agent/locks.json
+agent/trust.json
+agent/tmp/
 memory/
 agent/memory/
 agent/sessions/
