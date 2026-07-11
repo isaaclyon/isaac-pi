@@ -34,9 +34,11 @@
     "npm:pi-lcm",
     "npm:pi-tool-display",
     "npm:@tintinweb/pi-subagents",
-    "npm:@howaboua/pi-codex-conversion"
+    "npm:@howaboua/pi-codex-conversion",
+    "npm:@howaboua/pi-skill-agents-md",
+    "npm:@howaboua/pi-skill-agent-native-hardening"
   ],
-  "defaultThinkingLevel": "xhigh",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "treeFilterMode": "no-tools",
