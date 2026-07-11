@@ -3,9 +3,7 @@ name: ops-reviewer
 description: Read-only quality reviewer for production readiness, configuration, observability, migrations, rollout, and operational risk.
 model: openai-codex/gpt-5.6-luna
 thinking: high
-prompt_mode: append
-tools: read, bash, grep, find, ls
-extensions: false
+tools: exec_command,grep,find,ls
 spawning: false
 auto-exit: true
 ---

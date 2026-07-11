@@ -3,9 +3,7 @@ name: yagni-reviewer
 description: Read-only simplification reviewer for KISS/YAGNI violations, speculative abstractions, and unnecessary configurability.
 model: openai-codex/gpt-5.6-luna
 thinking: high
-prompt_mode: append
-tools: read, bash, grep, find, ls
-extensions: false
+tools: exec_command,grep,find,ls
 spawning: false
 auto-exit: true
 ---

@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "source": "snapshot",
+  "writtenAtMs": 1783797688902,
+  "bot": {
+    "threadMode": "disabled",
+    "updatedAtMs": 1783797582278,
+    "lastReconcileAction": "startup-bot-topics-disabled"
+  },
+  "runtime": {
+    "botThreadMode": "disabled",
+    "botThreadModeUpdatedAtMs": 1783797582278,
+    "botThreadModeAction": "startup-bot-topics-disabled",
+    "pollingActive": true,
+    "lockState": "active here"
+  },
+  "liveRoster": {
+    "busFollowers": [],
+    "localBus": {
+      "leaderSocketPath": "/home/isaaclyon/.pi/agent/tmp/telegram/bus.sock",
+      "leaderTransport": "socket",
+      "followerSocketPath": "/home/isaaclyon/.pi/agent/tmp/telegram/followers/856630_1783797576750.sock",
+      "followerTransport": "socket",
+      "followerRegistered": false
+    },
+    "topicTargets": [],
+    "reservations": [],
+    "syncObservations": []
+  },
+  "diagnostics": {
+    "pendingDispatch": false,
+    "compactionInProgress": false,
+    "activeToolExecutions": 0,
+    "pendingModelSwitch": false,
+    "syncState": {
+      "bot-identity": {
+        "status": "fresh",
+        "updatedAtMs": 1783797662322,
+        "lastReconcileAction": "config-persist"
+      },
+      "bot-capabilities": {
+        "status": "unknown"
+      },
+      "pairing": {
+        "status": "fresh",
+        "updatedAtMs": 1783797662322,
+        "lastReconcileAction": "config-persist"
+      },
+      "allowed-user": {
+        "status": "fresh",
+        "updatedAtMs": 1783797662322,
+        "lastReconcileAction": "config-persist"
+      },
+      "topic-capability": {
+        "status": "unknown"
+      },
+      "topic-state": {
+        "status": "unknown"
+      },
+      "target-bindings": {
+        "status": "unknown"
+      },
+      "reservations": {
+        "status": "unknown"
+      },
+      "transport-health": {
+        "status": "unknown"
+      }
+    },
+    "recentRuntimeEvents": [
+      {
+        "at": 1783797581702,
+        "category": "lock",
+        "message": "Telegram auto-start scheduled",
+        "details": {
+          "phase": "auto-start-scheduled"
+        }
+      },
+      {
+        "at": 1783797582284,
+        "category": "bus",
+        "message": "Telegram Threaded Mode unavailable on startup",
+        "details": {
+          "phase": "startup-bot-topics-disabled"
+        }
+      },
+      {
+        "at": 1783797582290,
+        "category": "lock",
+        "message": "Telegram auto-start completed",
+        "details": {
+          "phase": "auto-start-complete",
+          "durationMs": 589
+        }
+      },
+      {
+        "at": 1783797617318,
+        "category": "delivery",
+        "message": "Failed to send voice reply: every voice synthesis provider failed.",
+        "details": {
+          "phase": "voice-artifacts",
+          "chatId": 1700247708
+        }
+      },
+      {
+        "at": 1783797629491,
+        "category": "delivery",
+        "message": "Failed to send voice reply: every voice synthesis provider failed.",
+        "details": {
+          "phase": "voice-artifacts",
+          "chatId": 1700247708
+        }
+      },
+      {
+        "at": 1783797656714,
+        "category": "delivery",
+        "message": "Failed to send voice reply: every voice synthesis provider failed.",
+        "details": {
+          "phase": "voice-artifacts",
+          "chatId": 1700247708
+        }
+      },
+      {
+        "at": 1783797688899,
+        "category": "delivery",
+        "message": "Failed to send voice reply: every voice synthesis provider failed.",
+        "details": {
+          "phase": "voice-artifacts",
+          "chatId": 1700247708
+        }
+      }
+    ]
+  },
+  "identities": [],
+  "reservations": [],
+  "pendingProvisions": [],
+  "syncObservations": [],
+  "threads": []
+}
