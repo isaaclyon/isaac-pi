@@ -11,7 +11,6 @@ const npmRoot = join(agentDir, "npm");
 const nodeModules = join(npmRoot, "node_modules");
 const lockDir = join(agentDir, "state", "native-module-abi-guard.lock");
 const rebuildTimeoutMs = 45_000;
-const lockWaitTimeoutMs = 10_000;
 
 const probes = [
   {
@@ -39,14 +38,14 @@ const probes = [
   },
 ];
 
+const lockWaitTimeoutMs = rebuildTimeoutMs * probes.length + 5_000;
+
 export default async function nativeModuleAbiGuard() {
   const failures = probeFailures();
   if (failures.length === 0) return;
 
   console.error(`[native-module-abi-guard] Rebuilding Pi native modules for ${process.version}: ${failures.map((f) => f.name).join(", ")}`);
-  rebuildWithCurrentNode(failures);
-
-  const remaining = probeFailures();
+  const remaining = rebuildWithCurrentNode();
   if (remaining.length > 0) {
     const details = remaining.map((f) => `${f.name}: ${f.message}`).join("; ");
     throw new Error(`Native module rebuild did not fix ABI mismatch: ${details}`);
@@ -95,11 +94,12 @@ function isNativeAbiFailure(message) {
   return /NODE_MODULE_VERSION|compiled against a different Node\.js version|ERR_DLOPEN_FAILED|Module did not self-register|not a Mach-O|invalid ELF|dlopen|Cannot find module .*\.node|Could not locate the bindings file/.test(message);
 }
 
-function rebuildWithCurrentNode(failures) {
-  withLock(() => {
-    for (const failure of failures) {
+function rebuildWithCurrentNode() {
+  return withLock(() => {
+    for (const failure of probeFailures()) {
       runNpm(failure.rebuild.args, failure.rebuild.cwd);
     }
+    return probeFailures();
   });
 }
 
@@ -148,7 +148,7 @@ function withLock(fn) {
   }
 
   try {
-    fn();
+    return fn();
   } finally {
     rmSync(lockDir, { recursive: true, force: true });
   }
