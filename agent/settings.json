@@ -33,7 +33,8 @@
     "npm:@juicesharp/rpiv-advisor",
     "npm:pi-lcm",
     "npm:pi-tool-display",
-    "npm:@tintinweb/pi-subagents"
+    "npm:@tintinweb/pi-subagents",
+    "npm:@howaboua/pi-codex-conversion"
   ],
   "defaultThinkingLevel": "xhigh",
   "defaultProvider": "openai-codex",
