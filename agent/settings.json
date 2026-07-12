@@ -40,7 +40,7 @@
     "npm:@howaboua/pi-skill-agent-native-hardening",
     "npm:@howaboua/pi-auto-trees"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "xhigh",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-luna",
   "treeFilterMode": "no-tools",
