@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Code review agent - reviews changes for quality, security, and correctness
-tools: read, bash
+tools: read, bash, exec_command, write_stdin
 model: llama-swap/qwen3.6-27b-qwopus
 thinking: medium
 spawning: false

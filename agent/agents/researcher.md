@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Read-only external research agent for libraries, APIs, best practices, and source-backed recommendations.
-tools: read, bash, grep, find, ls, ext:pi-web-access
+tools: read, bash, grep, find, ls, exec_command, write_stdin, web_run, ext:pi-web-access
 extensions: [pi-web-access]
 model: openai-codex/gpt-5.6-luna
 thinking: high

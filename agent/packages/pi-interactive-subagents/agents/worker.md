@@ -1,7 +1,7 @@
 ---
 name: worker
 description: Implements tasks from todos - writes code, runs tests, commits with polished messages
-tools: read, bash, write, edit
+tools: read, bash, write, edit, exec_command, write_stdin, apply_patch, view_image
 deny-tools: claude
 model: llama-swap/qwen3.6-27b-coder
 thinking: minimal

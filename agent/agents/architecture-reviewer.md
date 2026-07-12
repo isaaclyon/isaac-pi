@@ -4,7 +4,7 @@ description: Read-only quality reviewer for boundaries, coupling, domain model f
 model: openai-codex/gpt-5.6-sol
 thinking: medium
 prompt_mode: append
-tools: read, bash, grep, find, ls
+tools: read, bash, grep, find, ls, exec_command, write_stdin
 extensions: false
 spawning: false
 auto-exit: true

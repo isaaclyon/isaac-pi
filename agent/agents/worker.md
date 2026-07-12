@@ -4,7 +4,7 @@ description: Codex implementation agent for self-contained coding tasks after th
 model: openai-codex/gpt-5.6-luna
 thinking: high
 prompt_mode: append
-tools: read, bash, edit, write, grep, find, ls
+tools: read, bash, edit, write, grep, find, ls, exec_command, write_stdin, apply_patch, view_image
 extensions: false
 spawning: false
 auto-exit: true

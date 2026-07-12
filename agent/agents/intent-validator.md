@@ -1,7 +1,7 @@
 ---
 name: intent-validator
 description: CRITICAL TO USE AFTER ANY MATERIAL WORK HAS BEEN PERFORMED. Read-only adversarial validator for intent completion, practical usefulness, and real production readiness beyond checklist/spec completion.
-tools: read, bash, grep, find, ls
+tools: read, bash, grep, find, ls, exec_command, write_stdin
 extensions: false
 model: openai-codex/gpt-5.6-sol
 thinking: high

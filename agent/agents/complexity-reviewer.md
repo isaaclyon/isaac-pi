@@ -4,7 +4,7 @@ description: Read-only simplification reviewer for cognitive and structural comp
 model: openai-codex/gpt-5.6-luna
 thinking: high
 prompt_mode: append
-tools: read, bash, grep, find, ls
+tools: read, bash, grep, find, ls, exec_command, write_stdin
 extensions: false
 spawning: false
 auto-exit: true
