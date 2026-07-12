@@ -182,6 +182,15 @@ export function getSurfacePane(
 	throw new Error(`Pane lookup is not implemented for ${backend}`);
 }
 
+export function getCallerPane(backend: MuxBackend): string | null {
+	if (backend !== "cmux") throw new Error(`Caller pane lookup is not implemented for ${backend}`);
+
+	const info = JSON.parse(
+		execFileSync("cmux", ["identify", "--json"], { encoding: "utf8" }),
+	) as { caller?: { pane_ref?: unknown } };
+	return typeof info.caller?.pane_ref === "string" ? info.caller.pane_ref : null;
+}
+
 export async function waitForFocusedSurface(
 	backend: MuxBackend,
 	surface: string,

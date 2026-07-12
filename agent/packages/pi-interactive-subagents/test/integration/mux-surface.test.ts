@@ -23,6 +23,7 @@ import {
   createTrackedSurfaceSplit,
   focusSurface,
   getFocusedSurface,
+  getCallerPane,
   getSurfacePane,
   waitForFocusedSurface,
   untrackSurface,
@@ -64,7 +65,9 @@ for (const backend of backends) {
     });
 
     it("keeps focus on the active surface while creating and targeting subagent surfaces", async () => {
-      const anchor = createTrackedSurfaceSplit(env, "focus-anchor", "right");
+      const parentPane = backend === "cmux" ? getCallerPane(backend) : null;
+      const anchorSource = backend === "cmux" ? process.env.CMUX_SURFACE_ID : undefined;
+      const anchor = createTrackedSurfaceSplit(env, "focus-anchor", "right", anchorSource);
       await sleep(1000);
 
       focusSurface(backend, anchor);
@@ -83,6 +86,8 @@ for (const backend of backends) {
         const paneB = getSurfacePane(backend, childB);
         assert.ok(paneA, `Expected pane ref for ${childA}`);
         assert.ok(paneB, `Expected pane ref for ${childB}`);
+        assert.ok(parentPane, "Expected caller pane ref");
+        assert.equal(paneA, parentPane);
         assert.equal(paneB, paneA);
       }
 

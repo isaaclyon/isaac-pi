@@ -635,6 +635,10 @@ function readCmuxPaneRefForSurface(surface: string): string | null {
   return info ? parseCmuxPaneRefForSurfaceFromJson(info, surface) : null;
 }
 
+function readCmuxCallerPaneRef(): string | null {
+  return captureCmuxIdentifySnapshot().caller?.paneRef ?? null;
+}
+
 function restoreCmuxFocusSnapshot(snapshot: CmuxFocusSnapshot | null): void {
   if (!snapshot) return;
 
@@ -744,8 +748,7 @@ function createCmuxSplitSurface(
 /**
  * Create a new terminal surface for a subagent.
  *
- * For cmux: the first call creates a right-split pane; subsequent calls add
- * tabs to that same pane (avoiding ever-narrower splits).
+ * For cmux: calls add tabs to the current pane (avoiding extra splits).
  * For zellij: chooses a tab-aware tiled or stacked placement.
  * For tmux/wezterm: falls back to split behavior.
  *
@@ -758,18 +761,25 @@ export function createSurface(name: string): string {
     // Verify the pane still exists before adding a tab to it
     try {
       const tree = execSync(`cmux tree`, { encoding: "utf8" });
-      if (tree.includes(cmuxSubagentPane)) {
+      if (tree.split(/\s+/).includes(cmuxSubagentPane)) {
         return createSurfaceInPane(name, cmuxSubagentPane);
       }
     } catch {}
-    // Pane is gone — fall through to create a new split
+    // Pane is gone — fall through to use Pi's current pane.
     cmuxSubagentPane = null;
   }
 
   if (backend === "cmux") {
-    const created = createCmuxSplitSurface(name, "right", process.env.CMUX_SURFACE_ID);
-    cmuxSubagentPane = created.paneRef ?? null;
-    return created.surface;
+    // Keep the first subagent in Pi's current pane too. CMUX_SURFACE_ID may be
+    // a UUID while identify reports a surface ref, so use identify's caller
+    // pane rather than trying to resolve the environment value directly.
+    const pane = readCmuxCallerPaneRef();
+    if (!pane) {
+      throw new Error("Unable to determine Pi's current cmux pane; refusing to launch a subagent tab");
+    }
+    const surface = createSurfaceInPane(name, pane);
+    cmuxSubagentPane = pane;
+    return surface;
   }
 
   if (backend === "zellij") {
@@ -792,7 +802,9 @@ function createSurfaceInPane(name: string, pane: string): string {
   let child: CmuxCreatedSurface | null = null;
 
   try {
-    const output = execFileSync("cmux", ["new-surface", "--pane", pane], { encoding: "utf8" }).trim();
+    const output = execFileSync("cmux", ["new-surface", "--pane", pane], {
+      encoding: "utf8",
+    }).trim();
     child = parseCmuxCreatedSurface(output, "new-surface");
     child.paneRef ??= pane;
     renameCmuxSurface(child.surface, name);
