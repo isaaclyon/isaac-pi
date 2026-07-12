@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import modelNotFoundRetry from "./model-not-found-retry.ts";
+import modelNotFoundRetry from "./index.ts";
 
 function createMockPi() {
 	const handlers = new Map<string, Function[]>();

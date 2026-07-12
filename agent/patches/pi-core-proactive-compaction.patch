@@ -1,0 +1,282 @@
+diff --git a/packages/agent/src/agent.ts b/packages/agent/src/agent.ts
+index ab10d5a..3133538 100644
+--- a/packages/agent/src/agent.ts
++++ b/packages/agent/src/agent.ts
+@@ -22,6 +22,7 @@ import type {
+ 	BeforeToolCallContext,
+ 	BeforeToolCallResult,
+ 	PrepareNextTurnContext,
++	ShouldStopAfterTurnContext,
+ 	QueueMode,
+ 	StreamFn,
+ 	ToolExecutionMode,
+@@ -111,6 +112,7 @@ export interface AgentOptions {
+ 		context: PrepareNextTurnContext,
+ 		signal?: AbortSignal,
+ 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++	shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext) => boolean | Promise<boolean>;
+ 	steeringMode?: QueueMode;
+ 	followUpMode?: QueueMode;
+ 	sessionId?: string;
+@@ -195,6 +197,7 @@ export class Agent {
+ 		context: PrepareNextTurnContext,
+ 		signal?: AbortSignal,
+ 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++	public shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext) => boolean | Promise<boolean>;
+ 	private activeRun?: ActiveRun;
+ 	/** Session identifier forwarded to providers for cache-aware backends. */
+ 	public sessionId?: string;
+@@ -219,6 +222,7 @@ export class Agent {
+ 		this.afterToolCall = options.afterToolCall;
+ 		this.prepareNextTurn = options.prepareNextTurn;
+ 		this.prepareNextTurnWithContext = options.prepareNextTurnWithContext;
++		this.shouldStopAfterTurn = options.shouldStopAfterTurn;
+ 		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
+ 		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
+ 		this.sessionId = options.sessionId;
+@@ -452,6 +456,7 @@ export class Agent {
+ 							return await this.prepareNextTurn?.(this.signal);
+ 						}
+ 					: undefined,
++			shouldStopAfterTurn: this.shouldStopAfterTurn,
+ 			convertToLlm: this.convertToLlm,
+ 			transformContext: this.transformContext,
+ 			getApiKey: this.getApiKey,
+diff --git a/packages/coding-agent/src/core/agent-session.ts b/packages/coding-agent/src/core/agent-session.ts
+index c4c2d36..e325acf 100644
+--- a/packages/coding-agent/src/core/agent-session.ts
++++ b/packages/coding-agent/src/core/agent-session.ts
+@@ -22,6 +22,7 @@ import type {
+ 	AgentState,
+ 	AgentTool,
+ 	PrepareNextTurnContext,
++	ShouldStopAfterTurnContext,
+ 	ThinkingLevel,
+ } from "@earendil-works/pi-agent-core";
+ import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai/compat";
+@@ -338,6 +339,8 @@ export class AgentSession {
+ 	private _baseSystemPrompt = "";
+ 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
+ 	private _systemPromptOverride?: string;
++	/** Set when a pre-request compaction failed; never send the oversized next request. */
++	private _preemptiveCompactionFailed = false;
+ 
+ 	constructor(config: AgentSessionConfig) {
+ 		this.agent = config.agent;
+@@ -476,14 +479,38 @@ export class AgentSession {
+ 			(this.agent.prepareNextTurn
+ 				? async (_turn: PrepareNextTurnContext, signal?: AbortSignal) => await this.agent.prepareNextTurn?.(signal)
+ 				: undefined);
++		const previousShouldStopAfterTurn = this.agent.shouldStopAfterTurn;
+ 		this.agent.prepareNextTurnWithContext = async (turn, signal) => {
+ 			const previousSnapshot = await previousPrepareNextTurnWithContext?.(turn, signal);
+ 			const previousContext = previousSnapshot?.context ?? turn.context;
++			let nextContext = previousContext;
++
++			const model = this.agent.state.model;
++			const settings = this.settingsManager.getCompactionSettings();
++			const contextTokens = estimateContextTokens(turn.context.messages).tokens;
++			const shouldPreemptivelyCompact =
++				settings.enabled &&
++				model.contextWindow > 0 &&
++				shouldCompact(contextTokens, model.contextWindow, settings);
++
++			if (shouldPreemptivelyCompact) {
++				const previousCompactionId = getLatestCompactionEntry(this.sessionManager.getBranch())?.id;
++				await this._runAutoCompaction("threshold", false);
++				const latestCompaction = getLatestCompactionEntry(this.sessionManager.getBranch());
++				if (!latestCompaction || latestCompaction.id === previousCompactionId) {
++					this._preemptiveCompactionFailed = true;
++				} else {
++					nextContext = {
++						...previousContext,
++						messages: this.agent.state.messages.slice(),
++					};
++				}
++			}
+ 
+ 			return {
+ 				...previousSnapshot,
+ 				context: {
+-					...previousContext,
++					...nextContext,
+ 					systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
+ 					tools: this.agent.state.tools.slice(),
+ 				},
+@@ -491,6 +518,10 @@ export class AgentSession {
+ 				thinkingLevel: this.agent.state.thinkingLevel,
+ 			};
+ 		};
++		this.agent.shouldStopAfterTurn = async (turn: ShouldStopAfterTurnContext) => {
++			if (this._preemptiveCompactionFailed) return true;
++			return (await previousShouldStopAfterTurn?.(turn)) ?? false;
++		};
+ 	}
+ 
+ 	// =========================================================================
+@@ -1900,6 +1931,13 @@ export class AgentSession {
+ 	private async _checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<boolean> {
+ 		const settings = this.settingsManager.getCompactionSettings();
+ 		if (!settings.enabled) return false;
++		// A pre-request compaction failure deliberately stopped the agent loop.
++		// Do not immediately run the same failed compaction again from agent_end;
++		// the next user prompt can retry it through the normal pre-prompt check.
++		if (this._preemptiveCompactionFailed) {
++			this._preemptiveCompactionFailed = false;
++			return false;
++		}
+ 
+ 		// Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
+ 		if (skipAbortedCheck && assistantMessage.stopReason === "aborted") return false;
+diff --git a/packages/coding-agent/src/core/compaction/compaction.ts b/packages/coding-agent/src/core/compaction/compaction.ts
+index 39b1042..576ed2b 100644
+--- a/packages/coding-agent/src/core/compaction/compaction.ts
++++ b/packages/coding-agent/src/core/compaction/compaction.ts
+@@ -401,9 +401,12 @@ export function findCutPoint(
+ 
+ 		// Check if we've exceeded the budget
+ 		if (accumulatedTokens >= keepRecentTokens) {
+-			// Find the closest valid cut point at or after this entry
+-			for (let c = 0; c < cutPoints.length; c++) {
+-				if (cutPoints[c] >= i) {
++			// Keep the closest valid cut point at or before this entry. When the
++			// budget is crossed by a tool result, the cut must land on the
++			// preceding assistant message so the tool call/result pair stays
++			// together and the preceding turns can still be summarized.
++			for (let c = cutPoints.length - 1; c >= 0; c--) {
++				if (cutPoints[c] <= i) {
+ 					cutIndex = cutPoints[c];
+ 					break;
+ 				}
+diff --git a/packages/coding-agent/test/agent-session-proactive-compaction.test.ts b/packages/coding-agent/test/agent-session-proactive-compaction.test.ts
+new file mode 100644
+index 0000000..8b9cf5f
+--- /dev/null
++++ b/packages/coding-agent/test/agent-session-proactive-compaction.test.ts
+@@ -0,0 +1,126 @@
++import { existsSync, mkdirSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { Agent } from "@earendil-works/pi-agent-core";
++import { createAssistantMessageEventStream, fauxAssistantMessage } from "@earendil-works/pi-ai";
++import { getModel } from "@earendil-works/pi-ai/compat";
++import { Type } from "typebox";
++import { afterEach, beforeEach, describe, expect, it } from "vitest";
++import { AgentSession } from "../src/core/agent-session.ts";
++import { AuthStorage } from "../src/core/auth-storage.ts";
++import { ModelRegistry } from "../src/core/model-registry.ts";
++import { SessionManager } from "../src/core/session-manager.ts";
++import { SettingsManager } from "../src/core/settings-manager.ts";
++import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
++
++function usage(totalTokens: number) {
++	return {
++		input: totalTokens,
++		output: 0,
++		cacheRead: 0,
++		cacheWrite: 0,
++		totalTokens,
++		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
++	};
++}
++
++describe("AgentSession proactive compaction", () => {
++	let session: AgentSession;
++	let tempDir: string;
++
++	beforeEach(() => {
++		tempDir = join(tmpdir(), `pi-proactive-compaction-${Date.now()}-${Math.random().toString(36).slice(2)}`);
++		mkdirSync(tempDir, { recursive: true });
++	});
++
++	afterEach(() => {
++		session?.dispose();
++		if (tempDir && existsSync(tempDir)) rmSync(tempDir, { recursive: true, force: true });
++	});
++
++	it("compacts before the next provider request after a tool result crosses the threshold", async () => {
++		const model = getModel("anthropic", "claude-sonnet-4-5")!;
++		model.contextWindow = 1_000;
++		const providerCalls: Array<{ messages: unknown[] }> = [];
++		let call = 0;
++
++		const agent = new Agent({
++			initialState: { model, systemPrompt: "test", tools: [] },
++		});
++		agent.streamFn = (streamModel, context) => {
++			providerCalls.push({ messages: context.messages });
++			const stream = createAssistantMessageEventStream();
++			const message = {
++				...fauxAssistantMessage(call++ === 0 ? "" : "done"),
++				api: streamModel.api,
++				provider: streamModel.provider,
++				model: streamModel.id,
++				content:
++					call === 1
++						? [{ type: "toolCall", id: "probe-1", name: "probe", arguments: {} }]
++						: [{ type: "text", text: "done" }],
++				stopReason: call === 1 ? "toolUse" : "stop",
++				usage: usage(call === 1 ? 800 : 20),
++			};
++			queueMicrotask(() => {
++				stream.push({ type: "done", reason: message.stopReason, message });
++				stream.end();
++			});
++			return stream;
++		};
++
++		const extensionsResult = await createTestExtensionsResult([
++			(pi) => {
++				pi.on("session_before_compact", async (event) => ({
++					compaction: {
++						summary: "compacted",
++						firstKeptEntryId: event.preparation.firstKeptEntryId,
++						tokensBefore: event.preparation.tokensBefore,
++					},
++				}));
++			},
++		]);
++		const sessionManager = SessionManager.inMemory();
++		const settingsManager = SettingsManager.create(tempDir, tempDir);
++		settingsManager.applyOverrides({ compaction: { reserveTokens: 100, keepRecentTokens: 1 } });
++		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
++		authStorage.setRuntimeApiKey(model.provider, "test-key");
++		const modelRegistry = ModelRegistry.create(authStorage, tempDir);
++		const tool = {
++			name: "probe",
++			label: "Probe",
++			description: "Returns a large result",
++			parameters: Type.Object({}),
++			execute: async () => ({ content: [{ type: "text", text: "x".repeat(1_000) }], details: {} }),
++		};
++
++		session = new AgentSession({
++			agent,
++			sessionManager,
++			settingsManager,
++			cwd: tempDir,
++			modelRegistry,
++			resourceLoader: createTestResourceLoader({ extensionsResult }),
++			customTools: [tool],
++			initialActiveToolNames: ["probe"],
++		});
++		await session.bindExtensions({});
++		sessionManager.appendMessage({ role: "user", content: [{ type: "text", text: "Earlier task" }], timestamp: Date.now() - 2_000 });
++		sessionManager.appendMessage({
++			...fauxAssistantMessage("Earlier answer"),
++			api: model.api,
++			provider: model.provider,
++			model: model.id,
++			usage: usage(100),
++			timestamp: Date.now() - 1_000,
++		});
++		agent.state.messages = sessionManager.buildSessionContext().messages;
++
++		await session.prompt("Use probe once");
++		await agent.waitForIdle();
++
++		expect(providerCalls).toHaveLength(2);
++		expect(sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(1);
++		expect(providerCalls[1]!.messages.some((message: any) => JSON.stringify(message).includes("Earlier task"))).toBe(false);
++	});
++});

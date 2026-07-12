@@ -1,0 +1,66 @@
+diff --git a/src/config.ts b/src/config.ts
+--- a/src/config.ts
++++ b/src/config.ts
+@@
+-  compactionModels: { provider: string; id: string }[];
++  compactionModels: { provider: string; id: string; thinking?: string }[];
+diff --git a/index.ts b/index.ts
+--- a/index.ts
++++ b/index.ts
+@@
+ import { loadSettings, saveSettings, type SettingsScope } from "./src/settings.js";
+ import { LcmSettingsPanel, type LcmPanelDeps } from "./src/settings-panel.js";
+ 
++type CompactionModelSelection = {
++  provider: string;
++  id: string;
++  thinking?: string;
++};
+@@
+-    const engine = new CompactionEngine(store, config);
++    const engine = new CompactionEngine(store, config);
++    const summarizerModels = new Map<string, string>();
++    const recordSummarizerModel = (selection: CompactionModelSelection, fallback: boolean) => {
++      const label = `${selection.provider}/${selection.id}`;
++      if (summarizerModels.has(label)) return;
++
++      const reasoning = selection.thinking ? ` (reasoning=${selection.thinking})` : "";
++      const fallbackLabel = fallback ? " [session fallback]" : "";
++      const display = `${label}${reasoning}${fallbackLabel}`;
++      summarizerModels.set(label, display);
++      console.error(`[LCM] Compaction summarizer: ${display}`);
++    };
+@@
+-        return await callCompactionModel(ctx, config, prompt, sig);
++        return await callCompactionModel(ctx, config, prompt, sig, recordSummarizerModel);
+@@
+-          details: { lcm: true, stats: store.getStats(conversationId) },
++          details: {
++            lcm: true,
++            summarizerModels: [...summarizerModels.values()],
++            stats: store.getStats(conversationId),
++          },
+@@
+-async function callCompactionModel(ctx: any, config: LcmConfig, prompt: string, signal?: AbortSignal): Promise<string> {
++async function callCompactionModel(
++  ctx: any,
++  config: LcmConfig,
++  prompt: string,
++  signal?: AbortSignal,
++  onModelSelected?: (selection: CompactionModelSelection, fallback: boolean) => void,
++): Promise<string> {
+@@
+-      if (text.length > 0) return text;
++      if (text.length > 0) {
++        onModelSelected?.({ provider: cfg.provider, id: cfg.id, thinking: cfg.thinking }, false);
++        return text;
++      }
+@@
+-      if (text.length > 0) return text;
++      if (text.length > 0) {
++        onModelSelected?.({ provider: ctx.model.provider, id: ctx.model.id }, true);
++        return text;
++      }
+@@
+-        { apiKey, headers, signal },
++        { apiKey, headers, signal, reasoning: cfg.thinking },
