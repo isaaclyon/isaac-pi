@@ -1181,6 +1181,9 @@ export default function (pi: ExtensionAPI) {
           const sep = " " + theme.fg("dim", ">") + " ";
           const lines: string[] = [];
 
+          const presetStatus = footerData.getExtensionStatuses().get("model-preset");
+          const presetBlock = presetStatus ? theme.fg("accent", presetStatus) : "";
+
           const pwdStr = showCwd ? theme.fg("accent", pwd) : "";
           const locationVariants: string[] = [];
           if (pwdStr && branchStr) locationVariants.push(pwdStr + sep + branchStr);
@@ -1190,6 +1193,7 @@ export default function (pi: ExtensionAPI) {
 
           const statusBlocks = [
             locationBlock,
+            presetBlock,
             fitFooterSegment(width, modelStr === plainModelStr ? [plainModelStr] : [modelStr, plainModelStr]),
             fitFooterSegment(width, [
               renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
