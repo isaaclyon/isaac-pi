@@ -2,7 +2,7 @@
 name: scout
 description: Fast read-only research agent for locating files, summarizing code paths, and answering focused discovery questions. Use for cheap/quick reconnaissance before implementation.
 model: openai-codex/gpt-5.6-luna
-thinking: low
+thinking: high
 prompt_mode: append
 tools: read, bash, grep, find, ls, exec_command, write_stdin
 extensions: false
