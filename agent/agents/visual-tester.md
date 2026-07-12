@@ -1,7 +1,7 @@
 ---
 name: visual-tester
 description: Read-only visual QA agent for browser flows using the current Chrome DevTools and browser tools stack.
-tools: read, bash, grep, find, ls
+tools: read, bash, grep, find, ls, exec_command, write_stdin, view_image
 model: openai-codex/gpt-5.6-luna
 thinking: high
 skills: browser-tools

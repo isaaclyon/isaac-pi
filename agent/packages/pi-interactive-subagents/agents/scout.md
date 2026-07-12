@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Fast codebase reconnaissance - maps existing code, conventions, and patterns for a task
-tools: read, bash
+tools: read, bash, exec_command, write_stdin
 deny-tools: claude
 model: llama-swap/gemma-4-E4B
 output: context.md

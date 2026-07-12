@@ -4,7 +4,7 @@ description: Fast read-only research agent for locating files, summarizing code 
 model: openai-codex/gpt-5.6-luna
 thinking: low
 prompt_mode: append
-tools: read, bash, grep, find, ls
+tools: read, bash, grep, find, ls, exec_command, write_stdin
 extensions: false
 spawning: false
 auto-exit: true

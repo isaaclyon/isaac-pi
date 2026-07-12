@@ -1,7 +1,7 @@
 ---
 name: visual-tester
 description: Visual QA tester — navigates web UIs via Chrome CDP, spots visual issues, tests interactions, produces structured reports
-tools: bash, read, write
+tools: bash, read, write, exec_command, write_stdin, view_image
 model: llama-swap/qwen3.6-27b-coder
 skill: chrome-cdp
 spawning: false
