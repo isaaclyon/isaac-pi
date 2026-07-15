@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cartesian charts visual review candidate</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        background: #f4f1ee;
+        color: #2d2f2f;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+      main {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 32px;
+      }
+      header {
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+      }
+      p {
+        color: #6d6151;
+      }
+      figure {
+        margin: 0 0 28px;
+        padding: 16px;
+        background: #fff;
+        border: 1px solid #d3c7bb;
+        border-radius: 8px;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      figcaption {
+        margin: 12px 0 0;
+        font-size: 14px;
+        color: #6d6151;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+      }
+      .grid figure {
+        margin: 0;
+      }
+      @media (max-width: 760px) {
+        main {
+          padding: 18px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Cartesian charts visual review candidate</h1>
+        <p>
+          Generated from the new area, scatter, and waterfall renderers. Review
+          the full-size slides below; the contact sheet is only for overview.
+        </p>
+      </header>
+      <figure>
+        <img
+          src="assets/contact-sheet.png"
+          alt="Contact sheet showing the four candidate slides"
+        />
+        <figcaption>Overview — four-slide candidate deck.</figcaption>
+      </figure>
+      <section class="grid">
+        <figure>
+          <img src="assets/slide-01.png" alt="Stacked area chart slide" />
+          <figcaption>
+            Slide 1 — stacked area: fills, composition, and cream separators.
+          </figcaption>
+        </figure>
+        <figure>
+          <img
+            src="assets/slide-02.png"
+            alt="Area chart with a reporting gap"
+          />
+          <figcaption>
+            Slide 2 — unstacked area: null gap handling and fill continuity.
+          </figcaption>
+        </figure>
+        <figure>
+          <img src="assets/slide-03.png" alt="Scatter chart slide" />
+          <figcaption>
+            Slide 3 — scatter: explicit bounds, gridlines, markers, and point
+            labels.
+          </figcaption>
+        </figure>
+        <figure>
+          <img src="assets/slide-04.png" alt="Waterfall chart slide" />
+          <figcaption>
+            Slide 4 — waterfall: totals, changes, subtotal, connectors, and
+            labels.
+          </figcaption>
+        </figure>
+      </section>
+    </main>
+  </body>
+</html>
