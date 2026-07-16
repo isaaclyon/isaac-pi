@@ -1,22 +1,18 @@
 {
-  "lastChangelogVersion": "0.80.7",
+  "lastChangelogVersion": "0.80.10",
   "packages": [
     "./extensions/native-module-abi-guard.js",
-    "./packages/lsp-pi",
     "npm:pi-updater",
     {
       "source": "git:github.com/tmustier/pi-extensions",
       "extensions": [
-        "tab-status/tab-status.ts",
-        "session-recap/index.ts"
+        "tab-status/tab-status.ts"
       ],
       "skills": []
     },
-    "npm:@narumitw/pi-goal",
     "npm:pi-web-access",
     "npm:@aliou/pi-processes",
     "npm:@narumitw/pi-retry",
-    "npm:pi-mcporter",
     {
       "source": "./packages/usage-analytics",
       "extensions": [
@@ -40,11 +36,13 @@
     "npm:@howaboua/pi-skill-agent-native-hardening",
     "npm:@howaboua/pi-auto-trees",
     "./extensions/branch-summary-model.ts",
-    "npm:@jakeryderv/pi-artifacts"
+    "npm:@jakeryderv/pi-artifacts",
+    "npm:@juicesharp/rpiv-todo",
+    "npm:pi-lens"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-sol",
+  "defaultModel": "gpt-5.6-luna",
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
@@ -54,9 +52,6 @@
     "enabled": true,
     "reserveTokens": 9000,
     "keepRecentTokens": 20000
-  },
-  "lsp": {
-    "hookMode": "agent_end"
   },
   "lcm": {
     "enabled": true,
