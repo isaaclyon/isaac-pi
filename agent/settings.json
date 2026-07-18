@@ -42,7 +42,7 @@
   ],
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-luna",
+  "defaultModel": "gpt-5.6-sol",
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
