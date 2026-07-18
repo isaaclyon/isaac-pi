@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractExplicitSkillInvocations, resolveRepoRootFromPath } from '../src/repo.mjs';
+import { extractExplicitSkillInvocations, getPiRepoRoot, isPiRepo, resolveRepoRootFromPath } from '../src/repo.mjs';
 
 test('extractExplicitSkillInvocations only matches explicit skill commands', () => {
   assert.deepEqual(
@@ -25,4 +25,10 @@ test('resolveRepoRootFromPath returns git top level when available', () => {
 test('resolveRepoRootFromPath returns null when git lookup fails', () => {
   const fakeSpawn = () => ({ status: 128, stdout: '' });
   assert.equal(resolveRepoRootFromPath('/tmp/not-a-repo', { spawnSync: fakeSpawn }), null);
+});
+
+test('Pi repo scope resolves only to the home .pi repository', () => {
+  assert.equal(getPiRepoRoot('/tmp/test-home'), '/tmp/test-home/.pi');
+  assert.equal(isPiRepo('/tmp/test-home/.pi', '/tmp/test-home'), true);
+  assert.equal(isPiRepo('/tmp/other-repo', '/tmp/test-home'), false);
 });

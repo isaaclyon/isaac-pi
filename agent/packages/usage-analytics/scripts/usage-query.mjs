@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { ensureUsageAnalyticsDb, openUsageAnalyticsDb } from '../src/db.mjs';
-import { resolveRepoRootFromPath } from '../src/repo.mjs';
+import { getPiRepoRoot, resolveRepoRootFromPath } from '../src/repo.mjs';
 import { runCannedReport, renderReport } from '../src/reports.mjs';
 import { ensureReadOnlySql } from '../src/sql.mjs';
 
@@ -34,8 +34,13 @@ function parseArgs(argv) {
 }
 
 function resolveRepoScope(scope, repoArg) {
+  const piRepoRoot = getPiRepoRoot();
   if (repoArg) {
-    return resolveRepoRootFromPath(repoArg) ?? resolve(repoArg);
+    const repoRoot = resolveRepoRootFromPath(repoArg) ?? resolve(repoArg);
+    if (repoRoot !== piRepoRoot) {
+      throw new Error(`Usage analytics is limited to ${piRepoRoot}`);
+    }
+    return piRepoRoot;
   }
 
   if (scope === 'current') {
@@ -43,10 +48,13 @@ function resolveRepoScope(scope, repoArg) {
     if (!repoRoot) {
       throw new Error(`No git repo found for ${process.cwd()}`);
     }
+    if (repoRoot !== piRepoRoot) {
+      throw new Error(`Usage analytics is limited to ${piRepoRoot}`);
+    }
     return repoRoot;
   }
 
-  return undefined;
+  return piRepoRoot;
 }
 
 function main() {

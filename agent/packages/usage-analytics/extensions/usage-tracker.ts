@@ -10,7 +10,7 @@ import {
   recordSkillLoad,
   recordToolExecution,
 } from "../src/db.mjs";
-import { extractExplicitSkillInvocations, resolveRepoRootFromPath } from "../src/repo.mjs";
+import { extractExplicitSkillInvocations, getPiRepoRoot, resolveRepoRootFromPath } from "../src/repo.mjs";
 
 interface SkillFileLoad {
   skillName: string;
@@ -74,6 +74,7 @@ function readPathFromArgs(args: unknown) {
 export default function usageTracker(pi: ExtensionAPI) {
   const pendingExecutions = new Map<string, PendingToolExecution>();
   const repoRootCache = new Map<string, string | null>();
+  const piRepoRoot = getPiRepoRoot();
   let toolsByName = new Map<string, ToolInfo>();
   let skillsByPath = new Map<string, SkillFileLoad>();
   let db = null;
@@ -178,6 +179,7 @@ export default function usageTracker(pi: ExtensionAPI) {
     const ts = new Date().toISOString();
     const sessionFile = ctx.sessionManager.getSessionFile() ?? null;
     const repoRoot = getRepoRoot(ctx.cwd);
+    if (repoRoot !== piRepoRoot) return;
 
     for (const skillName of skillNames) {
       safelyRecord((currentDb) => {
@@ -211,11 +213,13 @@ export default function usageTracker(pi: ExtensionAPI) {
 
     const tool = toolsByName.get(event.toolName);
     const { toolPath, toolSource } = classifyTool(tool);
+    const repoRoot = getRepoRoot(ctx.cwd);
+    if (repoRoot !== piRepoRoot) return;
 
     pendingExecutions.set(event.toolCallId, {
       startedAt: Date.now(),
       cwd: ctx.cwd,
-      repoRoot: getRepoRoot(ctx.cwd),
+      repoRoot,
       sessionFile: ctx.sessionManager.getSessionFile() ?? null,
       toolName: event.toolName,
       toolPath,

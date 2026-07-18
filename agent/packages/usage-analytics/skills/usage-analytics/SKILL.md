@@ -16,11 +16,12 @@ Use the package CLI command `pi-usage-query` to answer questions about Pi usage 
 
 Observed skill loads mean the model read a registered skill file. They do **not** prove the skill influenced reasoning.
 
-## Default scope rules
+## Scope rules
 
-- If the user says **here**, **this repo**, or **current repo**, use `--scope=current`.
-- Otherwise, use `--scope=all`.
-- If the user gives a repo path, use `--repo <path>`.
+- Analytics are local-only: the collector records and the CLI reports events from
+  the Pi repository at `~/.pi`.
+- `--scope=current` and `--scope=all` are both limited to `~/.pi`.
+- A repo path may only resolve to `~/.pi`; other paths are rejected.
 
 ## Preferred query flow
 
@@ -45,14 +46,14 @@ Observed skill loads mean the model read a registered skill file. They do **not*
 ## Commands
 
 ```bash
-pi-usage-query summary --scope=all
-pi-usage-query skills --scope=current --days=7
-pi-usage-query skill-loads --scope=all --days=7
-pi-usage-query tools --repo /path/to/repo --limit=20
-pi-usage-query extension-tools --scope=all
-pi-usage-query failures --scope=current
-pi-usage-query slow-tools --scope=all --days=30
-pi-usage-query repos --scope=all
+pi-usage-query summary --scope=current
+pi-usage-query skills --days=7
+pi-usage-query skill-loads --days=7
+pi-usage-query tools --limit=20
+pi-usage-query extension-tools
+pi-usage-query failures
+pi-usage-query slow-tools --days=30
+pi-usage-query repos
 ```
 
 ## SQL escape hatch
