@@ -14,7 +14,7 @@ This skill is a **router and steward**, not the source of truth itself. The repo
 - Discover where repo knowledge lives.
 - Scaffold a minimal documentation system in a greenfield or partially-documented repo.
 - Load the right docs before design or implementation work.
-- Route into deeper skills such as `grill-with-docs` and `create-adr` when the task deserves them.
+- Route into deeper skills such as `create-adr` and `improve-code` when the task deserves them.
 - Decide which documentation surface owns a new or changed fact.
 - Ask whether a code or design change created a documentation delta that now needs to be captured.
 
@@ -142,9 +142,10 @@ Workflow:
    - **execution state** — active roadmap items or implementation plans that constrain the task
    - **doc obligations** — what docs might need updates if this task lands
 4. Route to the right deeper workflow:
-   - fuzzy terminology, contested boundaries, or plan stress-testing → `grill-with-docs`
+   - architectural friction or refactoring opportunities → `improve-code`
    - hard-to-reverse decision with real trade-offs → `create-adr`
    - straightforward implementation → code/test while respecting the loaded contract
+   - fuzzy terminology, contested boundaries, or plan stress-testing → use the plan stress-test loop below
 5. Before claiming completion, ask the doc-delta questions:
    - Did terminology change?
    - Did a boundary or invariant change?
@@ -155,6 +156,19 @@ Workflow:
    - Did code gain a non-obvious enforcement seam that deserves a terse ADR reference?
 
 If yes, update the owning documentation surface instead of stuffing the explanation into code comments or agent notes.
+
+### Plan stress-test loop
+
+Use this loop when a plan is fuzzy, terminology is contested, boundaries are unclear, code disagrees with stated behavior, or several documentation layers could own the result. The goal is not more documentation; it is one clear owner for each important fact.
+
+1. Inspect the relevant `CONTEXT.md`, `CONTEXT-MAP.md`, ADRs, `ARCHITECTURE.md`, `ROADMAP.md`, `docs/plans/`, guidelines, and agent instructions before asking questions.
+2. Ask targeted questions only where code and existing docs cannot answer. Provide a recommended answer, then resolve one decision at a time.
+3. Challenge overloaded terms against the glossary and propose a canonical term. Test boundaries, ownership, lifecycle, and failure behavior with concrete scenarios.
+4. Cross-check claims against the implementation and surface contradictions rather than silently choosing one interpretation.
+5. As facts resolve, file them inline in their owning surface. Do not wait until the end or put a fact in a more durable layer merely because that file is open.
+6. Summarize resolved terms, decisions, architecture/roadmap/plan changes, remaining questions, and any intentionally skipped ADRs before ending.
+
+Use [CONTEXT-FORMAT.md](references/CONTEXT-FORMAT.md) for compact context entries and [ADR-FORMAT.md](references/ADR-FORMAT.md) when the repo has no stronger local convention. Offer an ADR only when the decision is hard to reverse, surprising without context, and based on a real trade-off.
 
 ### 3. Ratchet
 
@@ -234,14 +248,6 @@ When the repo already has some documentation, prefer **reconciliation** over rep
 - Prefer moving content to the right layer over deleting it when it still has value.
 
 ## Escalation rules
-
-Use `grill-with-docs` when:
-
-- the user wants to stress-test a plan
-- glossary terms are fuzzy or overloaded
-- context boundaries are still unclear
-- code and stated behavior seem to disagree
-- a proposed change could land in several documentation layers and needs interrogation before filing
 
 Use `create-adr` when all three are true:
 

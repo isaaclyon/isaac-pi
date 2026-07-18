@@ -26,7 +26,6 @@
       "source": "./packages/pi-interactive-subagents"
     },
     "npm:@juicesharp/rpiv-advisor",
-    "npm:pi-lcm",
     "npm:pi-tool-display",
     {
       "source": "npm:@tintinweb/pi-subagents",
@@ -38,7 +37,8 @@
     "./extensions/branch-summary-model.ts",
     "npm:@jakeryderv/pi-artifacts",
     "npm:@juicesharp/rpiv-todo",
-    "npm:pi-lens"
+    "npm:pi-lens",
+    "npm:@sting8k/pi-vcc"
   ],
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
@@ -52,31 +52,6 @@
     "enabled": true,
     "reserveTokens": 9000,
     "keepRecentTokens": 20000
-  },
-  "lcm": {
-    "enabled": true,
-    "leafChunkTokens": 4000,
-    "condensationThreshold": 6,
-    "maxDepth": 5,
-    "maxSummaryTokens": 8000,
-    "minMessagesForCompaction": 10,
-    "leafPassConcurrency": 8,
-    "debugMode": true,
-    "compactionModels": [
-      {
-        "provider": "groq",
-        "id": "openai/gpt-oss-20b"
-      },
-      {
-        "provider": "openai-codex",
-        "id": "gpt-5.3-codex-spark"
-      },
-      {
-        "provider": "openai-codex",
-        "id": "gpt-5.6-luna",
-        "thinking": "low"
-      }
-    ]
   },
   "enabledModels": [
     "openai-codex/gpt-5.5",

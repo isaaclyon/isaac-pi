@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeSync, mkdirSync, mkdtempSync, openSync, realpathSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, realpathSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openUsageAnalyticsDb, recordToolExecution } from '../src/db.mjs';
@@ -71,6 +71,27 @@ test('usage tracker defers tool lookup until runtime is ready', async () => {
   });
 });
 
+test('usage tracker ignores events outside the Pi repository', async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'usage-analytics-outside-'));
+  const dbPath = join(tempDir, 'usage.sqlite');
+  process.env.PI_USAGE_ANALYTICS_DB_PATH = dbPath;
+
+  const pi = createMockPi([]);
+  usageTracker(pi);
+  const ctx = {
+    cwd: tempDir,
+    sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
+  };
+
+  await pi.handlers.get('input')({ text: '/skill:usage-analytics now', source: 'interactive' }, ctx);
+  await pi.handlers.get('tool_execution_start')({ toolCallId: 'tool-1', toolName: 'demo_tool', args: {} }, ctx);
+  await pi.handlers.get('tool_execution_end')({ toolCallId: 'tool-1', toolName: 'demo_tool', result: {}, isError: false }, ctx);
+  await pi.handlers.get('session_shutdown')({}, ctx);
+
+  assert.equal(existsSync(dbPath), false);
+  delete process.env.PI_USAGE_ANALYTICS_DB_PATH;
+});
+
 test('usage tracker records raw input and tool provenance', async () => {
   const tempDir = mkdtempSync(join(tmpdir(), 'usage-analytics-ext-'));
   const dbPath = join(tempDir, 'usage.sqlite');
@@ -94,7 +115,7 @@ test('usage tracker records raw input and tool provenance', async () => {
   usageTracker(pi);
 
   const ctx = {
-    cwd: tempDir,
+    cwd: process.cwd(),
     sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
   };
 
@@ -142,7 +163,7 @@ test('usage tracker records successful reads of registered skill files', async (
   usageTracker(pi);
 
   const ctx = {
-    cwd: tempDir,
+    cwd: process.cwd(),
     sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
   };
 
@@ -191,7 +212,7 @@ test('usage tracker ignores failed or unregistered skill file reads', async () =
   usageTracker(pi);
 
   const ctx = {
-    cwd: tempDir,
+    cwd: process.cwd(),
     sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
   };
 
@@ -229,7 +250,7 @@ test('usage tracker disables collection after a corrupt database error', async (
     usageTracker(pi);
 
     const ctx = {
-      cwd: tempDir,
+      cwd: process.cwd(),
       sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
     };
 
@@ -254,7 +275,7 @@ test('usage tracker disables collection after quick_check detects corruption', a
   try {
     recordToolExecution(db, {
       ts: new Date().toISOString(),
-      cwd: tempDir,
+      cwd: process.cwd(),
       toolCallId: 'tool-1',
       toolName: 'demo_tool',
       toolSource: 'extension',
@@ -284,7 +305,7 @@ test('usage tracker disables collection after quick_check detects corruption', a
     usageTracker(pi);
 
     const ctx = {
-      cwd: tempDir,
+      cwd: process.cwd(),
       sessionManager: { getSessionFile: () => '/tmp/session.jsonl' },
     };
 

@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 const SKILL_COMMAND_RE = /(?:^|\n)\s*\/skill:([A-Za-z0-9][\w.-]*)\b/g;
 
@@ -26,4 +27,13 @@ export function resolveRepoRootFromPath(cwd, options = {}) {
 
   const repoRoot = result.stdout.trim();
   return repoRoot ? resolve(repoRoot) : null;
+}
+
+export function getPiRepoRoot(home = homedir()) {
+  const piPath = join(home, '.pi');
+  return resolveRepoRootFromPath(piPath) ?? resolve(piPath);
+}
+
+export function isPiRepo(repoRoot, home = homedir()) {
+  return typeof repoRoot === 'string' && resolve(repoRoot) === getPiRepoRoot(home);
 }

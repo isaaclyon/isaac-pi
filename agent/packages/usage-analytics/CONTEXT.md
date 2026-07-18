@@ -1,6 +1,6 @@
 # Usage Analytics Package
 
-A Pi package that records durable usage facts about explicit skill invocations and tool executions, then exposes a query skill and CLI for answering analytics questions across the current repo or all repos.
+A Pi package that records durable usage facts about explicit skill invocations and tool executions, then exposes a query skill and CLI for answering analytics questions about the `~/.pi` repo only.
 
 ## Language
 
@@ -40,9 +40,9 @@ _Avoid_: cwd-only scope, project guess
 A query filtered to the repo root resolved from the caller's current working directory.
 _Avoid_: current folder, active package
 
-**All Repos Scope**:
-A query that ignores repo filtering and aggregates across every recorded repo root plus non-repo events.
-_Avoid_: workspace-only scope
+**Local Pi Scope**:
+A query filtered to the `~/.pi` repository. Collection also rejects events from every other repository.
+_Avoid_: all repos scope, workspace-only scope
 
 **Canned View**:
 A named SQL-backed report such as summary, tools, skills, failures, or repos.
@@ -63,7 +63,7 @@ _Avoid_: arbitrary SQL, admin console
 - Every **Tool Execution** stores **Tool Provenance** as `extension` or `non_extension` in v1.
 - **Canned Views** are derived from **Usage Facts**, not maintained as separate counters.
 - The **Query Skill** prefers **Canned Views** before using the **Read-only SQL Escape Hatch**.
-- **Current Repo Scope** and **All Repos Scope** are query filters over the same underlying **Usage Facts**.
+- **Current Repo Scope** and **All Repos Scope** are retained as CLI compatibility flags, but both resolve to the local `~/.pi` repository.
 - Extension tools are identified from tool source metadata, not by naming convention.
 
 ## Invariants
