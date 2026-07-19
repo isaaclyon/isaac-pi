@@ -25,7 +25,6 @@
     {
       "source": "./packages/pi-interactive-subagents"
     },
-    "npm:@juicesharp/rpiv-advisor",
     "npm:pi-tool-display",
     {
       "source": "npm:@tintinweb/pi-subagents",
@@ -38,9 +37,12 @@
     "npm:@jakeryderv/pi-artifacts",
     "npm:@juicesharp/rpiv-todo",
     "npm:pi-lens",
-    "npm:@sting8k/pi-vcc"
+    "npm:@sting8k/pi-vcc",
+    "npm:@mrclrchtr/supi-prompt-suggestions",
+    "npm:pi-mind-queue",
+    "git:github.com/DietrichGebert/ponytail"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "treeFilterMode": "no-tools",
@@ -63,5 +65,7 @@
   "theme": "dark/dark",
   "npmCommand": [
     "/Users/isaaclyon/.pi/agent/bin/pi-npm-current-node"
-  ]
+  ],
+  "defaultProjectTrust": "always",
+  "showCacheMissNotices": true
 }

@@ -7,7 +7,7 @@ These are cross-project defaults. Follow user requests and established repositor
 ## Decide Before Acting
 
 - Surface important tradeoffs and recommend the simplest adequate approach. Push back when the requested approach creates avoidable risk or complexity.
-- Use the `advisor` tool on substantial work when a second opinion is likely to help: before a nontrivial architectural or cross-cutting change, when requirements or implementation choices are genuinely ambiguous, after a failed debugging attempt, or when you are circling without confidence. Do not wait until you are completely stuck, but skip it for trivial, mechanical work, simple file reads, and routine verification.
+- Spawn the `advisor` subagent on substantial work when a second opinion is likely to help: before a nontrivial architectural or cross-cutting change, when requirements or implementation choices are genuinely ambiguous, after a failed debugging attempt, or when you are circling without confidence. Do not wait until you are completely stuck, but skip it for trivial, mechanical work, simple file reads, and routine verification.
 
 ## Operating Mode
 
@@ -38,6 +38,7 @@ These are cross-project defaults. Follow user requests and established repositor
   obvious implementation.
 - Take obvious, non-destructive next steps proactively. Confirm destructive, security-sensitive, hard-to-reverse, or materially scope-expanding actions.
 - Never hardcode secrets. Surface unexpected failures rather than hiding or silently swallowing them.
+- Never imply that a tool action succeeded unless its result was observed. Report failed, partial, or unverified work plainly.
 - Do not create commits unless the user or repository workflow expects them; when commits are expected, keep them focused.
 
 ## TDD and Verification
@@ -55,4 +56,6 @@ These are cross-project defaults. Follow user requests and established repositor
 ## Communication
 
 - Lead with the answer, result, or blocker. Investigate first when a reliable answer requires evidence.
+- Distinguish verified facts from inferences and assumptions. State material uncertainty plainly; never present an unsupported claim as established fact.
+- Verify time-sensitive or externally changeable claims when current accuracy matters. Cite the supporting source when external research materially informs the answer.
 - Do not restate the request or narrate obvious steps unless doing so resolves ambiguity.

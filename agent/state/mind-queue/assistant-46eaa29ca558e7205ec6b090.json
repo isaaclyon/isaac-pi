@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "projectPath": "/Users/isaaclyon/Developer/personal/assistant",
+  "nextId": 7,
+  "todos": [
+    {
+      "id": 2,
+      "text": "Approval policy with tool/call matcher",
+      "done": false,
+      "createdAt": "2026-07-19T01:08:34.000Z",
+      "createdIn": {
+        "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+        "createdAt": "2026-07-19T01:07:33.083Z",
+        "persisted": true
+      }
+    },
+    {
+      "id": 3,
+      "text": "Rolling context for when people leave alone and cache expires",
+      "done": false,
+      "createdAt": "2026-07-19T01:08:53.571Z",
+      "createdIn": {
+        "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+        "createdAt": "2026-07-19T01:07:33.083Z",
+        "persisted": true
+      }
+    },
+    {
+      "id": 4,
+      "text": "State storage for last action / condition etc. for heartbeats",
+      "done": false,
+      "createdAt": "2026-07-19T01:09:06.001Z",
+      "createdIn": {
+        "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+        "createdAt": "2026-07-19T01:07:33.083Z",
+        "persisted": true
+      }
+    },
+    {
+      "id": 5,
+      "text": "Long-term durable preferences",
+      "done": false,
+      "createdAt": "2026-07-19T01:09:11.720Z",
+      "createdIn": {
+        "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+        "createdAt": "2026-07-19T01:07:33.083Z",
+        "persisted": true
+      }
+    },
+    {
+      "id": 6,
+      "text": "Long-term durable memory/knowledge",
+      "done": false,
+      "createdAt": "2026-07-19T01:09:16.913Z",
+      "createdIn": {
+        "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+        "createdAt": "2026-07-19T01:07:33.083Z",
+        "persisted": true
+      }
+    }
+  ],
+  "sessionLabelsVersion": 2,
+  "legacyMigration": {
+    "version": 1,
+    "completedAt": "2026-07-19T01:07:38.202Z",
+    "importedKeys": []
+  },
+  "updatedAt": "2026-07-19T02:04:16.212Z",
+  "undo": {
+    "operationId": "6bb6424f-8120-46c0-85de-d28367f9ed29",
+    "actorSessionId": "019f781c-ff22-7a8a-a1b0-b0a272e0fe2d",
+    "label": "move",
+    "nextId": 7,
+    "todos": [
+      {
+        "id": 1,
+        "text": "Scheduled jobs and triggers - cron, heartbeat (cron w/check and conditional), webhook trigger",
+        "done": false,
+        "createdAt": "2026-07-19T01:08:24.354Z",
+        "createdIn": {
+          "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+          "createdAt": "2026-07-19T01:07:33.083Z",
+          "persisted": true
+        }
+      },
+      {
+        "id": 2,
+        "text": "Approval policy with tool/call matcher",
+        "done": false,
+        "createdAt": "2026-07-19T01:08:34.000Z",
+        "createdIn": {
+          "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+          "createdAt": "2026-07-19T01:07:33.083Z",
+          "persisted": true
+        }
+      },
+      {
+        "id": 3,
+        "text": "Rolling context for when people leave alone and cache expires",
+        "done": false,
+        "createdAt": "2026-07-19T01:08:53.571Z",
+        "createdIn": {
+          "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+          "createdAt": "2026-07-19T01:07:33.083Z",
+          "persisted": true
+        }
+      },
+      {
+        "id": 4,
+        "text": "State storage for last action / condition etc. for heartbeats",
+        "done": false,
+        "createdAt": "2026-07-19T01:09:06.001Z",
+        "createdIn": {
+          "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+          "createdAt": "2026-07-19T01:07:33.083Z",
+          "persisted": true
+        }
+      },
+      {
+        "id": 5,
+        "text": "Long-term durable preferences",
+        "done": false,
+        "createdAt": "2026-07-19T01:09:11.720Z",
+        "createdIn": {
+          "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+          "createdAt": "2026-07-19T01:07:33.083Z",
+          "persisted": true
+        }
+      },
+      {
+        "id": 6,
+        "text": "Long-term durable memory/knowledge",
+        "done": false,
+        "createdAt": "2026-07-19T01:09:16.913Z",
+        "createdIn": {
+          "id": "019f77ea-045b-7455-89a8-74f216c5fa14",
+          "createdAt": "2026-07-19T01:07:33.083Z",
+          "persisted": true
+        }
+      }
+    ],
+    "editorInsertion": {
+      "position": 0,
+      "text": "Scheduled jobs and triggers - cron, heartbeat (cron w/check and conditional), webhook trigger"
+    }
+  }
+}
