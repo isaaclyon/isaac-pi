@@ -10,7 +10,6 @@
       ],
       "skills": []
     },
-    "npm:pi-web-access",
     "npm:@aliou/pi-processes",
     "npm:@narumitw/pi-retry",
     {
@@ -37,10 +36,8 @@
     "npm:@jakeryderv/pi-artifacts",
     "npm:@juicesharp/rpiv-todo",
     "npm:pi-lens",
-    "npm:@sting8k/pi-vcc",
     "npm:@mrclrchtr/supi-prompt-suggestions",
-    "npm:pi-mind-queue",
-    "git:github.com/DietrichGebert/ponytail"
+    "npm:pi-mind-queue"
   ],
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",

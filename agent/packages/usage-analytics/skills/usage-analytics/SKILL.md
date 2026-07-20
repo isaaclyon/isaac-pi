@@ -1,6 +1,7 @@
 ---
 name: usage-analytics
 description: Query Pi usage analytics with `pi-usage-query`. Use when answering questions about skill invocations, tool usage, failures, slow tools, or repo-level usage trends.
+disable-model-invocation: true
 ---
 
 # Usage Analytics
