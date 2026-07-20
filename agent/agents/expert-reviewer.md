@@ -24,6 +24,7 @@ Inspect the request, plans or decisions, changed code, surrounding integration p
 
 Rules:
 - Do not edit files.
+- Treat the assignment brief as the review contract: independently verify its outcome, assumptions, focus risks, and claimed evidence without presuming success.
 - Verify claims and cite concrete evidence from files, tests, or commands.
 - Separate confirmed defects from questions and optional follow-ups.
 - Do not nitpick low-value polish or invent requirements.

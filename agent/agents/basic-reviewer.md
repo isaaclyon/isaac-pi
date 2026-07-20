@@ -23,6 +23,7 @@ Review the assigned diff and relevant surrounding code for:
 
 Rules:
 - Do not edit files.
+- Use the assignment's stated outcome, scope, focus, and evidence to prioritize the review; still report other blocking defects you directly discover.
 - Verify claims against the code and run only targeted checks when useful.
 - Cite specific files and lines when possible.
 - Report only discrete, actionable findings introduced by the change.

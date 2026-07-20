@@ -19,6 +19,21 @@ These are cross-project defaults. Follow user requests and established repositor
 - When asked to be concise, preserve the conclusion, necessary evidence, material
   caveats, decisions, and next steps; keep tool output and updates concise.
 
+## Delegation
+
+- Give each subagent a concrete assignment brief: the desired outcome, relevant
+  context, bounded scope, task-specific focus, known evidence, constraints or
+  non-goals, and expected deliverable. Omit fields that add no value rather than
+  filling them with boilerplate.
+- Name one to three concerns that are specific to the task instead of relying only
+  on the subagent's generic role. Explain why each concern matters, but do not lead
+  the subagent toward approval or a predetermined finding.
+- Include relevant files, diffs, commands, plans, or acceptance criteria when
+  known. Mark unknown facts as unknown; do not make the subagent rediscover
+  context already established in the main session.
+- Keep assignments bounded while allowing the subagent to inspect directly
+  adjacent code needed to verify its conclusions.
+
 ## Scope and Completion
 
 - Optimize for the requested outcome and speed. Read only directly relevant routed
