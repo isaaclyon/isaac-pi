@@ -13,6 +13,43 @@ Use the smallest review pass that provides meaningful independent scrutiny. Revi
 
 A specialist is additive only when the change presents a concrete specialist concern. Do not fan out reviewers merely because several lenses could technically apply.
 
+## Assignment Brief
+
+Do not send a bare prompt such as "review this change." Every reviewer assignment must make the task-specific mission clear without biasing the verdict.
+
+Include the useful parts of this compact brief:
+
+```markdown
+Outcome: <what the user should be able to do, or the decision this review must support>
+Context: <why the change exists and the relevant acceptance criteria>
+Scope: <diff, changed files, plan, or commit to inspect; note allowed adjacent code>
+Focus:
+- <one to three concrete risks or invariants, and why they matter here>
+Evidence: <tests, diagnostics, runtime checks, or known gaps>
+Constraints: <non-goals, compatibility expectations, or decisions already made>
+Deliverable: <role-specific verdict or questions to answer>
+```
+
+Rules for a useful brief:
+
+- Derive `Focus` from the actual change. Do not merely copy the reviewer's generic checklist.
+- Supply established context and evidence rather than asking the reviewer to rediscover it.
+- State unknowns honestly and ask the reviewer to verify assumptions that affect completion.
+- Do not tell the reviewer that the change is correct or suggest the finding it should reach.
+- Keep scope bounded, but permit inspection of adjacent integration points needed to verify a claim.
+- Omit empty fields and keep the handoff concise; the brief is a decision aid, not ceremony.
+
+Tailor the deliverable and focus to the role:
+
+| Role | Assignment-specific direction |
+| --- | --- |
+| `basic-reviewer` | Name the changed behavior, its important inputs or failure cases, and the tests expected to prove it. |
+| `expert-reviewer` | Name the user outcome, critical invariants, operational or migration risks, and any completion assumptions needing independent verification. |
+| `simplifier` | Name the concrete complexity concern and the behavior or constraints that must remain unchanged. |
+| `thought-partner` | Provide the proposed approach, unresolved decisions, assumptions to challenge, and the point at which implementation is expected to begin. |
+
+When two justified reviewers run in parallel, give each the shared outcome and evidence but a distinct focus. Do not ask both to perform the same generic review.
+
 ## Routing
 
 ### No subagent review
@@ -84,14 +121,17 @@ File count is a useful heuristic, not the deciding factor. A one-file migration 
 2. Decide whether independent review adds value at all.
 3. Choose `basic-reviewer` or `expert-reviewer`, never both by default.
 4. Add `simplifier` only for a concrete structural question.
-5. Spawn independent reviews in parallel only when there is more than one justified reviewer.
-6. Reconcile findings, apply only actionable feedback, and run targeted validation.
-7. Escalate from basic to expert only when evidence from the change or review warrants it.
+5. Write a concise assignment brief with task-specific focus and known evidence.
+6. Spawn independent reviews in parallel only when there is more than one justified reviewer.
+7. Reconcile findings, apply only actionable feedback, and run targeted validation.
+8. Escalate from basic to expert only when evidence from the change or review warrants it.
 
 ## Done Criteria
 
 - Review depth matches the change's risk and reversibility.
 - Basic and expert review were not redundantly combined.
 - Specialist use was tied to a concrete concern.
+- Each reviewer received the relevant outcome, scope, evidence, and task-specific focus.
+- Parallel reviewers had distinct missions rather than duplicate generic prompts.
 - No reviewer was launched solely to satisfy ceremony.
 - Findings were verified and reconciled before completion was claimed.

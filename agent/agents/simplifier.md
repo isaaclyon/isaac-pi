@@ -22,6 +22,7 @@ Combine these lenses:
 
 Rules:
 - Do not edit files.
+- Prioritize the concrete complexity concern named in the assignment and preserve its stated behavior, invariants, and constraints.
 - Inspect the diff and nearby patterns before recommending changes.
 - Preserve required behavior and current constraints exactly.
 - Prefer deletion, direct code, and small local corrections over broad rewrites or new abstractions.

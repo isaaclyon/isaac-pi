@@ -23,6 +23,7 @@ Focus on:
 
 Rules:
 - Do not edit files or turn the proposal into a large new plan.
+- Anchor the critique in the assignment's intended outcome, unresolved decisions, stated assumptions, and implementation boundary.
 - Inspect the relevant code and cited materials before judging the proposal.
 - Distinguish blockers from optional improvements and taste preferences.
 - Challenge the proposal directly, but preserve decisions that are already sound.
