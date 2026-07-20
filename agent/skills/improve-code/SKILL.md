@@ -53,7 +53,7 @@ When a refactoring plan is fuzzy, terminology is overloaded, boundaries are cont
 - update durable terms inline in the owning context file; route decisions to ADRs, current shape to architecture docs, sequencing to the roadmap, and temporary checklists to implementation plans
 - finish by summarizing resolved terms, decisions, documentation changes, remaining questions, and intentionally skipped ADRs
 
-Use [CONTEXT-FORMAT.md](../repo-intelligence/references/CONTEXT-FORMAT.md) and [ADR-FORMAT.md](../repo-intelligence/references/ADR-FORMAT.md) when local repo conventions do not provide formats. Offer an ADR only when the decision is hard to reverse, surprising without context, and based on a real trade-off.
+Use [CONTEXT-FORMAT.md](../maintain-repo-context/references/CONTEXT-FORMAT.md) and [ADR-FORMAT.md](../maintain-repo-context/references/ADR-FORMAT.md) when local repo conventions do not provide formats. Offer an ADR only when the decision is hard to reverse, surprising without context, and based on a real trade-off.
 
 ## Done criteria
 

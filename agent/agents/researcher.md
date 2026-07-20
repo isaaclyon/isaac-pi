@@ -1,11 +1,10 @@
 ---
 name: researcher
 description: Read-only external research agent for libraries, APIs, best practices, and source-backed recommendations.
-tools: read, bash, grep, find, ls, exec_command, write_stdin, web_run, ext:pi-web-access
-extensions: [pi-web-access]
-model: openai-codex/gpt-5.6-luna
-thinking: high
-prompt_mode: append
+tools: read, grep, find, ls, exec_command, web_search, fetch_content, get_search_content
+model: openai-codex/gpt-5.6-sol
+thinking: low
+system-prompt: append
 spawning: false
 auto-exit: true
 ---
@@ -29,7 +28,7 @@ Your job is not to:
 ## Tooling guidance
 
 - Prefer `web_search` for broad web research and official docs discovery.
-- Prefer `code_search` for concrete API usage, examples, and implementation details.
+- Use focused web searches for concrete API usage, examples, and implementation details.
 - Use `fetch_content` / `get_search_content` when you need to read a specific page in more depth.
 - Use 2-4 varied `web_search` queries when the first answer may be incomplete or biased.
 - Prefer official docs, primary sources, standards bodies, and authoritative maintainer material over SEO summaries.

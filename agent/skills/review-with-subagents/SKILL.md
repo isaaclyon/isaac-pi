@@ -1,91 +1,97 @@
 ---
 name: review-with-subagents
-description: "Route read-only reviewer subagents based on the kind of coding work being done. Use when implementing or reviewing a change and deciding which reviewer combination to spawn."
+description: "Choose no review, a basic review, an expert review, or a focused simplification pass based on the risk and shape of coding work."
 ---
 
 # Review With Subagents
 
-Choose reviewer subagents based on the current task instead of spawning the whole reviewer roster.
+Use the smallest review pass that provides meaningful independent scrutiny. Reviewer count should be proportional to risk, not the number of available lenses.
 
-## Purpose
+## Core Rule
 
-Use this skill to pick the smallest useful reviewer combination for a coding task.
+`basic-reviewer` and `expert-reviewer` are alternatives. Do not spawn both for the same change unless the first review uncovers a distinct reason for escalation.
 
-Goals:
+A specialist is additive only when the change presents a concrete specialist concern. Do not fan out reviewers merely because several lenses could technically apply.
 
-- catch the most likely problems for the kind of work being done
-- avoid redundant reviewer overlap
-- keep reviewer fan-out proportional to risk and scope
+## Routing
 
-## Critical Rule
+### No subagent review
 
-After any material work has been performed, include `intent-validator` before claiming completion.
+Skip reviewer subagents for trivial, low-risk work such as:
 
-"Material work" means anything beyond trivial edits: new features, meaningful bug fixes, integrations,
-schema/data work, operational changes, migrations, non-trivial refactors, production-readiness claims,
-or any task where a user could reasonably care whether the outcome truly delivered the intent rather
-than just satisfying the checklist.
+- typo, comment, or formatting corrections
+- obvious metadata updates
+- mechanical edits with no behavioral effect
+- changes fully covered by a narrow deterministic validation
 
-Use `intent-validator` to answer the semantic completion question:
+Run the relevant validation directly instead.
 
-- did we actually deliver the thing the user wanted?
-- is the claimed level of readiness honest?
-- are we shipping a spec-shaped partial and calling it done?
+### Basic reviewer — default
 
-For tiny or obviously non-material edits, you may skip it.
+Use `basic-reviewer` for ordinary bounded changes:
 
-## Reviewer Routing
+- small fixes and features
+- localized behavior changes, often within one to three files
+- tests or configuration with limited impact
+- work with clear acceptance criteria and easy rollback
 
-- default: `correctness-reviewer` + `complexity-reviewer`
-- bug fix / logic change: `correctness-reviewer`
-- refactor / cleanup: `complexity-reviewer` + `duplication-reviewer`
-- architecture / boundary / API / new abstraction work: `architecture-reviewer` + `correctness-reviewer` + `yagni-reviewer`
-- ops / config / migration / rollout work: `ops-reviewer` + `correctness-reviewer`
-- UI changes: `visual-tester` + `correctness-reviewer`
-- after any material work: add `intent-validator` before claiming completion
-- if scope is unclear or the code area is unfamiliar: `scout` first
+The basic reviewer checks correctness, regressions, tests, and obvious maintainability problems. This should cover most reviewed implementation work.
+
+### Expert reviewer — use instead of basic
+
+Use `expert-reviewer` when deeper semantic or operational judgment is warranted:
+
+- cross-cutting or high-risk changes
+- public APIs, schemas, persistence, migrations, security, or concurrency
+- integrations and production-readiness claims
+- ambiguous requirements where checklist completion may miss the intended outcome
+- expensive or difficult-to-reverse failure modes
+- work whose completion depends on important assumptions or end-to-end evidence
+
+The expert reviewer incorporates intent validation, architecture, operational readiness, and deep correctness review. Do not add a separate intent validator.
+
+### Simplifier — focused specialist
+
+Use `simplifier` only when structural complexity is a material concern:
+
+- refactors or architecture changes
+- new abstractions, helpers, options, hooks, or extension points
+- an implementation that appears larger than the request
+- duplicated concepts or logic with credible drift risk
+- misplaced responsibilities or problematic dependency direction
+
+Do not add it automatically to a basic or expert review. It may be used alone for behavior-preserving cleanup, or alongside one reviewer when correctness and simplification are genuinely independent concerns.
+
+### Thought partner — before implementation
+
+Use `thought-partner` to pressure-test an existing plan or proposed approach before implementation when assumptions, scope, or design choices deserve adversarial scrutiny. It is not a post-implementation reviewer and should not be required for routine work.
+
+Use `scout` first only when the relevant code area is unfamiliar or the review cannot be scoped without repository discovery.
 
 ## Reviewer Count
 
-- trivial or low-risk edits: use 1 reviewer
-- normal changes: use 2 reviewers
-- high-risk or cross-cutting changes: use up to 3 reviewers
+- trivial work: 0 reviewers
+- ordinary bounded changes: 1 basic reviewer
+- high-risk or semantically ambiguous changes: 1 expert reviewer
+- concrete structural concern: add or substitute 1 simplifier
+- exceptional cross-cutting work: at most 2 reviewers unless the user explicitly requests broader review
 
-## Rules
-
-- Prefer the smallest useful combo.
-- Do not spawn every reviewer by default.
-- Avoid redundant reviewers when their concerns overlap.
-- Spawn reviewers in parallel when their work is independent.
-- Treat `intent-validator` as the default final semantic gate for material work, not an optional nice-to-have.
-- After results arrive, reconcile overlaps or conflicts and apply only useful feedback.
-
-## Quick Mapping
-
-Use these heuristics when the task spans more than one category:
-
-- If correctness risk is high, include `correctness-reviewer`.
-- If structure or maintainability is the main concern, include `complexity-reviewer`.
-- If the change introduces shared helpers, repeated logic, or parallel concepts, include `duplication-reviewer`.
-- If the change adds abstractions, options, or extension points, include `yagni-reviewer`.
-- If the change affects module boundaries or public shape, include `architecture-reviewer`.
-- If runtime safety, deployability, config, or migrations matter, include `ops-reviewer`.
-- If the change is user-visible in the browser, include `visual-tester`.
-- If the question is "does this really count as done?", include `intent-validator`.
+File count is a useful heuristic, not the deciding factor. A one-file migration can require expert review; a mechanical multi-file rename may require none.
 
 ## Workflow
 
-1. Classify the task by primary change type.
-2. If the area is unclear, spawn `scout` first.
-3. Pick the smallest reviewer combo that matches the task.
-4. Spawn independent reviewers in parallel.
-5. For any material work, ensure `intent-validator` is part of the review pass before completion is claimed.
-6. Synthesize results, resolve conflicts, and keep only actionable feedback.
+1. Identify the actual behavioral and operational risk.
+2. Decide whether independent review adds value at all.
+3. Choose `basic-reviewer` or `expert-reviewer`, never both by default.
+4. Add `simplifier` only for a concrete structural question.
+5. Spawn independent reviews in parallel only when there is more than one justified reviewer.
+6. Reconcile findings, apply only actionable feedback, and run targeted validation.
+7. Escalate from basic to expert only when evidence from the change or review warrants it.
 
 ## Done Criteria
 
-- Reviewer selection matches the actual task shape.
-- Reviewer count is proportional to risk.
-- `intent-validator` was used for material work.
-- No obviously redundant reviewer was spawned.
-- Findings were reconciled before acting on them.
+- Review depth matches the change's risk and reversibility.
+- Basic and expert review were not redundantly combined.
+- Specialist use was tied to a concrete concern.
+- No reviewer was launched solely to satisfy ceremony.
+- Findings were verified and reconciled before completion was claimed.

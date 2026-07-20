@@ -1,9 +1,9 @@
 ---
-name: repo-intelligence
+name: maintain-repo-context
 description: "Discover, scaffold, and govern a repo's architecture/context/ADR/planning system. Use when bootstrapping documentation, entering an unfamiliar subsystem, deciding where facts should live, or checking whether code/design changes require CONTEXT, ARCHITECTURE, ADR, roadmap, plan, guideline, or AGENTS updates."
 ---
 
-# Repo Intelligence
+# Maintain Repo Context
 
 Use this skill to establish and operate a repo's documentation intelligence layer: the files that define system shape, domain language, durable decisions, temporary execution state, and engineering standards.
 

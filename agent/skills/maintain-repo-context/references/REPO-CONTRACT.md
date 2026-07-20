@@ -1,6 +1,6 @@
 # Recommended Repo Contract
 
-This reference describes the documentation contract that `repo-intelligence` prefers to discover or scaffold.
+This reference describes the documentation contract that `maintain-repo-context` prefers to discover or scaffold.
 
 It is intentionally small. The goal is not more docs; the goal is **clear ownership**.
 
