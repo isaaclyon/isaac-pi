@@ -7,7 +7,6 @@ These are cross-project defaults. Follow user requests and established repositor
 ## Decide Before Acting
 
 - Surface important tradeoffs and recommend the simplest adequate approach. Push back when the requested approach creates avoidable risk or complexity.
-- Spawn the `advisor` subagent on substantial work when a second opinion is likely to help: before a nontrivial architectural or cross-cutting change, when requirements or implementation choices are genuinely ambiguous, after a failed debugging attempt, or when you are circling without confidence. Do not wait until you are completely stuck, but skip it for trivial, mechanical work, simple file reads, and routine verification.
 
 ## Operating Mode
 

@@ -1,0 +1,77 @@
+{
+  "version": 6,
+  "sessions": {
+    "20869655daec6d51": {
+      "openai-codex/gpt-5.6-luna": {
+        "day": "2026-07-19",
+        "totalRequests": 20,
+        "hitRequests": 18,
+        "cachedInputTokens": 308736,
+        "cacheWriteInputTokens": 0,
+        "totalInputTokens": 359273
+      }
+    },
+    "3ba401442e7de1a7": {
+      "openai-codex/gpt-5.6-sol": {
+        "day": "2026-07-19",
+        "totalRequests": 39,
+        "hitRequests": 39,
+        "cachedInputTokens": 1478912,
+        "cacheWriteInputTokens": 0,
+        "totalInputTokens": 1569923
+      }
+    }
+  },
+  "totalsByModel": {
+    "openai-codex/gpt-5.6-luna": {
+      "day": "2026-07-19",
+      "totalRequests": 57,
+      "hitRequests": 56,
+      "cachedInputTokens": 3607552,
+      "cacheWriteInputTokens": 0,
+      "totalInputTokens": 3870735
+    },
+    "openai-codex/gpt-5.6-sol": {
+      "day": "2026-07-19",
+      "totalRequests": 110,
+      "hitRequests": 107,
+      "cachedInputTokens": 5367040,
+      "cacheWriteInputTokens": 0,
+      "totalInputTokens": 5783648
+    }
+  },
+  "legacyFamily": {
+    "deepseek": {
+      "day": "2026-07-19",
+      "totalRequests": 0,
+      "hitRequests": 0,
+      "cachedInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "totalInputTokens": 0
+    },
+    "openai": {
+      "day": "2026-07-19",
+      "totalRequests": 0,
+      "hitRequests": 0,
+      "cachedInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "totalInputTokens": 0
+    },
+    "claude": {
+      "day": "2026-07-19",
+      "totalRequests": 0,
+      "hitRequests": 0,
+      "cachedInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "totalInputTokens": 0
+    },
+    "gemini": {
+      "day": "2026-07-19",
+      "totalRequests": 0,
+      "hitRequests": 0,
+      "cachedInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "totalInputTokens": 0
+    }
+  }
+}
