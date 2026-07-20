@@ -64,6 +64,17 @@ function isResumableState(state?: ProductionizeState): state is ProductionizeSta
 	return Boolean(state?.auto.enabled && (state.outcome === "failed" || state.outcome === "running"));
 }
 
+function relayAbortSignal(source: AbortSignal | undefined, target: AbortController): () => void {
+	if (!source) return () => undefined;
+	const abort = () => target.abort();
+	if (source.aborted) {
+		target.abort();
+		return () => undefined;
+	}
+	source.addEventListener("abort", abort, { once: true });
+	return () => source.removeEventListener("abort", abort);
+}
+
 export default function productionizeExtension(pi: ExtensionAPI, deps: ProductionizeDependencies = defaultDeps): void {
 	let activeRun: ActiveRun | undefined;
 
@@ -126,6 +137,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 		ctx: ExtensionContext,
 		state: ProductionizeState,
 		options: ProductionizeRunOptions,
+		signal?: AbortSignal,
 	): Promise<{ content: Array<{ type: "text"; text: string }>; details: Record<string, unknown> }> => {
 		const sessionFile = getSessionFile(ctx);
 		const controller = createController(ctx);
@@ -135,6 +147,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 				details: { status: "already_running" },
 			};
 		}
+		const detachAbort = relayAbortSignal(signal, controller);
 
 		updateStatus(ctx, state.status);
 		void deps
@@ -152,6 +165,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 				state.failure = failure.failure;
 			})
 			.finally(() => {
+				detachAbort();
 				updateStatus(ctx, undefined);
 				clearActiveRun(sessionFile);
 				pi.sendMessage(
@@ -242,7 +256,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 			const content = result.content[0];
 			return new ToolText(content?.type === "text" ? content.text : "");
 		},
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const restored = deps.reconstructAutoState(ctx.sessionManager.getEntries() as Array<{ type?: string; customType?: string; data?: unknown }>).state as ProductionizeState | undefined;
 			const shouldResume = params.resume !== false;
 			const targetStep = isStepId(params.targetStep) ? params.targetStep : undefined;
@@ -255,7 +269,7 @@ export default function productionizeExtension(pi: ExtensionAPI, deps: Productio
 				? deps.prepareStateForModelRun(restored)
 				: deps.createInitialState({ auto: true });
 			if (!shouldResume && !state.status) state.status = "Starting productionize auto mode...";
-			return startToolRun(ctx, state, runOptions);
+			return startToolRun(ctx, state, runOptions, signal);
 		},
 	});
 }

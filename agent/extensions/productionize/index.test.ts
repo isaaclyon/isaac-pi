@@ -191,3 +191,33 @@ test("productionize_run rejects duplicate active runs", async () => {
 	release();
 	await new Promise((resolve) => setImmediate(resolve));
 });
+
+test("productionize_run relays caller cancellation to the background workflow", async () => {
+	const mock = createMockExtensionApi();
+	const controller = new AbortController();
+	let workflowSignal!: AbortSignal;
+	let release!: () => void;
+	const finished = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	productionizeExtension(mock.api as any, {
+		reconstructAutoState: () => ({}),
+		prepareStateForModelRun: (state) => state,
+		createInitialState: () => createDefaultSnapshot(true),
+		buildProductionizeFailurePrompt: () => "failure",
+		buildProductionizeCompletionMessage: () => "done",
+		runWorkflow: async (_pi, _ctx, _state, signal) => {
+			workflowSignal = signal;
+			if (!signal.aborted) await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+			release();
+		},
+	});
+
+	const tool = mock.registeredTools.find((entry) => entry.name === "productionize_run");
+	const result = await tool.execute("tool-1", {}, controller.signal, undefined, createToolContext().ctx);
+	assert.equal(result.details.status, "started");
+
+	controller.abort();
+	await finished;
+	assert.equal(workflowSignal.aborted, true);
+});

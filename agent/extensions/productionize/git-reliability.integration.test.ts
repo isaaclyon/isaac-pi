@@ -134,6 +134,34 @@ test("push verifies that the remote branch contains the local HEAD", async () =>
 	});
 });
 
+test("push uses the configured upstream ref when local and remote branch names differ", async () => {
+	await withRepository(async ({ work, remote }) => {
+		await git(work, "config", "push.default", "simple");
+		await git(work, "switch", "-c", "feat/local-name");
+		await writeFile(join(work, "feature.txt"), "first\n");
+		await git(work, "add", "feature.txt");
+		await git(work, "commit", "-m", "feat: add upstream test");
+		await git(work, "push", "-u", "origin", "HEAD:refs/heads/published-name");
+		await writeFile(join(work, "feature.txt"), "second\n");
+		await git(work, "add", "feature.txt");
+		await git(work, "commit", "-m", "feat: update upstream test");
+
+		const state = createInitialState({ startFrom: "push", stopAfter: "push" });
+		await runWorkflow(
+			createFakePi(),
+			createFakeContext(work),
+			state,
+			new AbortController().signal,
+			() => undefined,
+			{ startFrom: "push", stopAfter: "push" },
+			{ execCommand: execute },
+		);
+
+		assert.equal(state.outcome, "succeeded");
+		assert.equal((await git(remote, "rev-parse", "refs/heads/published-name")).trim(), (await git(work, "rev-parse", "HEAD")).trim());
+	});
+});
+
 async function withRepository(run: (repo: { root: string; work: string; remote: string }) => Promise<void>): Promise<void> {
 	const root = await mkdtemp(join(tmpdir(), "productionize-git-"));
 	const work = join(root, "work");

@@ -1,8 +1,170 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDefaultSnapshot } from "./auto.ts";
+import { commandFailure, execCommand, execOrFail } from "./git-runtime.ts";
 import { createInitialState, runWorkflow } from "./workflow.ts";
 import type { ExecResult } from "./types.ts";
+
+test("transient push transport failures are retried before succeeding", async () => {
+	const signal = new AbortController().signal;
+	const waits: number[] = [];
+	let attempts = 0;
+	const result = await execCommand(
+		{
+			pi: createFakePi(),
+			state: createDefaultSnapshot(),
+			signal,
+			hooks: {
+				execCommand: async () => {
+					attempts++;
+					return attempts < 3 ? fail("", "fatal: unable to access 'https://example.test/repo.git': Could not resolve host") : ok("Everything up-to-date\n");
+				},
+				sleep: async (ms) => { waits.push(ms); },
+			},
+		},
+		"git",
+		["push"],
+		"/repo",
+		signal,
+	);
+
+	assert.equal(result.code, 0);
+	assert.equal(attempts, 3);
+	assert.deepEqual(waits, [150, 400]);
+});
+
+test("destructive push forms are never retried", async () => {
+	for (const args of [
+		["push", "--force-with-lease=origin/main"],
+		["push", "--delete", "origin", "feature"],
+		["push", "--mirror", "origin"],
+		["push", "--all", "origin"],
+		["push", "--tags", "origin"],
+	]) {
+		let attempts = 0;
+		const signal = new AbortController().signal;
+		const result = await execCommand(
+			{
+				pi: createFakePi(),
+				state: createDefaultSnapshot(),
+				signal,
+				hooks: {
+					execCommand: async () => {
+						attempts++;
+						return fail("", "fatal: connection reset by peer");
+					},
+					sleep: async () => undefined,
+				},
+			},
+			"git",
+			args,
+			"/repo",
+			signal,
+		);
+
+		assert.equal(result.code, 1);
+		assert.equal(attempts, 1, args.join(" "));
+	}
+});
+
+test("push hook failures are not retried and retain actionable output", async () => {
+	let attempts = 0;
+	const runtime = {
+		pi: createFakePi(),
+		state: createDefaultSnapshot(),
+		signal: new AbortController().signal,
+		hooks: {
+			execCommand: async () => {
+				attempts++;
+				return fail("", "pre-push hook: lint failed in packages/api");
+			},
+		},
+	};
+
+	await assert.rejects(
+		() => execOrFail(runtime, "push", "Push", "git", ["push"], "/repo"),
+		(error: unknown) => {
+			assert.equal(attempts, 1);
+			assert.match(error instanceof Error ? error.message : String(error), /lint failed in packages\/api/i);
+			return true;
+		},
+	);
+});
+
+test("terminated Git commands surface timeout context", () => {
+	const failure = commandFailure("push", "Push", "git", ["push"], "/repo", { code: 143, stdout: "", stderr: "", killed: true });
+
+	assert.equal(failure.failure.killed, true);
+	assert.match(failure.message, /terminated before it completed|timed out/i);
+});
+
+test("upstream inspection errors stop before falling back to a different push", async () => {
+	const state = createDefaultSnapshot();
+	state.branch = "feat/test";
+	for (const step of state.steps) step.status = step.id === "push" ? "pending" : "done";
+	const seen: string[] = [];
+
+	await runWorkflow(createFakePi(), createFakeContext(), state, new AbortController().signal, () => undefined, {}, {
+			sleep: async () => undefined,
+			execCommand: async (command, args) => {
+				const joined = `${command} ${args.join(" ")}`;
+				seen.push(joined);
+				if (args.join(" ") === REPOSITORY_COMMAND) return ok("/repo\n/repo/.git\n/repo/.git\n");
+				if (joined === "git branch --show-current") return ok("feat/test\n");
+				if (joined === "git rev-parse --abbrev-ref --symbolic-full-name @{u}") return fail("", "fatal: unable to create '/repo/.git/index.lock': File exists");
+			throw new Error(`Unexpected command: ${joined}`);
+		},
+	});
+
+	assert.equal(state.outcome, "failed");
+	assert.match(state.failure?.message ?? "", /Git is blocked by a lock/i);
+	assert.equal(seen.some((command) => command.includes("git push")), false);
+});
+
+test("resumed push refuses to publish when the checkout drifted from persisted state", async () => {
+	const state = createDefaultSnapshot();
+	state.branch = "feat/persisted";
+	for (const step of state.steps) step.status = step.id === "push" ? "pending" : "done";
+	const seen: string[] = [];
+
+	await runWorkflow(createFakePi(), createFakeContext(), state, new AbortController().signal, () => undefined, {}, {
+		execCommand: async (command, args) => {
+			const joined = `${command} ${args.join(" ")}`;
+			seen.push(joined);
+			if (args.join(" ") === REPOSITORY_COMMAND) return ok("/repo\n/repo/.git\n/repo/.git\n");
+			if (joined === "git branch --show-current") return ok("feat/other\n");
+			throw new Error(`Unexpected command: ${joined}`);
+		},
+	});
+
+	assert.equal(state.outcome, "failed");
+	assert.equal(state.failure?.step, "Push");
+	assert.match(state.failure?.message ?? "", /current branch is feat\/other instead of feat\/persisted/i);
+	assert.equal(seen.some((command) => command.includes("git push")), false);
+});
+
+test("branch remote lookup errors do not fall back to origin", async () => {
+	const state = createDefaultSnapshot();
+	state.branch = "feat/config-error";
+	for (const step of state.steps) step.status = step.id === "push" ? "pending" : "done";
+	const seen: string[] = [];
+
+	await runWorkflow(createFakePi(), createFakeContext(), state, new AbortController().signal, () => undefined, {}, {
+		execCommand: async (command, args) => {
+			const joined = `${command} ${args.join(" ")}`;
+			seen.push(joined);
+			if (args.join(" ") === REPOSITORY_COMMAND) return ok("/repo\n/repo/.git\n/repo/.git\n");
+			if (joined === "git branch --show-current") return ok("feat/config-error\n");
+			if (joined === "git rev-parse --abbrev-ref --symbolic-full-name @{u}") return fail("", "fatal: no upstream configured for branch");
+			if (joined === "git config branch.feat/config-error.remote") return fail("", "fatal: bad config file");
+			throw new Error(`Unexpected command: ${joined}`);
+		},
+	});
+
+	assert.equal(state.outcome, "failed");
+	assert.match(state.failure?.stderr ?? "", /bad config file/i);
+	assert.equal(seen.some((command) => command === "git remote" || command.includes("git push")), false);
+});
 
 const REPOSITORY_COMMAND = "rev-parse --path-format=absolute --show-toplevel --git-dir --git-common-dir";
 const OPERATION_REFS = new Set([

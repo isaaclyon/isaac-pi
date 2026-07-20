@@ -1,0 +1,20 @@
+{
+  "id": "nyc-taxi-dashboard-example",
+  "title": "NYC Taxi Dashboard Example",
+  "stack": "html",
+  "entry": "index.html",
+  "created": "2026-07-20T02:40:54.553Z",
+  "updated": "2026-07-20T02:41:08.492Z",
+  "cwd": "/Users/isaaclyon/Developer/lola/bi/generative-data-apps",
+  "sessionFile": "/Users/isaaclyon/.pi/agent/sessions/--Users-isaaclyon-Developer-lola-bi-generative-data-apps--/2026-07-20T01-57-39-805Z_019f7d3e-415d-7166-8a07-683f06fd2e98.jsonl",
+  "sessionKey": "6894a76e371e6640caccc3961654c35d0dd7a85cbc58527e24b2001051e4a884",
+  "lastRender": {
+    "ok": true,
+    "warnings": 2,
+    "errors": 0,
+    "rendered": "2026-07-20T02:41:08.492Z",
+    "warningCodes": [
+      "htmlhint/empty-tag-not-self-closed"
+    ]
+  }
+}
