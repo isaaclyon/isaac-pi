@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import {
 	formatGitCommandFailure,
 	isLikelyGitLockFailure,
+	isLikelyTransientGitFailure,
 	type StepId,
 } from "./core.ts";
 import { WorkflowFailure, type ExecResult, type ProductionizeState } from "./types.ts";
@@ -147,11 +148,12 @@ export async function availableBranchName(runtime: GitRuntime, cwd: string, requ
 	});
 }
 
-export async function verifyCurrentBranch(runtime: GitRuntime, cwd: string, expected: string): Promise<void> {
-	const result = await execOrFail(runtime, "branch", "Verify branch", "git", ["branch", "--show-current"], cwd, 30_000);
+export async function verifyCurrentBranch(runtime: GitRuntime, cwd: string, expected: string, stepId: StepId = "branch"): Promise<void> {
+	const step = stepId === "push" ? "Push" : "Branch";
+	const result = await execOrFail(runtime, stepId, `Verify ${step.toLowerCase()} branch`, "git", ["branch", "--show-current"], cwd, 30_000);
 	if (result.stdout.trim() === expected) return;
-	throw new WorkflowFailure("branch", {
-		step: "Branch",
+	throw new WorkflowFailure(stepId, {
+		step,
 		command: "git",
 		args: ["branch", "--show-current"],
 		cwd,
@@ -217,9 +219,12 @@ export function commandFailure(stepId: StepId, step: string, command: string, ar
 		args,
 		cwd,
 		code: result.code,
+		killed: result.killed,
 		stdout: result.stdout,
 		stderr: result.stderr,
-		message: guidance ?? `${command} ${args.join(" ")} exited ${result.code}`,
+		message: result.killed
+			? `${command} ${args.join(" ")} was terminated before it completed, likely because it timed out.`
+			: guidance ?? `${command} ${args.join(" ")} exited ${result.code}`,
 	});
 }
 
@@ -236,13 +241,18 @@ export async function execCommand(
 		if (
 			result.code === 0
 			|| command !== "git"
-			|| !isRetrySafeGitCommand(args)
-			|| !isLikelyGitLockFailure(result.stdout, result.stderr)
+			|| !isRetryableGitFailure(args, result)
 			|| attempt === 2
 		) return result;
 		await sleep(runtime, attempt === 0 ? 150 : 400);
 	}
 	return { code: 1, stdout: "", stderr: "Git command retry loop ended unexpectedly." };
+}
+
+function isRetryableGitFailure(args: string[], result: ExecResult): boolean {
+	if (result.killed) return false;
+	if (!isRetrySafeGitCommand(args)) return false;
+	return isLikelyGitLockFailure(result.stdout, result.stderr) || isLikelyTransientGitFailure(result.stdout, result.stderr);
 }
 
 function isRetrySafeGitCommand(args: string[]): boolean {
@@ -251,6 +261,18 @@ function isRetrySafeGitCommand(args: string[]): boolean {
 	if (command === "branch") return args.includes("--show-current") || args.includes("--list");
 	if (command === "config") return args.length === 2 || args.includes("--get");
 	if (command === "remote") return args.length === 1 || args[1] === "get-url";
+	if (command === "push") return !args.some((arg) =>
+		arg === "-f"
+			|| arg.startsWith("--force")
+			|| arg === "-d"
+			|| arg === "--delete"
+			|| arg.startsWith("--delete=")
+			|| arg === "--mirror"
+			|| arg === "--all"
+			|| arg === "--tags"
+			|| arg === "--prune"
+			|| arg.startsWith("--prune=")
+	);
 	return false;
 }
 

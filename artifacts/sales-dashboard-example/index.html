@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sales Dashboard</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color: #172033;
+        background: #f3f6fa;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0;
+      }
+      h1 {
+        margin: 0 0 24px;
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+      }
+      h2 {
+        margin: 0 0 20px;
+        font-size: 1rem;
+        color: #53627a;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+      }
+      .card {
+        min-width: 0;
+        padding: 24px;
+        border: 1px solid #dce3ed;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 8px 24px #20304a10;
+      }
+      .kpi {
+        grid-column: 1 / -1;
+      }
+      .kpi p {
+        margin: 0;
+        font-size: clamp(2rem, 6vw, 3.5rem);
+        font-weight: 750;
+        color: #174ea6;
+      }
+      .table-card {
+        grid-column: 1 / -1;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      .chart-wrap {
+        overflow-x: auto;
+      }
+      .chart-wrap svg {
+        min-width: 520px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid #e6ebf2;
+        text-align: left;
+      }
+      th {
+        color: #53627a;
+        font-size: 0.85rem;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+      }
+      .axis {
+        stroke: #aeb9c9;
+        stroke-width: 1;
+      }
+      .line {
+        fill: none;
+        stroke: #246bce;
+        stroke-width: 4;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      circle,
+      rect {
+        fill: #246bce;
+      }
+      text {
+        fill: #53627a;
+        font:
+          12px ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+      text.value {
+        fill: #172033;
+        text-anchor: middle;
+        font-weight: 700;
+      }
+      text.label {
+        text-anchor: middle;
+      }
+      @media (max-width: 720px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .table-card {
+          grid-column: auto;
+        }
+        .card {
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Sales Dashboard</h1>
+      <div class="grid">
+        <section class="card kpi" data-component-type="kpi">
+          <h2>Total Revenue</h2>
+          <p>$360,000.50</p>
+        </section>
+        <section class="card table-card" data-component-type="table">
+          <h2>Monthly Revenue</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Month</th>
+                  <th scope="col">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>2026-01</td>
+                  <td>$150,000.50</td>
+                </tr>
+                <tr>
+                  <td>2026-02</td>
+                  <td>$135,000.00</td>
+                </tr>
+                <tr>
+                  <td>2026-03</td>
+                  <td>$75,000.00</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="card" data-component-type="line">
+          <h2>Revenue Trend</h2>
+          <div class="chart-wrap">
+            <svg viewBox="0 0 640 260" role="img" aria-label="Revenue Trend">
+              <title>Revenue Trend</title>
+              <line class="axis" x1="48" y1="200" x2="592" y2="200" />
+              <polyline
+                class="line"
+                points="48,24 320,41.60052799824001 592,112.00029333235555"
+              />
+              <circle cx="48" cy="24" r="5"><title>$150K</title></circle>
+              <text class="value" x="48" y="14">$150K</text>
+              <text class="label" x="48" y="228">2026-01</text>
+              <circle cx="320" cy="41.60052799824001" r="5">
+                <title>$135K</title>
+              </circle>
+              <text class="value" x="320" y="31.60052799824001">$135K</text>
+              <text class="label" x="320" y="228">2026-02</text>
+              <circle cx="592" cy="112.00029333235555" r="5">
+                <title>$75K</title>
+              </circle>
+              <text class="value" x="592" y="102.00029333235555">$75K</text>
+              <text class="label" x="592" y="228">2026-03</text>
+            </svg>
+          </div>
+        </section>
+        <section class="card" data-component-type="bar">
+          <h2>Revenue by Channel</h2>
+          <div class="chart-wrap">
+            <svg
+              viewBox="0 0 640 260"
+              role="img"
+              aria-label="Revenue by Channel"
+            >
+              <title>Revenue by Channel</title>
+              <line class="axis" x1="48" y1="200" x2="592" y2="200" />
+              <rect x="48" y="24" width="173.33333333333334" height="176">
+                <title>$210K</title>
+              </rect>
+              <text class="value" x="134.66666666666669" y="16">$210K</text>
+              <text class="label" x="134.66666666666669" y="228">Online</text>
+              <rect
+                x="233.33333333333334"
+                y="112.00020952331066"
+                width="173.33333333333334"
+                height="87.99979047668934"
+              >
+                <title>$105K</title>
+              </rect>
+              <text class="value" x="320" y="104.00020952331066">$105K</text>
+              <text class="label" x="320" y="228">Retail</text>
+              <rect
+                x="418.6666666666667"
+                y="162.28580408141886"
+                width="173.33333333333334"
+                height="37.71419591858114"
+              >
+                <title>$45K</title>
+              </rect>
+              <text class="value" x="505.33333333333337" y="154.28580408141886">
+                $45K
+              </text>
+              <text class="label" x="505.33333333333337" y="228">Partner</text>
+            </svg>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

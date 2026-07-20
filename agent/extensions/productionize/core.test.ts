@@ -11,7 +11,9 @@ import {
 	hasPrChanges,
 	isLikelyAlreadyMergedPr,
 	isLikelyNoChecks,
+	isLikelyNoUpstream,
 	isLikelyNonFastForwardPull,
+	isLikelyTransientGitFailure,
 	parseBranchUsedByWorktreeError,
 	parseNameStatus,
 	parseWorktreeBlockedBranchDelete,
@@ -134,6 +136,17 @@ test("isLikelyNoChecks detects GitHub no-checks responses", () => {
 	assert.equal(isLikelyNoChecks("", "authentication required"), false);
 });
 
+test("classifies expected missing upstream and transient remote failures", () => {
+	assert.equal(isLikelyNoUpstream("", "fatal: no upstream configured for branch 'feat/test'"), true);
+	assert.equal(isLikelyNoUpstream("", "fatal: unable to create '.git/index.lock': File exists"), false);
+	assert.equal(isLikelyTransientGitFailure("", "fatal: unable to access 'https://example.test': Could not resolve host"), true);
+	assert.equal(isLikelyTransientGitFailure("", "fatal: unable to access 'https://example.test': Failed to connect to server"), true);
+	assert.equal(isLikelyTransientGitFailure("", "The requested URL returned error: 502"), true);
+	assert.equal(isLikelyTransientGitFailure("", "pre-push hook: failed to connect to Docker"), false);
+	assert.equal(isLikelyTransientGitFailure("", "hook failed to connect to Docker"), false);
+	assert.equal(isLikelyTransientGitFailure("", "pre-push hook: lint failed"), false);
+});
+
 test("parseBranchUsedByWorktreeError extracts retry target", () => {
 	assert.deepEqual(
 		parseBranchUsedByWorktreeError(
@@ -177,6 +190,10 @@ test("formatGitCommandFailure gives safe remediation for locks and rejected push
 	assert.match(
 		formatGitCommandFailure(["push"], "", "! [rejected] feat/x -> feat/x (non-fast-forward)") ?? "",
 		/never force-push.*fetch.*rebase/si,
+	);
+	assert.match(
+		formatGitCommandFailure(["push"], "", "pre-push hook: lint failed in packages/api") ?? "",
+		/Git push failed.*lint failed in packages\/api/si,
 	);
 });
 

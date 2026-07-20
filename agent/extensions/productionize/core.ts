@@ -46,6 +46,7 @@ export interface CommandFailure {
 	args?: string[];
 	cwd?: string;
 	code?: number;
+	killed?: boolean;
 	stdout?: string;
 	stderr?: string;
 	message?: string;
@@ -283,6 +284,10 @@ export function isLikelyNoChecks(stdout: string, stderr: string): boolean {
 	return text.includes("no checks reported") || text.includes("no check runs") || text.includes("no status checks");
 }
 
+export function isLikelyNoUpstream(stdout: string, stderr: string): boolean {
+	return /no upstream configured|has no upstream branch|no upstream branch/i.test(`${stdout}\n${stderr}`);
+}
+
 export function parseBranchUsedByWorktreeError(stdout: string, stderr: string): { branch: string; path: string } | undefined {
 	const match = `${stdout}\n${stderr}`.match(/fatal:\s*'([^']+)'\s+is already used by worktree at\s+'([^']+)'/s);
 	if (!match) return undefined;
@@ -309,6 +314,12 @@ export function isLikelyGitLockFailure(stdout: string, stderr: string): boolean 
 	return /(?:unable to create|cannot lock|could not lock|another git process).*?(?:\.lock|ref)|(?:\.lock).*?(?:file exists|another git process)/is.test(text);
 }
 
+export function isLikelyTransientGitFailure(stdout: string, stderr: string): boolean {
+	const text = `${stdout}\n${stderr}`;
+	if (/\bhook\b/i.test(text)) return false;
+	return /(?:could not resolve host|connection (?:reset|refused|timed out|closed)|failed to connect|couldn['’]?t connect to (?:server|host)|network is unreachable|temporary failure in name resolution|operation timed out|the remote end hung up unexpectedly|early eof|rpc failed|received http code 5\d\d|requested url returned error:\s*5\d\d|service unavailable|tls handshake timeout)/i.test(text);
+}
+
 export function formatGitCommandFailure(args: string[], stdout: string, stderr: string): string | undefined {
 	const text = `${stdout}\n${stderr}`;
 	if (isLikelyGitLockFailure(stdout, stderr)) {
@@ -321,6 +332,10 @@ export function formatGitCommandFailure(args: string[], stdout: string, stderr: 
 		return "The remote branch changed and rejected the push. Productionize will never force-push. Fetch the remote branch, rebase or merge it deliberately, then rerun /productionize.";
 	}
 
+	if (args[0] === "push" && isLikelyTransientGitFailure(stdout, stderr)) {
+		return "The push could not reach the remote after safe retries. Check network access and Git authentication, then rerun /productionize.";
+	}
+
 	const worktree = parseBranchUsedByWorktreeError(stdout, stderr) ?? parseWorktreeBlockedBranchDelete(stdout, stderr);
 	if (worktree) {
 		return `Branch ${worktree.branch} is checked out in the worktree at ${worktree.path}. Use that worktree or remove it safely before retrying.`;
@@ -328,6 +343,11 @@ export function formatGitCommandFailure(args: string[], stdout: string, stderr: 
 
 	if (/you need to resolve your current index first|unmerged files|fix conflicts and then commit/i.test(text)) {
 		return "Git has unresolved conflicts. Finish or abort the current Git operation before rerunning /productionize.";
+	}
+
+	if (args[0] === "push") {
+		const detail = firstMeaningfulLine(stderr) || firstMeaningfulLine(stdout);
+		if (detail) return `Git push failed: ${sanitizeOneLine(detail, "Git push failed", 240)}`;
 	}
 
 	return undefined;

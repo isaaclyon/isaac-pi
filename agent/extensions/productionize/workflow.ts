@@ -14,7 +14,9 @@ import {
 	isLikelyNoChecks,
 	isLikelyAlreadyMergedPr,
 	isLikelyNoPr,
+	isLikelyNoUpstream,
 	isLikelyNonFastForwardPull,
+	isLikelyTransientGitFailure,
 	parseBranchUsedByWorktreeError,
 	parseNameStatus,
 	parseWorktreeBlockedBranchDelete,
@@ -50,6 +52,7 @@ const SPARK_PROVIDER = "openai-codex";
 const SPARK_MODEL = "gpt-5.3-codex-spark";
 const PROTECTED_BRANCHES = new Set(["main", "master"]);
 const COMMAND_TIMEOUT_MS = 120_000;
+const PUSH_TIMEOUT_MS = 5 * 60_000;
 const CHECK_POLL_INTERVAL_MS = 5_000;
 const CHECK_TIMEOUT_MS = 30 * 60_000;
 const NO_CHECKS_GRACE_MS = 20_000;
@@ -82,6 +85,7 @@ interface WorkflowRuntime {
 	signal: AbortSignal;
 	render: () => void;
 	hooks: WorkflowHooks;
+	persistedStateSignature?: string;
 }
 
 interface StepResult {
@@ -383,26 +387,55 @@ async function runPushStep(runtime: WorkflowRuntime): Promise<void> {
 	setStep(state, "push", "running", "Detecting upstream");
 	state.status = "Pushing branch...";
 	await update(runtime);
+	await verifyCurrentBranch(runtime, cwd, branch, "push");
 
-	const upstream = await execCommand(runtime, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd, runtime.signal, 30_000);
+	const upstreamArgs = ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"];
+	const upstream = await execCommand(runtime, "git", upstreamArgs, cwd, runtime.signal, 30_000);
 	if (upstream.code === 0 && upstream.stdout.trim()) {
 		const target = await readUpstreamTarget(runtime, cwd, branch);
 		state.remote = target.remote;
-		await execOrFail(runtime, "push", "Push", "git", ["push"], cwd);
-		await verifyRemoteBranch(runtime, cwd, target.remote, target.remoteRef, branch);
-		setStep(state, "push", "done", `Pushed to ${upstream.stdout.trim()}`);
-		log(state, `Pushed to existing upstream ${upstream.stdout.trim()}`);
+		const remoteBranch = target.remoteRef.slice("refs/heads/".length);
+		const push = await pushAndVerify(runtime, ["push", target.remote, `HEAD:${target.remoteRef}`], target.remote, target.remoteRef, branch);
+		setStep(state, "push", "done", `Pushed to ${target.remote}/${remoteBranch}`);
+		log(state, push.reconciled ? `Push completed before the command ended; verified ${target.remote}/${remoteBranch}` : `Pushed to ${target.remote}/${remoteBranch}`);
 		await update(runtime);
 		return;
+	}
+	if (upstream.code !== 0 && !isLikelyNoUpstream(upstream.stdout, upstream.stderr)) {
+		throw commandFailure("push", "Inspect upstream", "git", upstreamArgs, cwd, upstream);
 	}
 
 	const remote = await choosePushRemote(runtime, cwd, branch);
 	state.remote = remote;
-	await execOrFail(runtime, "push", "Push with upstream", "git", ["push", "-u", remote, branch], cwd);
-	await verifyRemoteBranch(runtime, cwd, remote, `refs/heads/${branch}`, branch);
+	const remoteRef = `refs/heads/${branch}`;
+	const push = await pushAndVerify(runtime, ["push", "-u", remote, branch], remote, remoteRef, branch);
 	setStep(state, "push", "done", `Pushed to ${remote}/${branch}`);
-	log(state, `Pushed and verified ${remote}/${branch}`);
+	log(state, push.reconciled ? `Push completed before the command ended; verified ${remote}/${branch}` : `Pushed and verified ${remote}/${branch}`);
 	await update(runtime);
+}
+
+async function pushAndVerify(
+	runtime: WorkflowRuntime,
+	args: string[],
+	remote: string,
+	remoteRef: string,
+	branch: string,
+): Promise<{ reconciled: boolean }> {
+	const result = await execCommand(runtime, "git", args, runtime.ctx.cwd, runtime.signal, PUSH_TIMEOUT_MS);
+	if (result.code === 0) {
+		await verifyRemoteBranch(runtime, runtime.ctx.cwd, remote, remoteRef, branch);
+		return { reconciled: false };
+	}
+
+	if (isLikelyTransientGitFailure(result.stdout, result.stderr)) {
+		try {
+			await verifyRemoteBranch(runtime, runtime.ctx.cwd, remote, remoteRef, branch);
+			return { reconciled: true };
+		} catch (error) {
+			if (runtime.signal.aborted) throw error;
+		}
+	}
+	throw commandFailure("push", "Push", "git", args, runtime.ctx.cwd, result);
 }
 
 async function runPrStep(runtime: WorkflowRuntime): Promise<PrInfo | undefined> {
@@ -856,13 +889,21 @@ async function completeSpark(
 }
 
 async function inferBranchRemote(runtime: WorkflowRuntime, cwd: string, branch: string, stepId: StepId): Promise<string> {
-	const upstream = await execCommand(runtime, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd, runtime.signal, 30_000);
+	const upstreamArgs = ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"];
+	const upstream = await execCommand(runtime, "git", upstreamArgs, cwd, runtime.signal, 30_000);
 	if (upstream.code === 0 && upstream.stdout.trim()) return (await readUpstreamTarget(runtime, cwd, branch)).remote;
+	if (upstream.code !== 0 && !isLikelyNoUpstream(upstream.stdout, upstream.stderr)) {
+		throw commandFailure(stepId, labelForStep(stepId), "git", upstreamArgs, cwd, upstream);
+	}
 
 	const configured = await execCommand(runtime, "git", ["config", `branch.${branch}.remote`], cwd, runtime.signal, 30_000);
 	if (configured.code === 0 && configured.stdout.trim() && configured.stdout.trim() !== ".") return configured.stdout.trim();
+	if (configured.code !== 0 && !isMissingGitConfig(configured)) {
+		throw commandFailure(stepId, labelForStep(stepId), "git", ["config", `branch.${branch}.remote`], cwd, configured);
+	}
 
 	const remotes = await execCommand(runtime, "git", ["remote"], cwd, runtime.signal, 30_000);
+	if (remotes.code !== 0) throw commandFailure(stepId, labelForStep(stepId), "git", ["remote"], cwd, remotes);
 	const names = remotes.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
 	if (names.includes("origin")) return "origin";
 	if (names[0]) return names[0];
@@ -879,8 +920,12 @@ async function inferBranchRemote(runtime: WorkflowRuntime, cwd: string, branch: 
 }
 
 async function choosePushRemote(runtime: WorkflowRuntime, cwd: string, branch: string): Promise<string> {
-	const configured = await execCommand(runtime, "git", ["config", `branch.${branch}.remote`], cwd, runtime.signal, 30_000);
+	const configArgs = ["config", `branch.${branch}.remote`];
+	const configured = await execCommand(runtime, "git", configArgs, cwd, runtime.signal, 30_000);
 	if (configured.code === 0 && configured.stdout.trim() && configured.stdout.trim() !== ".") return configured.stdout.trim();
+	if (configured.code !== 0 && !isMissingGitConfig(configured)) {
+		throw commandFailure("push", "Inspect branch remote", "git", configArgs, cwd, configured);
+	}
 
 	const remotes = await execOrFail(runtime, "push", "List remotes", "git", ["remote"], cwd, 30_000);
 	const names = remotes.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -1009,15 +1054,24 @@ async function listDirtyGitlinks(runtime: WorkflowRuntime, cwd: string): Promise
 }
 
 async function branchUpstreamRef(runtime: WorkflowRuntime, cwd: string): Promise<string | undefined> {
-	const result = await execCommand(runtime, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd, runtime.signal, 30_000);
+	const args = ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"];
+	const result = await execCommand(runtime, "git", args, cwd, runtime.signal, 30_000);
 	const upstream = result.stdout.trim();
-	return result.code === 0 && upstream ? upstream : undefined;
+	if (result.code === 0 && upstream) return upstream;
+	if (result.code !== 0 && !isLikelyNoUpstream(result.stdout, result.stderr)) {
+		throw commandFailure("branch", "Inspect upstream", "git", args, cwd, result);
+	}
+	return undefined;
 }
 
 async function countCommits(runtime: WorkflowRuntime, cwd: string, range: string): Promise<number> {
 	const result = await execOrFail(runtime, "branch", "Count commits", "git", ["rev-list", "--count", range], cwd, 30_000);
 	const count = Number.parseInt(result.stdout.trim(), 10);
 	return Number.isFinite(count) ? count : 0;
+}
+
+function isMissingGitConfig(result: ExecResult): boolean {
+	return result.code === 1 && !result.stdout.trim() && !result.stderr.trim();
 }
 
 
@@ -1048,6 +1102,7 @@ export function markRunningCancelled(state: ProductionizeState): void {
 }
 
 function log(state: ProductionizeState, message: string): void {
+	if (state.log.at(-1)?.endsWith(` ${message}`)) return;
 	state.log.push(`${new Date().toLocaleTimeString()} ${message}`);
 	if (state.log.length > 50) state.log.splice(0, state.log.length - 50);
 }
@@ -1230,8 +1285,23 @@ function boundFailureText(value: string | undefined): string | undefined {
 
 async function persistState(runtime: WorkflowRuntime): Promise<void> {
 	if (!runtime.state.auto.enabled) return;
-	runtime.state.auto.lastPersistedAt = timestamp(runtime.hooks);
-	runtime.pi.appendEntry(PRODUCTIONIZE_STATE_CUSTOM_TYPE, serializeStateEntry(runtime.state as ProductionizeStateSnapshot, runtime.state.auto.lastPersistedAt));
+	const signature = persistenceSignature(runtime.state);
+	if (signature === runtime.persistedStateSignature) return;
+	const persistedAt = timestamp(runtime.hooks);
+	const stateToPersist = {
+		...runtime.state,
+		auto: { ...runtime.state.auto, lastPersistedAt: persistedAt },
+	} as ProductionizeStateSnapshot;
+	runtime.pi.appendEntry(PRODUCTIONIZE_STATE_CUSTOM_TYPE, serializeStateEntry(stateToPersist, persistedAt));
+	runtime.state.auto.lastPersistedAt = persistedAt;
+	runtime.persistedStateSignature = signature;
+}
+
+function persistenceSignature(state: ProductionizeState): string {
+	return JSON.stringify({
+		...state,
+		auto: { ...state.auto, lastPersistedAt: undefined },
+	});
 }
 
 async function update(runtime: WorkflowRuntime): Promise<void> {

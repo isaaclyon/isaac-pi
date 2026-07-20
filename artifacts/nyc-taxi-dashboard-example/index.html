@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NYC Yellow Taxi Trips</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color: #172033;
+        background: #f3f6fa;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0;
+      }
+      h1 {
+        margin: 0 0 24px;
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+      }
+      h2 {
+        margin: 0 0 20px;
+        font-size: 1rem;
+        color: #53627a;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+      }
+      .card {
+        min-width: 0;
+        padding: 24px;
+        border: 1px solid #dce3ed;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 8px 24px #20304a10;
+      }
+      .kpi {
+        grid-column: 1 / -1;
+      }
+      .kpi p {
+        margin: 0;
+        font-size: clamp(2rem, 6vw, 3.5rem);
+        font-weight: 750;
+        color: #174ea6;
+      }
+      .table-card {
+        grid-column: 1 / -1;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      .chart-wrap {
+        overflow-x: auto;
+      }
+      .chart-wrap svg {
+        min-width: 520px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid #e6ebf2;
+        text-align: left;
+      }
+      th {
+        color: #53627a;
+        font-size: 0.85rem;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+      }
+      .axis {
+        stroke: #aeb9c9;
+        stroke-width: 1;
+      }
+      .line {
+        fill: none;
+        stroke: #246bce;
+        stroke-width: 4;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      circle,
+      rect {
+        fill: #246bce;
+      }
+      text {
+        fill: #53627a;
+        font:
+          12px ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+      text.value {
+        fill: #172033;
+        text-anchor: middle;
+        font-weight: 700;
+      }
+      text.label {
+        text-anchor: middle;
+      }
+      @media (max-width: 720px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .table-card {
+          grid-column: auto;
+        }
+        .card {
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>NYC Yellow Taxi Trips</h1>
+      <div class="grid">
+        <section class="card kpi" data-component-type="kpi">
+          <h2>Total Trips</h2>
+          <p>5,000</p>
+        </section>
+        <section class="card table-card" data-component-type="table">
+          <h2>Daily Trip Summary</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Trips</th>
+                  <th scope="col">Average Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Jan 1, 2024</td>
+                  <td>149</td>
+                  <td>$31.56</td>
+                </tr>
+                <tr>
+                  <td>Jan 2, 2024</td>
+                  <td>118</td>
+                  <td>$27.91</td>
+                </tr>
+                <tr>
+                  <td>Jan 3, 2024</td>
+                  <td>137</td>
+                  <td>$26.06</td>
+                </tr>
+                <tr>
+                  <td>Jan 4, 2024</td>
+                  <td>186</td>
+                  <td>$27.19</td>
+                </tr>
+                <tr>
+                  <td>Jan 5, 2024</td>
+                  <td>174</td>
+                  <td>$26.14</td>
+                </tr>
+                <tr>
+                  <td>Jan 6, 2024</td>
+                  <td>160</td>
+                  <td>$25.32</td>
+                </tr>
+                <tr>
+                  <td>Jan 7, 2024</td>
+                  <td>112</td>
+                  <td>$30.43</td>
+                </tr>
+                <tr>
+                  <td>Jan 8, 2024</td>
+                  <td>119</td>
+                  <td>$28.65</td>
+                </tr>
+                <tr>
+                  <td>Jan 9, 2024</td>
+                  <td>128</td>
+                  <td>$25.45</td>
+                </tr>
+                <tr>
+                  <td>Jan 10, 2024</td>
+                  <td>157</td>
+                  <td>$28.68</td>
+                </tr>
+                <tr>
+                  <td>Jan 11, 2024</td>
+                  <td>175</td>
+                  <td>$26.96</td>
+                </tr>
+                <tr>
+                  <td>Jan 12, 2024</td>
+                  <td>187</td>
+                  <td>$26.46</td>
+                </tr>
+                <tr>
+                  <td>Jan 13, 2024</td>
+                  <td>168</td>
+                  <td>$24.21</td>
+                </tr>
+                <tr>
+                  <td>Jan 14, 2024</td>
+                  <td>176</td>
+                  <td>$26.14</td>
+                </tr>
+                <tr>
+                  <td>Jan 15, 2024</td>
+                  <td>114</td>
+                  <td>$24.33</td>
+                </tr>
+                <tr>
+                  <td>Jan 16, 2024</td>
+                  <td>177</td>
+                  <td>$28.47</td>
+                </tr>
+                <tr>
+                  <td>Jan 17, 2024</td>
+                  <td>190</td>
+                  <td>$27.01</td>
+                </tr>
+                <tr>
+                  <td>Jan 18, 2024</td>
+                  <td>173</td>
+                  <td>$27.25</td>
+                </tr>
+                <tr>
+                  <td>Jan 19, 2024</td>
+                  <td>150</td>
+                  <td>$27.28</td>
+                </tr>
+                <tr>
+                  <td>Jan 20, 2024</td>
+                  <td>183</td>
+                  <td>$24.08</td>
+                </tr>
+                <tr>
+                  <td>Jan 21, 2024</td>
+                  <td>137</td>
+                  <td>$28.47</td>
+                </tr>
+                <tr>
+                  <td>Jan 22, 2024</td>
+                  <td>153</td>
+                  <td>$28.09</td>
+                </tr>
+                <tr>
+                  <td>Jan 23, 2024</td>
+                  <td>154</td>
+                  <td>$25.75</td>
+                </tr>
+                <tr>
+                  <td>Jan 24, 2024</td>
+                  <td>168</td>
+                  <td>$25.14</td>
+                </tr>
+                <tr>
+                  <td>Jan 25, 2024</td>
+                  <td>210</td>
+                  <td>$27.92</td>
+                </tr>
+                <tr>
+                  <td>Jan 26, 2024</td>
+                  <td>191</td>
+                  <td>$25.29</td>
+                </tr>
+                <tr>
+                  <td>Jan 27, 2024</td>
+                  <td>192</td>
+                  <td>$24.51</td>
+                </tr>
+                <tr>
+                  <td>Jan 28, 2024</td>
+                  <td>148</td>
+                  <td>$29.06</td>
+                </tr>
+                <tr>
+                  <td>Jan 29, 2024</td>
+                  <td>163</td>
+                  <td>$26.54</td>
+                </tr>
+                <tr>
+                  <td>Jan 30, 2024</td>
+                  <td>179</td>
+                  <td>$29.15</td>
+                </tr>
+                <tr>
+                  <td>Jan 31, 2024</td>
+                  <td>172</td>
+                  <td>$26.47</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="card" data-component-type="line">
+          <h2>Trips by Day</h2>
+          <div class="chart-wrap">
+            <svg viewBox="0 0 640 260" role="img" aria-label="Trips by Day">
+              <title>Trips by Day</title>
+              <line class="axis" x1="48" y1="200" x2="592" y2="200" />
+              <polyline
+                class="line"
+                points="48,75.12380952380953 66.13333333333333,101.1047619047619 84.26666666666667,85.18095238095238 102.4,44.114285714285714 120.53333333333333,54.17142857142857 138.66666666666666,65.9047619047619 156.8,106.13333333333334 174.93333333333334,100.26666666666667 193.06666666666666,92.72380952380952 211.2,68.41904761904762 229.33333333333331,53.33333333333333 247.46666666666664,43.27619047619048 265.6,59.2 283.73333333333335,52.49523809523809 301.8666666666667,104.45714285714286 320,51.65714285714286 338.1333333333333,40.76190476190476 356.26666666666665,55.00952380952381 374.4,74.28571428571428 392.5333333333333,46.628571428571426 410.66666666666663,85.18095238095238 428.79999999999995,71.77142857142857 446.9333333333333,70.93333333333334 465.0666666666667,59.2 483.20000000000005,24 501.33333333333337,39.923809523809524 519.4666666666667,39.08571428571429 537.6,75.96190476190476 555.7333333333333,63.39047619047619 573.8666666666667,49.98095238095238 592,55.84761904761905"
+              />
+              <circle cx="48" cy="75.12380952380953" r="5">
+                <title>149</title>
+              </circle>
+              <text class="value" x="48" y="65.12380952380953">149</text>
+              <text class="label" x="48" y="228">2024-01-01</text>
+              <circle cx="66.13333333333333" cy="101.1047619047619" r="5">
+                <title>118</title>
+              </circle>
+              <text class="value" x="66.13333333333333" y="91.1047619047619">
+                118
+              </text>
+              <text class="label" x="66.13333333333333" y="228">
+                2024-01-02
+              </text>
+              <circle cx="84.26666666666667" cy="85.18095238095238" r="5">
+                <title>137</title>
+              </circle>
+              <text class="value" x="84.26666666666667" y="75.18095238095238">
+                137
+              </text>
+              <text class="label" x="84.26666666666667" y="228">
+                2024-01-03
+              </text>
+              <circle cx="102.4" cy="44.114285714285714" r="5">
+                <title>186</title>
+              </circle>
+              <text class="value" x="102.4" y="34.114285714285714">186</text>
+              <text class="label" x="102.4" y="228">2024-01-04</text>
+              <circle cx="120.53333333333333" cy="54.17142857142857" r="5">
+                <title>174</title>
+              </circle>
+              <text class="value" x="120.53333333333333" y="44.17142857142857">
+                174
+              </text>
+              <text class="label" x="120.53333333333333" y="228">
+                2024-01-05
+              </text>
+              <circle cx="138.66666666666666" cy="65.9047619047619" r="5">
+                <title>160</title>
+              </circle>
+              <text class="value" x="138.66666666666666" y="55.9047619047619">
+                160
+              </text>
+              <text class="label" x="138.66666666666666" y="228">
+                2024-01-06
+              </text>
+              <circle cx="156.8" cy="106.13333333333334" r="5">
+                <title>112</title>
+              </circle>
+              <text class="value" x="156.8" y="96.13333333333334">112</text>
+              <text class="label" x="156.8" y="228">2024-01-07</text>
+              <circle cx="174.93333333333334" cy="100.26666666666667" r="5">
+                <title>119</title>
+              </circle>
+              <text class="value" x="174.93333333333334" y="90.26666666666667">
+                119
+              </text>
+              <text class="label" x="174.93333333333334" y="228">
+                2024-01-08
+              </text>
+              <circle cx="193.06666666666666" cy="92.72380952380952" r="5">
+                <title>128</title>
+              </circle>
+              <text class="value" x="193.06666666666666" y="82.72380952380952">
+                128
+              </text>
+              <text class="label" x="193.06666666666666" y="228">
+                2024-01-09
+              </text>
+              <circle cx="211.2" cy="68.41904761904762" r="5">
+                <title>157</title>
+              </circle>
+              <text class="value" x="211.2" y="58.41904761904762">157</text>
+              <text class="label" x="211.2" y="228">2024-01-10</text>
+              <circle cx="229.33333333333331" cy="53.33333333333333" r="5">
+                <title>175</title>
+              </circle>
+              <text class="value" x="229.33333333333331" y="43.33333333333333">
+                175
+              </text>
+              <text class="label" x="229.33333333333331" y="228">
+                2024-01-11
+              </text>
+              <circle cx="247.46666666666664" cy="43.27619047619048" r="5">
+                <title>187</title>
+              </circle>
+              <text class="value" x="247.46666666666664" y="33.27619047619048">
+                187
+              </text>
+              <text class="label" x="247.46666666666664" y="228">
+                2024-01-12
+              </text>
+              <circle cx="265.6" cy="59.2" r="5"><title>168</title></circle>
+              <text class="value" x="265.6" y="49.2">168</text>
+              <text class="label" x="265.6" y="228">2024-01-13</text>
+              <circle cx="283.73333333333335" cy="52.49523809523809" r="5">
+                <title>176</title>
+              </circle>
+              <text class="value" x="283.73333333333335" y="42.49523809523809">
+                176
+              </text>
+              <text class="label" x="283.73333333333335" y="228">
+                2024-01-14
+              </text>
+              <circle cx="301.8666666666667" cy="104.45714285714286" r="5">
+                <title>114</title>
+              </circle>
+              <text class="value" x="301.8666666666667" y="94.45714285714286">
+                114
+              </text>
+              <text class="label" x="301.8666666666667" y="228">
+                2024-01-15
+              </text>
+              <circle cx="320" cy="51.65714285714286" r="5">
+                <title>177</title>
+              </circle>
+              <text class="value" x="320" y="41.65714285714286">177</text>
+              <text class="label" x="320" y="228">2024-01-16</text>
+              <circle cx="338.1333333333333" cy="40.76190476190476" r="5">
+                <title>190</title>
+              </circle>
+              <text class="value" x="338.1333333333333" y="30.76190476190476">
+                190
+              </text>
+              <text class="label" x="338.1333333333333" y="228">
+                2024-01-17
+              </text>
+              <circle cx="356.26666666666665" cy="55.00952380952381" r="5">
+                <title>173</title>
+              </circle>
+              <text class="value" x="356.26666666666665" y="45.00952380952381">
+                173
+              </text>
+              <text class="label" x="356.26666666666665" y="228">
+                2024-01-18
+              </text>
+              <circle cx="374.4" cy="74.28571428571428" r="5">
+                <title>150</title>
+              </circle>
+              <text class="value" x="374.4" y="64.28571428571428">150</text>
+              <text class="label" x="374.4" y="228">2024-01-19</text>
+              <circle cx="392.5333333333333" cy="46.628571428571426" r="5">
+                <title>183</title>
+              </circle>
+              <text class="value" x="392.5333333333333" y="36.628571428571426">
+                183
+              </text>
+              <text class="label" x="392.5333333333333" y="228">
+                2024-01-20
+              </text>
+              <circle cx="410.66666666666663" cy="85.18095238095238" r="5">
+                <title>137</title>
+              </circle>
+              <text class="value" x="410.66666666666663" y="75.18095238095238">
+                137
+              </text>
+              <text class="label" x="410.66666666666663" y="228">
+                2024-01-21
+              </text>
+              <circle cx="428.79999999999995" cy="71.77142857142857" r="5">
+                <title>153</title>
+              </circle>
+              <text class="value" x="428.79999999999995" y="61.77142857142857">
+                153
+              </text>
+              <text class="label" x="428.79999999999995" y="228">
+                2024-01-22
+              </text>
+              <circle cx="446.9333333333333" cy="70.93333333333334" r="5">
+                <title>154</title>
+              </circle>
+              <text class="value" x="446.9333333333333" y="60.93333333333334">
+                154
+              </text>
+              <text class="label" x="446.9333333333333" y="228">
+                2024-01-23
+              </text>
+              <circle cx="465.0666666666667" cy="59.2" r="5">
+                <title>168</title>
+              </circle>
+              <text class="value" x="465.0666666666667" y="49.2">168</text>
+              <text class="label" x="465.0666666666667" y="228">
+                2024-01-24
+              </text>
+              <circle cx="483.20000000000005" cy="24" r="5">
+                <title>210</title>
+              </circle>
+              <text class="value" x="483.20000000000005" y="14">210</text>
+              <text class="label" x="483.20000000000005" y="228">
+                2024-01-25
+              </text>
+              <circle cx="501.33333333333337" cy="39.923809523809524" r="5">
+                <title>191</title>
+              </circle>
+              <text class="value" x="501.33333333333337" y="29.923809523809524">
+                191
+              </text>
+              <text class="label" x="501.33333333333337" y="228">
+                2024-01-26
+              </text>
+              <circle cx="519.4666666666667" cy="39.08571428571429" r="5">
+                <title>192</title>
+              </circle>
+              <text class="value" x="519.4666666666667" y="29.08571428571429">
+                192
+              </text>
+              <text class="label" x="519.4666666666667" y="228">
+                2024-01-27
+              </text>
+              <circle cx="537.6" cy="75.96190476190476" r="5">
+                <title>148</title>
+              </circle>
+              <text class="value" x="537.6" y="65.96190476190476">148</text>
+              <text class="label" x="537.6" y="228">2024-01-28</text>
+              <circle cx="555.7333333333333" cy="63.39047619047619" r="5">
+                <title>163</title>
+              </circle>
+              <text class="value" x="555.7333333333333" y="53.39047619047619">
+                163
+              </text>
+              <text class="label" x="555.7333333333333" y="228">
+                2024-01-29
+              </text>
+              <circle cx="573.8666666666667" cy="49.98095238095238" r="5">
+                <title>179</title>
+              </circle>
+              <text class="value" x="573.8666666666667" y="39.98095238095238">
+                179
+              </text>
+              <text class="label" x="573.8666666666667" y="228">
+                2024-01-30
+              </text>
+              <circle cx="592" cy="55.84761904761905" r="5">
+                <title>172</title>
+              </circle>
+              <text class="value" x="592" y="45.84761904761905">172</text>
+              <text class="label" x="592" y="228">2024-01-31</text>
+            </svg>
+          </div>
+        </section>
+        <section class="card" data-component-type="bar">
+          <h2>Trips by Payment Type</h2>
+          <div class="chart-wrap">
+            <svg
+              viewBox="0 0 640 260"
+              role="img"
+              aria-label="Trips by Payment Type"
+            >
+              <title>Trips by Payment Type</title>
+              <line class="axis" x1="48" y1="200" x2="592" y2="200" />
+              <rect x="48" y="24" width="99.2" height="176">
+                <title>4K</title>
+              </rect>
+              <text class="value" x="97.6" y="16">4K</text>
+              <text class="label" x="97.6" y="228">Credit card</text>
+              <rect
+                x="159.2"
+                y="169.0727816550349"
+                width="99.2"
+                height="30.927218344965098"
+              >
+                <title>705</title>
+              </rect>
+              <text class="value" x="208.79999999999998" y="161.0727816550349">
+                705
+              </text>
+              <text class="label" x="208.79999999999998" y="228">Cash</text>
+              <rect
+                x="270.4"
+                y="190.1296111665005"
+                width="99.2"
+                height="9.870388833499504"
+              >
+                <title>225</title>
+              </rect>
+              <text class="value" x="320" y="182.1296111665005">225</text>
+              <text class="label" x="320" y="228">Not recorded</text>
+              <rect
+                x="381.6"
+                y="198.28913260219343"
+                width="99.2"
+                height="1.7108673978065667"
+              >
+                <title>39</title>
+              </rect>
+              <text class="value" x="431.20000000000005" y="190.28913260219343">
+                39
+              </text>
+              <text class="label" x="431.20000000000005" y="228">Dispute</text>
+              <rect x="492.8" y="199.1665004985045" width="99.2" height="1">
+                <title>19</title>
+              </rect>
+              <text class="value" x="542.4" y="191.1665004985045">19</text>
+              <text class="label" x="542.4" y="228">No charge</text>
+            </svg>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

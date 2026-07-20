@@ -42,7 +42,7 @@
     "npm:pi-mind-queue",
     "git:github.com/DietrichGebert/ponytail"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "treeFilterMode": "no-tools",
@@ -67,5 +67,5 @@
     "/Users/isaaclyon/.pi/agent/bin/pi-npm-current-node"
   ],
   "defaultProjectTrust": "always",
-  "showCacheMissNotices": true
+  "showCacheMissNotices": false
 }
