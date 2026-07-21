@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.80.10",
+  "lastChangelogVersion": "0.81.0",
   "packages": [
     "./extensions/native-module-abi-guard.js",
     "npm:pi-updater",
@@ -39,7 +39,7 @@
     "npm:@mrclrchtr/supi-prompt-suggestions",
     "npm:pi-mind-queue"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "treeFilterMode": "no-tools",
