@@ -4,7 +4,7 @@ description: Read-only general reviewer for routine correctness, regressions, te
 model: openai-codex/gpt-5.6-sol
 thinking: low
 system-prompt: append
-tools: read, grep, find, ls, exec_command, write_stdin
+tools: read, grep, find, ls, exec, wait, exec_command, write_stdin
 extensions: false
 spawning: false
 auto-exit: true

@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Read-only external research agent for libraries, APIs, best practices, and source-backed recommendations.
-tools: read, grep, find, ls, exec_command, web_search, fetch_content, get_search_content
+tools: read, grep, find, ls, exec, wait, exec_command, web_search, fetch_content, get_search_content
 model: openai-codex/gpt-5.6-sol
 thinking: low
 system-prompt: append

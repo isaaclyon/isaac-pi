@@ -4,7 +4,7 @@ description: Implementation agent for small, self-contained coding tasks after t
 model: openai-codex/gpt-5.6-sol
 thinking: low
 system-prompt: append
-tools: read, grep, find, ls, exec_command, write_stdin, apply_patch, view_image
+tools: read, grep, find, ls, exec, wait, exec_command, write_stdin, apply_patch, view_image
 extensions: false
 spawning: false
 auto-exit: true
