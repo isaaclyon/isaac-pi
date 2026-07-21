@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.81.0",
+  "lastChangelogVersion": "0.81.1",
   "packages": [
     "./extensions/native-module-abi-guard.js",
     "npm:pi-updater",
