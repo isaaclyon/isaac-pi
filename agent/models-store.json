@@ -1107,7 +1107,8 @@
         "maxTokens": 100000
       }
     ],
-    "checkedAt": 1784603916509
+    "checkedAt": 1784650001308,
+    "lastModified": 1784638096000
   },
   "openai-codex": {
     "models": [
@@ -1345,7 +1346,8 @@
         }
       }
     ],
-    "checkedAt": 1784603916503
+    "checkedAt": 1784676895589,
+    "lastModified": 1784661216000
   },
   "groq": {
     "models": [
@@ -1490,7 +1492,8 @@
         }
       }
     ],
-    "checkedAt": 1784603916508
+    "checkedAt": 1784676895509,
+    "lastModified": 1784661204000
   },
   "anthropic": {
     "models": [
@@ -1818,6 +1821,7 @@
         }
       }
     ],
-    "checkedAt": 1784603916862
+    "checkedAt": 1784676895506,
+    "lastModified": 1784661193000
   }
 }
