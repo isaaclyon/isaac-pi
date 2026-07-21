@@ -4,7 +4,7 @@ description: Deep read-only reviewer for high-risk changes, semantic completion,
 model: openai-codex/gpt-5.6-sol
 thinking: xhigh
 system-prompt: append
-tools: read, grep, find, ls, exec_command, write_stdin
+tools: read, grep, find, ls, exec, wait, exec_command, write_stdin
 extensions: false
 spawning: false
 auto-exit: true

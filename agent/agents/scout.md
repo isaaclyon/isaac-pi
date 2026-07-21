@@ -4,7 +4,7 @@ description: Fast read-only agent for locating files, tracing code paths, and an
 model: openai-codex/gpt-5.6-luna
 thinking: medium
 system-prompt: append
-tools: read, grep, find, ls, exec_command
+tools: read, grep, find, ls, exec, wait, exec_command
 extensions: false
 spawning: false
 auto-exit: true
