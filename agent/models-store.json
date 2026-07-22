@@ -1107,8 +1107,8 @@
         "maxTokens": 100000
       }
     ],
-    "checkedAt": 1784650001308,
-    "lastModified": 1784638096000
+    "checkedAt": 1784688905939,
+    "lastModified": 1784661214000
   },
   "openai-codex": {
     "models": [
