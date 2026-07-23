@@ -37,9 +37,10 @@
     "npm:@juicesharp/rpiv-todo",
     "npm:pi-lens",
     "npm:@mrclrchtr/supi-prompt-suggestions",
-    "npm:pi-mind-queue"
+    "npm:pi-mind-queue",
+    "npm:pi-hermes-memory"
   ],
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "treeFilterMode": "no-tools",

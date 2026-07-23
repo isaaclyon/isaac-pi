@@ -64,7 +64,7 @@ const defaultDependencies: IsolationDependencies = {
 		const { SessionManager } = await import(packageName) as SessionManagerModule;
 		const session = SessionManager.forkFrom(sourceSessionFile, targetCwd);
 		const sessionFile = session.getSessionFile();
-		if (!sessionFile) throw new Error("Pi did not persist the isolated session.");
+		if (!sessionFile) throw new Error("Pi did not persist the managed worktree session.");
 		return sessionFile;
 	},
 	createId: () => randomUUID().replaceAll("-", "").slice(0, 8),
@@ -101,7 +101,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 			const pointedState = await dependencies.loadIsolationState(pointer.gitCommonDir);
 			if (!pointedState) return structuredClone(pointer.state);
 			if (pointedState.id !== pointer.id) {
-				throw new Error(`Session isolation pointer ${pointer.id} does not match repository job ${pointedState.id}.`);
+				throw new Error(`Session worktree pointer ${pointer.id} does not match repository job ${pointedState.id}.`);
 			}
 			return pointedState;
 		}
@@ -121,8 +121,8 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 
 	const loadExpectedState = async (commonDir: string, id: string): Promise<IsolationState> => {
 		const latest = await dependencies.loadIsolationState(commonDir);
-		if (!latest) throw new Error(`Isolation job ${id} no longer exists.`);
-		if (latest.id !== id) throw new Error(`Isolation job ${id} was replaced by ${latest.id}; refusing a stale transition.`);
+		if (!latest) throw new Error(`Worktree job ${id} no longer exists.`);
+		if (latest.id !== id) throw new Error(`Worktree job ${id} was replaced by ${latest.id}; refusing a stale transition.`);
 		return latest;
 	};
 
@@ -142,9 +142,9 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		try {
 			const state = await stateForContext(ctx);
 			if (!state || ctx.sessionManager.getSessionFile() === state.isolatedSessionFile) return undefined;
-			return "The original session is locked by unresolved Pi isolation.";
+			return "The original session is locked by an unresolved managed worktree.";
 		} catch {
-			return "The original session is locked because Pi isolation state is unreadable.";
+			return "The original session is locked because managed worktree state is unreadable.";
 		}
 	};
 
@@ -152,7 +152,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		const current = await dependencies.withIsolationLock(state.gitCommonDir, async () => {
 			const latest = await loadExpectedState(state.gitCommonDir, state.id);
 			if (latest.exitMode === "discard" || latest.phase === "discarding" || latest.phase === "creating" || latest.phase === "done") {
-				throw new Error(`Isolation job ${latest.id} cannot finish from phase ${latest.phase}.`);
+				throw new Error(`Worktree job ${latest.id} cannot finish from phase ${latest.phase}.`);
 			}
 			if (!latest.integratedHead) {
 				latest.phase = "integrating";
@@ -187,17 +187,17 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 			withSession: async (parentCtx) => {
 				const remaining = await dependencies.loadIsolationState(current.gitCommonDir);
 				if (remaining) {
-					parentCtx.ui.notify(`Isolation cleanup did not complete: ${remaining.lastError ?? "unknown cleanup failure"}`, "error");
+					parentCtx.ui.notify(`Worktree cleanup did not complete: ${remaining.lastError ?? "unknown cleanup failure"}`, "error");
 					return;
 				}
-				parentCtx.ui.notify("Isolated work integrated and its worktree was removed.", "info");
+				parentCtx.ui.notify("Worktree changes were integrated and the worktree was removed.", "info");
 			},
 		});
 		if (result.cancelled) {
 			await dependencies.withIsolationLock(current.gitCommonDir, async () => {
 				const latest = await loadExpectedState(current.gitCommonDir, current.id);
 				if (latest.phase !== "cleanup_pending" || latest.exitMode !== "finish") {
-					throw new Error("Isolation return cancellation raced with another transition.");
+					throw new Error("Worktree return cancellation raced with another transition.");
 				}
 				latest.phase = "integrated";
 				latest.lastError = "Returning to the original session was cancelled.";
@@ -214,7 +214,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		try {
 			await dependencies.withIsolationLock(state.gitCommonDir, async () => {
 				const latest = await loadExpectedState(state.gitCommonDir, state.id);
-				if (latest.phase !== "active") throw new Error(`Isolation driver cannot start from phase ${latest.phase}.`);
+				if (latest.phase !== "active") throw new Error(`Worktree driver cannot start from phase ${latest.phase}.`);
 				latest.driverToken = driverToken;
 				await dependencies.saveIsolationState(latest);
 				driverPersisted = true;
@@ -231,7 +231,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 					prompt = recoveryPrompt(current, error);
 				}
 			}
-			ctx.ui.notify("Automatic integration stopped after repeated failures. Resolve the issue here, then run /isolate finish.", "warning");
+			ctx.ui.notify("Automatic integration stopped after repeated failures. Resolve the issue here, then run /worktree-finish.", "warning");
 		} finally {
 			activeDriverTokens.delete(driverToken);
 			if (driverPersisted) {
@@ -248,12 +248,12 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 	const startIsolation = async (task: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const trimmedTask = task.trim();
 		if (!trimmedTask) {
-			ctx.ui.notify("Usage: /isolate <task>", "warning");
+			ctx.ui.notify("Usage: /worktree-start <task>", "warning");
 			return;
 		}
 		await ctx.waitForIdle();
 		const sourceSessionFile = ctx.sessionManager.getSessionFile();
-		if (!sourceSessionFile) throw new Error("Pi isolation requires a persisted session. Send at least one message first.");
+		if (!sourceSessionFile) throw new Error("Managed worktrees require a persisted Pi session. Send at least one message first.");
 		const repository = await dependencies.inspectRepository(ctx.cwd);
 		let state = buildIsolationState({
 			task: trimmedTask,
@@ -266,7 +266,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 
 		await dependencies.withIsolationLock(repository.commonDir, async () => {
 			if (await dependencies.loadIsolationState(repository.commonDir)) {
-				throw new Error("This repository already has an unresolved Pi isolation job.");
+				throw new Error("This repository already has an unresolved managed worktree job.");
 			}
 			appendPointer(state, "active");
 			try {
@@ -294,7 +294,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 			}
 		});
 
-		const isolatedSessionFile = required(state.isolatedSessionFile, "Isolated session file was not created.");
+		const isolatedSessionFile = required(state.isolatedSessionFile, "Managed worktree session file was not created.");
 		const result = await ctx.switchSession(isolatedSessionFile, {
 			withSession: async (replacementCtx) => {
 				await driveIsolatedTask(replacementCtx, state);
@@ -309,7 +309,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 					await dependencies.saveIsolationState(latest);
 					await cleanupAndClear(latest, true);
 				});
-				ctx.ui.notify("Isolation session switch was cancelled; the temporary worktree was removed.", "warning");
+				ctx.ui.notify("Worktree session switch was cancelled; the temporary worktree was removed.", "warning");
 			} catch (error) {
 				try {
 					await recordCleanupFailure(state.gitCommonDir, state.id, error);
@@ -324,22 +324,22 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 	const discardIsolation = async (ctx: ExtensionCommandContext): Promise<void> => {
 		const state = await stateForContext(ctx);
 		if (!state || ctx.sessionManager.getSessionFile() !== state.isolatedSessionFile) {
-			ctx.ui.notify("No active isolated session is open here.", "warning");
+			ctx.ui.notify("No active managed worktree session is open here.", "warning");
 			return;
 		}
 		if (state.integratedHead || state.phase === "integrated" || state.phase === "cleanup_pending" || await dependencies.isWorkIntegrated(state)) {
-			ctx.ui.notify("This isolated work is already integrated and cannot be discarded; finish its cleanup instead.", "error");
+			ctx.ui.notify("This worktree's changes are already integrated and cannot be discarded; finish its cleanup instead.", "error");
 			return;
 		}
 		const confirmed = await ctx.ui.confirm(
-			"Discard isolated work?",
-			`Permanently delete the isolated worktree at ${state.worktreePath}?\n\n${await dependencies.describeDiscard(state)}`,
+			"Discard worktree changes?",
+			`Permanently delete the managed worktree at ${state.worktreePath}?\n\n${await dependencies.describeDiscard(state)}`,
 		);
 		if (!confirmed) return;
 		const current = await dependencies.withIsolationLock(state.gitCommonDir, async () => {
 			const latest = await loadExpectedState(state.gitCommonDir, state.id);
 			if (latest.integratedHead || latest.phase === "integrated" || latest.phase === "cleanup_pending" || await dependencies.isWorkIntegrated(latest)) {
-				throw new Error("This isolated work is already integrated and cannot be discarded; finish its cleanup instead.");
+				throw new Error("This worktree's changes are already integrated and cannot be discarded; finish its cleanup instead.");
 			}
 			latest.phase = "discarding";
 			latest.exitMode = "discard";
@@ -351,10 +351,10 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 			withSession: async (parentCtx) => {
 				const remaining = await dependencies.loadIsolationState(current.gitCommonDir);
 				if (remaining) {
-					parentCtx.ui.notify(`Isolation discard cleanup failed: ${remaining.lastError ?? "unknown cleanup failure"}`, "error");
+					parentCtx.ui.notify(`Worktree discard cleanup failed: ${remaining.lastError ?? "unknown cleanup failure"}`, "error");
 					return;
 				}
-				parentCtx.ui.notify("Isolated work was discarded and its worktree was removed.", "info");
+				parentCtx.ui.notify("Worktree changes were discarded and the worktree was removed.", "info");
 			},
 		});
 		if (result.cancelled) {
@@ -382,7 +382,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		try {
 			state = await stateForContext(ctx);
 		} catch (error) {
-			ctx.ui.notify(`Pi isolation state is unreadable: ${errorText(error)}`, "error");
+			ctx.ui.notify(`Managed worktree state is unreadable: ${errorText(error)}`, "error");
 			stopRuntime(ctx);
 			return;
 		}
@@ -395,16 +395,16 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 					if (!latest) {
 						const pointer = sessionPointer(ctx);
 						if (state.phase !== "creating" || pointer?.status !== "active" || pointer.id !== state.id) {
-							throw new Error(`Isolation job ${state.id} no longer exists.`);
+							throw new Error(`Worktree job ${state.id} no longer exists.`);
 						}
 						latest = structuredClone(pointer.state);
 						await dependencies.saveIsolationState(latest);
 					}
 					if (latest.id !== state.id) {
-						throw new Error(`Isolation job ${state.id} was replaced by ${latest.id}; refusing stale cleanup.`);
+						throw new Error(`Worktree job ${state.id} was replaced by ${latest.id}; refusing stale cleanup.`);
 					}
 					if (latest.phase !== "creating" && latest.phase !== "cleanup_pending" && latest.phase !== "discarding") {
-						throw new Error(`Isolation job ${latest.id} is not ready for parent cleanup (${latest.phase}).`);
+						throw new Error(`Worktree job ${latest.id} is not ready for parent cleanup (${latest.phase}).`);
 					}
 					await cleanupAndClear(latest, latest.phase === "creating" || latest.exitMode === "discard");
 				});
@@ -416,14 +416,14 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 				} catch {
 					// A replacement job must never be overwritten by stale cleanup recovery.
 				}
-				ctx.ui.notify(`Isolation cleanup failed before return: ${errorText(error)}`, "error");
+				ctx.ui.notify(`Worktree cleanup failed before return: ${errorText(error)}`, "error");
 				stopRuntime(ctx);
 				return;
 			}
 		}
 		if (sessionFile !== state.isolatedSessionFile) {
 			ctx.ui.notify(
-				`Isolation job ${state.id} is unresolved. Resume ${state.isolatedSessionFile ?? state.worktreePath} to finish or discard it.`,
+				`Worktree job ${state.id} is unresolved. Resume ${state.isolatedSessionFile ?? state.worktreePath} to finish or discard it.`,
 				"error",
 			);
 			stopRuntime(ctx);
@@ -433,7 +433,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		if (pointer?.status !== "active" || pointer.id !== state.id || pointer.state.isolatedSessionFile !== state.isolatedSessionFile) {
 			appendPointer(state, "active");
 		}
-		ctx.ui.setStatus(STATUS_KEY, `isolated: ${state.worktreeBranch}`);
+		ctx.ui.setStatus(STATUS_KEY, `worktree: ${state.worktreeBranch}`);
 	});
 
 	pi.on("session_before_switch", async (event, ctx) => {
@@ -441,7 +441,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		try {
 			state = await stateForContext(ctx);
 		} catch (error) {
-			ctx.ui.notify(`Cannot switch while Pi isolation state is unreadable: ${errorText(error)}`, "error");
+			ctx.ui.notify(`Cannot switch while managed worktree state is unreadable: ${errorText(error)}`, "error");
 			return { cancel: true };
 		}
 		if (!state) return;
@@ -451,7 +451,7 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 			&& event.targetSessionFile === state.sourceSessionFile
 			&& (state.phase === "cleanup_pending" || state.phase === "discarding");
 		if (authorizedReturn) return;
-		ctx.ui.notify("Finish or discard the active isolation before switching sessions.", "warning");
+		ctx.ui.notify("Finish or discard the active managed worktree before switching sessions.", "warning");
 		return { cancel: true };
 	});
 
@@ -459,10 +459,10 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		try {
 			if (!(await stateForContext(ctx))) return;
 		} catch (error) {
-			ctx.ui.notify(`Cannot fork while Pi isolation state is unreadable: ${errorText(error)}`, "error");
+			ctx.ui.notify(`Cannot fork while managed worktree state is unreadable: ${errorText(error)}`, "error");
 			return { cancel: true };
 		}
-		ctx.ui.notify("Finish or discard the active isolation before forking the session.", "warning");
+		ctx.ui.notify("Finish or discard the active managed worktree before forking the session.", "warning");
 		return { cancel: true };
 	});
 
@@ -490,35 +490,15 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		const state = await stateForContext(ctx);
 		if (!state || ctx.sessionManager.getSessionFile() !== state.isolatedSessionFile) return;
 		return {
-			systemPrompt: `${event.systemPrompt}\n\nIsolation job ${state.id}: Work only in the current isolated worktree. Remain here until integration succeeds. After implementing and validating the task, call isolate_finish as your final action. If integration reports a conflict or failure, resolve it in this worktree and call isolate_finish again. Do not switch sessions or remove worktrees manually.`,
+			systemPrompt: `${event.systemPrompt}\n\nManaged worktree job ${state.id}: Work only in the current worktree. Remain here until integration succeeds. After implementing and validating the task, call worktree_finish as your final action. If integration reports a conflict or failure, resolve it in this worktree and call worktree_finish again. Do not switch sessions or remove worktrees manually.`,
 		};
 	});
 
-	pi.registerCommand("isolate", {
-		description: "Run a task in a managed worktree; use /isolate finish or /isolate discard to leave it",
+	pi.registerCommand("worktree-start", {
+		description: "Create a managed worktree and start a task there",
 		handler: async (args, ctx) => {
-			if (!ctx.hasUI) throw new Error("/isolate requires interactive Pi.");
-			const action = args.trim();
+			if (!ctx.hasUI) throw new Error("/worktree-start requires interactive Pi.");
 			try {
-				if (action === "finish") {
-					await ctx.waitForIdle();
-					const state = await stateForContext(ctx);
-					if (!state || ctx.sessionManager.getSessionFile() !== state.isolatedSessionFile) {
-						ctx.ui.notify("No active isolated session is open here.", "warning");
-						return;
-					}
-					await finishAndReturn(ctx, state);
-					return;
-				}
-				if (action === "discard") {
-					await discardIsolation(ctx);
-					return;
-				}
-				if (action === "status") {
-					const state = await stateForContext(ctx);
-					ctx.ui.notify(state ? `Isolation ${state.id}: ${state.phase} (${state.worktreePath})` : "No active isolation.", "info");
-					return;
-				}
 				await startIsolation(args, ctx);
 			} catch (error) {
 				ctx.ui.notify(errorText(error), "error");
@@ -526,28 +506,95 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 		},
 	});
 
+	pi.registerCommand("worktree-finish", {
+		description: "Integrate the active managed worktree, clean it up, and return",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) throw new Error("/worktree-finish requires interactive Pi.");
+			try {
+				await ctx.waitForIdle();
+				const state = await stateForContext(ctx);
+				if (!state || ctx.sessionManager.getSessionFile() !== state.isolatedSessionFile) {
+					ctx.ui.notify("No active managed worktree session is open here.", "warning");
+					return;
+				}
+				await finishAndReturn(ctx, state);
+			} catch (error) {
+				ctx.ui.notify(errorText(error), "error");
+			}
+		},
+	});
+
+	pi.registerCommand("worktree-discard", {
+		description: "Discard the active managed worktree and return",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) throw new Error("/worktree-discard requires interactive Pi.");
+			try {
+				await discardIsolation(ctx);
+			} catch (error) {
+				ctx.ui.notify(errorText(error), "error");
+			}
+		},
+	});
+
+	pi.registerCommand("worktree-status", {
+		description: "Show the active managed worktree job",
+		handler: async (_args, ctx) => {
+			const state = await stateForContext(ctx);
+			ctx.ui.notify(state ? `Worktree ${state.id}: ${state.phase} (${state.worktreePath})` : "No active managed worktree.", "info");
+		},
+	});
+
 	pi.registerTool({
-		name: "isolate_finish",
-		label: "Finish Isolation",
-		description: "Signal that the current isolated task is implemented and validated. Use this as the final action; Pi will integrate and return after the turn settles.",
-		promptSnippet: "Finish the active isolated task after implementation and validation",
-		promptGuidelines: ["Use isolate_finish as the final action only after the isolated task is implemented and relevant validation passes."],
+		name: "worktree_start",
+		label: "Start Worktree",
+		description: "Start the requested task in a managed Git worktree. Use when the user asks to start or move the current work onto a worktree.",
+		promptSnippet: "Start a task in a managed Git worktree",
+		promptGuidelines: ["Call worktree_start when the user asks to start the current task on a worktree; infer a concise task from the request and conversation context."],
+		parameters: {
+			type: "object",
+			properties: { task: { type: "string", description: "The concrete task to perform in the worktree" } },
+			required: ["task"],
+			additionalProperties: false,
+		},
+		async execute(_toolCallId, params: { task: string }) {
+			const task = params.task.trim();
+			if (!task) {
+				return {
+					content: [{ type: "text" as const, text: "A concrete task is required to start a managed worktree." }],
+					details: { status: "task_required" },
+				};
+			}
+			pi.sendUserMessage(`/worktree-start ${task}`, { deliverAs: "followUp" });
+			return {
+				content: [{ type: "text" as const, text: "Queued the task to start in a managed worktree after this turn settles." }],
+				details: { status: "start_queued" },
+				terminate: true,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "worktree_finish",
+		label: "Finish Worktree",
+		description: "Signal that the current managed-worktree task is implemented and validated. Use this as the final action; Pi will integrate and return after the turn settles.",
+		promptSnippet: "Finish the active managed-worktree task after implementation and validation",
+		promptGuidelines: ["Use worktree_finish as the final action only after the managed-worktree task is implemented and relevant validation passes."],
 		parameters: { type: "object", properties: {}, additionalProperties: false },
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			const state = await stateForContext(ctx);
 			if (!state || ctx.sessionManager.getSessionFile() !== state.isolatedSessionFile) {
 				return {
-					content: [{ type: "text" as const, text: "No active isolated task is open in this session." }],
-					details: { status: "not_isolated" },
+					content: [{ type: "text" as const, text: "No active managed worktree task is open in this session." }],
+					details: { status: "not_active" },
 				};
 			}
 			const transition = await dependencies.withIsolationLock(state.gitCommonDir, async () => {
 				const latest = await loadExpectedState(state.gitCommonDir, state.id);
 				if (ctx.sessionManager.getSessionFile() !== latest.isolatedSessionFile) {
-					throw new Error("The isolation session changed before finish could be requested.");
+					throw new Error("The worktree session changed before finish could be requested.");
 				}
 				if (!["active", "finish_requested", "conflicted", "ff_pending", "integrating"].includes(latest.phase)) {
-					throw new Error(`Isolation job ${latest.id} cannot request finish from phase ${latest.phase}.`);
+					throw new Error(`Worktree job ${latest.id} cannot request finish from phase ${latest.phase}.`);
 				}
 				latest.phase = "finish_requested";
 				latest.lastError = undefined;
@@ -555,13 +602,13 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 				return { latest, hasAutomaticDriver: Boolean(latest.driverToken && activeDriverTokens.has(latest.driverToken)) };
 			});
 			const { latest, hasAutomaticDriver } = transition;
-			if (!hasAutomaticDriver) ctx.ui.setEditorText("/isolate finish");
+			if (!hasAutomaticDriver) pi.sendUserMessage("/worktree-finish", { deliverAs: "followUp" });
 			return {
 				content: [{
 					type: "text" as const,
 					text: hasAutomaticDriver
-						? "Isolation marked complete. Pi will begin finishing after this turn settles."
-						: "Isolation marked complete. /isolate finish is prefilled; submit it to integrate and return.",
+						? "Worktree task marked complete. Pi will begin finishing after this turn settles."
+						: "Worktree task marked complete. Finishing is queued for after this turn settles.",
 				}],
 				details: { status: "finish_requested", jobId: latest.id, automatic: hasAutomaticDriver },
 				terminate: true,
@@ -596,24 +643,24 @@ export function buildIsolationState(options: {
 		sourceSessionFile,
 		worktreePath,
 		worktreeCwd: relativeCwd ? join(worktreePath, relativeCwd) : worktreePath,
-		worktreeBranch: `pi-isolate/${slug}-${id}`,
+		worktreeBranch: `pi-worktree/${slug}-${id}`,
 	};
 }
 
 function kickoffPrompt(state: IsolationState): string {
 	return [
-		`Isolation job ${state.id}.`,
+		`Managed worktree job ${state.id}.`,
 		`Work on this task in the current managed worktree: ${state.task}`,
 		"Implement the task completely and run the relevant validation. Stay in this worktree.",
-		"When the work is ready to integrate, call isolate_finish as your final action. Do not run /isolate finish yourself or remove the worktree.",
+		"When the work is ready to integrate, call worktree_finish as your final action. Do not run /worktree-finish yourself or remove the worktree.",
 	].join("\n\n");
 }
 
 function recoveryPrompt(state: IsolationState, error: unknown): string {
 	return [
-		`Isolation job ${state.id} could not integrate:`,
+		`Managed worktree job ${state.id} could not integrate:`,
 		errorText(error),
-		"Resolve the problem in this isolated worktree, rerun the relevant validation, then call isolate_finish again. Do not return to the original session manually.",
+		"Resolve the problem in this managed worktree, rerun the relevant validation, then call worktree_finish again. Do not return to the original session manually.",
 	].join("\n\n");
 }
 
