@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import {
 	PRODUCTIONIZE_STATE_CUSTOM_TYPE,
 	createDefaultSnapshot,
@@ -75,6 +77,7 @@ export interface ProductionizeRunOptions {
 
 export interface WorkflowHooks extends GitExecutionHooks {
 	completeSpark?: (ctx: ExtensionContext, systemPrompt: string, userText: string, fallback: string, signal: AbortSignal) => Promise<string>;
+	hasCiWorkflows?: (cwd: string) => Promise<boolean>;
 	now?: () => Date;
 }
 
@@ -545,6 +548,12 @@ async function runCiStep(runtime: WorkflowRuntime): Promise<void> {
 		}
 		const pendingCount = evaluation.pending.length;
 		const discovered = checks.length;
+		if (discovered === 0 && !(await hasCiWorkflows(runtime, cwd))) {
+			setStep(state, "ci", "skipped", "No CI workflows configured");
+			log(state, "No GitHub checks or repository CI workflows were found; continuing without CI");
+			await update(runtime);
+			return;
+		}
 		if (discovered === 0 && Date.now() - started >= NO_CHECKS_GRACE_MS) {
 			setStep(state, "ci", "skipped", "No checks reported");
 			log(state, `No GitHub checks were reported after ${Math.round(NO_CHECKS_GRACE_MS / 1000)} seconds; continuing without CI`);
@@ -564,6 +573,18 @@ async function runCiStep(runtime: WorkflowRuntime): Promise<void> {
 		cwd,
 		message: `Timed out after ${Math.round(CHECK_TIMEOUT_MS / 60_000)} minutes waiting for GitHub checks.`,
 	});
+}
+
+async function hasCiWorkflows(runtime: WorkflowRuntime, cwd: string): Promise<boolean> {
+	if (runtime.hooks.hasCiWorkflows) return runtime.hooks.hasCiWorkflows(cwd);
+	try {
+		const entries = await readdir(join(cwd, ".github", "workflows"), { withFileTypes: true });
+		return entries.some((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name));
+	} catch (error) {
+		if ((error as { code?: string }).code === "ENOENT") return false;
+		// An unreadable workflow directory is unknown, so retain the conservative polling behavior.
+		return true;
+	}
 }
 
 async function runMergeStep(runtime: WorkflowRuntime): Promise<void> {

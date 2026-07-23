@@ -489,6 +489,36 @@ test("return step rebases a diverged branch after creating a backup branch", asy
 	assert.equal(state.steps.find((step) => step.id === "return")?.detail, "Rebased onto origin/main");
 });
 
+test("CI skips polling after the first empty check result when the repository has no workflows", async () => {
+	const state = createMergeState();
+	state.steps.find((step) => step.id === "ci")!.status = "pending";
+	let checkFetches = 0;
+	await runWorkflow(
+		createFakePi(),
+		createFakeContext(),
+		state,
+		new AbortController().signal,
+		() => undefined,
+		{ startFrom: "ci", stopAfter: "ci" },
+		{
+			hasCiWorkflows: async () => false,
+			execCommand: async (command, args) => {
+				const preflight = repositoryPreflight(command, args);
+				if (preflight) return preflight;
+				if (command === "gh" && args[0] === "pr" && args[1] === "checks") {
+					checkFetches += 1;
+					return fail("", "no checks reported on the 'favorites-guardrail' branch");
+				}
+				throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+			},
+		},
+	);
+
+	assert.equal(checkFetches, 1);
+	assert.equal(state.steps.find((step) => step.id === "ci")?.status, "skipped");
+	assert.equal(state.steps.find((step) => step.id === "ci")?.detail, "No CI workflows configured");
+});
+
 test("return step aborts and fails safely when automatic rebase conflicts", async () => {
 	const state = createReturnState();
 	const seen: Array<{ command: string; args: string[] }> = [];
