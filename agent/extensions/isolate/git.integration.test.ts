@@ -42,6 +42,16 @@ test("creates an ignored task worktree, integrates by rebase and fast-forward, t
 	});
 });
 
+test("cleans up when creation failed before the worktree or branch existed", async () => {
+	await withRepository(async (root) => {
+		const state = createState(await inspectRepository(root), "failed-creation");
+		state.phase = "creating";
+
+		await cleanupWorktree(state, { force: true });
+		assert.equal(await exists(state.worktreePath), false);
+	});
+});
+
 test("refuses to integrate while the original worktree is dirty", async () => {
 	await withRepository(async (root) => {
 		const state = createState(await inspectRepository(root), "dirty-base");

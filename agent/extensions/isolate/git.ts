@@ -232,7 +232,7 @@ async function deleteTemporaryBranch(
 	ownedHead: string | undefined,
 ): Promise<void> {
 	const ref = `refs/heads/${state.worktreeBranch}`;
-	const branch = await runner("git", ["show-ref", "--verify", "--hash", ref], state.repositoryRoot);
+	const branch = await runner("git", ["rev-parse", "--verify", "--quiet", ref], state.repositoryRoot);
 	if (branch.code === 1) return;
 	if (branch.code !== 0) throw commandError("Inspect isolation branch before deletion", branch);
 	const expectedOid = branch.stdout.trim();
