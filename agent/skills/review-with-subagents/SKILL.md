@@ -5,11 +5,13 @@ description: "Choose no review, a basic review, an expert review, or a focused s
 
 # Review With Subagents
 
-Use the smallest review pass that provides meaningful independent scrutiny. Reviewer count should be proportional to risk, not the number of available lenses.
+Use the smallest review pass that provides meaningful independent scrutiny. Basic review is the strong default for implementation work; expert review is an exception for changes whose size, complexity, or consequences genuinely require deeper judgment. Reviewer count should be proportional to risk, not the number of available lenses.
 
 ## Core Rule
 
-`basic-reviewer` and `expert-reviewer` are alternatives. Do not spawn both for the same change unless the first review uncovers a distinct reason for escalation.
+`basic-reviewer` and `expert-reviewer` are alternatives. Do not spawn both for the same change unless a basic review uncovers a concrete P0, P1, or P2 concern that requires expert judgment.
+
+Review has a hard limit of two cycles total for a change. A cycle is any post-implementation reviewer pass, whether one or two justified reviewers run in parallel. Use the second cycle only to verify fixes for actionable P0-P2 findings or to perform an evidence-backed escalation from basic to expert. Never start a third cycle, recursively review a review, or ask a reviewer to call another reviewer.
 
 A specialist is additive only when the change presents a concrete specialist concern. Do not fan out reviewers merely because several lenses could technically apply.
 
@@ -74,18 +76,20 @@ Use `basic-reviewer` for ordinary bounded changes:
 
 The basic reviewer checks correctness, regressions, tests, and obvious maintainability problems. This should cover most reviewed implementation work.
 
-### Expert reviewer — use instead of basic
+When uncertain between basic and expert, choose basic. Do not infer that production code automatically requires expert review.
 
-Use `expert-reviewer` when deeper semantic or operational judgment is warranted:
+### Expert reviewer — exceptional, use instead of basic
 
-- cross-cutting or high-risk changes
-- public APIs, schemas, persistence, migrations, security, or concurrency
-- integrations and production-readiness claims
-- ambiguous requirements where checklist completion may miss the intended outcome
-- expensive or difficult-to-reverse failure modes
-- work whose completion depends on important assumptions or end-to-end evidence
+Use `expert-reviewer` only when deeper semantic or operational judgment is warranted and at least one of these escalation conditions is concrete in the change:
 
-The expert reviewer incorporates intent validation, architecture, operational readiness, and deep correctness review. Do not add a separate intent validator.
+- a large or cross-cutting change alters several subsystem boundaries or important end-to-end behavior
+- complex invariants, concurrency, security, persistence, migrations, or recovery behavior require specialist reasoning
+- a consequential public API, schema, or external integration has difficult compatibility or rollout implications
+- failure could cause material data loss, security exposure, prolonged outage, or an expensive and difficult rollback
+- completion depends on ambiguous product intent or important operational assumptions that targeted tests cannot settle
+- a basic review found a concrete P0-P2 concern whose resolution requires deeper architectural or operational judgment
+
+Routine production code, ordinary integrations, localized API changes, and moderate file counts remain basic-review territory when behavior and validation are clear. The expert reviewer incorporates intent validation, architecture, operational readiness, and deep correctness review. Do not add a separate intent validator.
 
 ### Simplifier — focused specialist
 
@@ -109,11 +113,19 @@ Use `scout` first only when the relevant code area is unfamiliar or the review c
 
 - trivial work: 0 reviewers
 - ordinary bounded changes: 1 basic reviewer
-- high-risk or semantically ambiguous changes: 1 expert reviewer
+- large, complex, high-consequence, or semantically ambiguous changes meeting an escalation condition: 1 expert reviewer
 - concrete structural concern: add or substitute 1 simplifier
 - exceptional cross-cutting work: at most 2 reviewers unless the user explicitly requests broader review
 
 File count is a useful heuristic, not the deciding factor. A one-file migration can require expert review; a mechanical multi-file rename may require none.
+
+## Review Cycle Limit
+
+- Cycle 1 is the normal review and should usually be one `basic-reviewer` pass.
+- Cycle 2 is optional and targeted: verify fixes for P0-P2 findings, or escalate to `expert-reviewer` when cycle 1 produced concrete evidence that meets the expert criteria.
+- Stop after cycle 1 when findings are absent, below P2, or can be verified directly with deterministic checks.
+- Stop after cycle 2 regardless. Resolve remaining material issues directly and report any unresolved risk instead of spawning more reviewers.
+- Parallel reviewers in one round count as one cycle, but remain capped by the reviewer-count rules.
 
 ## Workflow
 
@@ -124,7 +136,8 @@ File count is a useful heuristic, not the deciding factor. A one-file migration 
 5. Write a concise assignment brief with task-specific focus and known evidence.
 6. Spawn independent reviews in parallel only when there is more than one justified reviewer.
 7. Reconcile findings, apply only actionable feedback, and run targeted validation.
-8. Escalate from basic to expert only when evidence from the change or review warrants it.
+8. Escalate from basic to expert only when concrete evidence meets an expert escalation condition.
+9. Use no more than two review cycles; make the second targeted and final.
 
 ## Done Criteria
 
@@ -134,4 +147,6 @@ File count is a useful heuristic, not the deciding factor. A one-file migration 
 - Each reviewer received the relevant outcome, scope, evidence, and task-specific focus.
 - Parallel reviewers had distinct missions rather than duplicate generic prompts.
 - No reviewer was launched solely to satisfy ceremony.
+- Basic review was preferred whenever it was adequate; expert review had a stated escalation condition.
+- Review stopped after no more than two cycles.
 - Findings were verified and reconciled before completion was claimed.
