@@ -38,7 +38,8 @@
     "npm:pi-lens",
     "npm:@mrclrchtr/supi-prompt-suggestions",
     "npm:pi-mind-queue",
-    "npm:pi-hermes-memory"
+    "npm:pi-hermes-memory",
+    "npm:@narumitw/pi-goal"
   ],
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
