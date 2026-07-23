@@ -370,7 +370,8 @@ function assertOwnedState(state: IsolationState): void {
 	if (dirname(ownedPath) !== worktreesRoot || relative(worktreesRoot, ownedPath).startsWith(`..${sep}`)) {
 		throw new Error(`Refusing to manage worktree outside ${worktreesRoot}.`);
 	}
-	if (!state.worktreeBranch.startsWith("pi-isolate/") || !state.worktreeBranch.includes(state.id)) {
+	const managedPrefix = state.worktreeBranch.startsWith("pi-worktree/") || state.worktreeBranch.startsWith("pi-isolate/");
+	if (!managedPrefix || !state.worktreeBranch.includes(state.id)) {
 		throw new Error("Refusing to manage a branch that does not match the isolation job identity.");
 	}
 	if (state.worktreeGitDir && dirname(resolve(state.worktreeGitDir)) !== resolve(state.gitCommonDir, "worktrees")) {
@@ -403,7 +404,7 @@ function commandError(step: string, result: CommandResult): Error {
 function commitSubject(task: string): string {
 	const firstLine = task.split(/\r?\n/, 1)[0] ?? "";
 	const normalized = firstLine.replace(/\s+/g, " ").trim().replace(/[.]+$/, "");
-	return `isolate: ${(normalized || "complete isolated task").slice(0, 60)}`;
+	return `worktree: ${(normalized || "complete worktree task").slice(0, 60)}`;
 }
 
 function porcelainWorktreePaths(output: string): string[] {

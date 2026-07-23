@@ -186,7 +186,7 @@ function createState(repository: Awaited<ReturnType<typeof inspectRepository>>, 
 		sourceSessionFile: "/sessions/source.jsonl",
 		worktreePath: join(repository.root, ".worktrees", `${slug}-abcd1234`),
 		worktreeCwd: join(repository.root, ".worktrees", `${slug}-abcd1234`),
-		worktreeBranch: `pi-isolate/${slug}-abcd1234`,
+		worktreeBranch: `pi-worktree/${slug}-abcd1234`,
 	};
 }
 

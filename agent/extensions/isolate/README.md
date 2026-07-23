@@ -1,21 +1,25 @@
-# Pi Isolate
+# Pi Worktree
 
-`/isolate` runs a task in a managed Git worktree while moving the current Pi
-conversation with it.
+The worktree workflow runs a task in a managed Git worktree while moving the
+current Pi conversation with it.
 
 ## Commands
 
 ```text
-/isolate <task>  Create a worktree, move this session there, and start the task
-/isolate finish  Integrate the branch, clean up, and return
-/isolate discard Confirm deletion of all isolated work, clean up, and return
-/isolate status  Show the active isolation job
+/worktree-start <task> Create a worktree, move this session there, and start the task
+/worktree-finish       Integrate the branch, clean up, and return
+/worktree-discard      Confirm deletion of all worktree changes, clean up, and return
+/worktree-status       Show the active worktree job
 ```
 
-The isolated agent receives `isolate_finish`. When the initial handoff driver is
-still active, calling the tool automatically starts integration after the turn
-settles. After a restart, the tool safely prefills `/isolate finish` for the
-user to submit because Pi does not expose deferred extension commands.
+Pi can call `worktree_start` when the user asks in natural language to begin the
+current task on a worktree. The tool queues `/worktree-start` after the current
+turn settles.
+
+The worktree agent receives `worktree_finish`. When the initial handoff driver
+is still active, calling the tool automatically starts integration after the
+turn settles. After a restart, the tool queues `/worktree-finish` as a follow-up
+command instead.
 
 ## Invariant
 

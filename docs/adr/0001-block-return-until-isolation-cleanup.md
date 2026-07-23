@@ -2,7 +2,7 @@
 status: accepted
 ---
 
-# Block return until isolation cleanup completes
+# Block return until managed worktree cleanup completes
 
 ## Context
 
@@ -36,16 +36,16 @@ manifest, then a cleared tombstone afterward, so each crash boundary remains
 fail-closed without treating completed cleanup as unresolved forever.
 
 The initial handoff may keep a fresh replacement-session context alive while
-the isolated agent works. This lets `isolate_finish` signal automatic
-integration after that turn settles. Recovered sessions require explicit
-`/isolate finish` submission because Pi tools cannot queue extension commands.
+the worktree agent works. This lets `worktree_finish` signal automatic
+integration after that turn settles. In recovered sessions, the tool queues
+`/worktree-finish` as a follow-up command.
 
 ## Consequences
 
-- A usable original session implies that no managed isolation worktree or
+- A usable original session implies that no managed worktree or
   temporary branch remains.
-- Conflicts and failed integration stay in the isolated session.
+- Conflicts and failed integration stay in the worktree session.
 - Cleanup is conservative, idempotent, and recoverable from the Git-common-dir
   manifest.
-- Users cannot leave isolation while preserving an unresolved managed
+- Users cannot leave the workflow while preserving an unresolved managed
   worktree; they must finish or explicitly discard it.

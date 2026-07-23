@@ -7,21 +7,40 @@ test("creates a worktree session and sends the isolated task with a unique job t
 	const harness = createHarness();
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	assert.equal(harness.calls.created, 1);
 	assert.equal(harness.calls.forked, 1);
 	assert.equal(harness.calls.switches[0], harness.isolatedSessionFile);
 	assert.match(harness.calls.kickoffs[0] ?? "", /Implement the feature/);
-	assert.match(harness.calls.kickoffs[0] ?? "", /isolation job abcd1234/i);
+	assert.match(harness.calls.kickoffs[0] ?? "", /managed worktree job abcd1234/i);
 	assert.equal(harness.state?.phase, "active");
+});
+
+test("start tool queues the worktree command from natural-language requests", async () => {
+	const harness = createHarness();
+	isolateExtension(harness.api as any, harness.dependencies as any);
+
+	const result = await harness.tool("worktree_start").execute(
+		"start-1",
+		{ task: "Implement the feature" },
+		undefined,
+		undefined,
+		harness.sourceContext,
+	);
+
+	assert.deepEqual(harness.calls.queuedUserMessages, [{
+		message: "/worktree-start Implement the feature",
+		options: { deliverAs: "followUp" },
+	}]);
+	assert.equal(result.terminate, true);
 });
 
 test("initial manifest write failure clears the source pointer before returning", async () => {
 	const harness = createHarness({ saveErrorOnCall: 1 });
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	assert.equal(harness.calls.created, 0);
 	assert.equal(harness.calls.cleaned, 1);
@@ -36,7 +55,7 @@ test("creation rollback failure shuts down even when cleanup state cannot be per
 	});
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	assert.equal(harness.calls.created, 0);
 	assert.equal(harness.calls.cleaned, 1);
@@ -47,7 +66,7 @@ test("the terminating finish tool signals the active driver, which integrates, r
 	const harness = createHarness({ signalFinishDuringKickoff: true });
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	assert.equal(harness.calls.integrated, 1);
 	assert.equal(harness.calls.cleaned, 1);
@@ -58,24 +77,27 @@ test("the terminating finish tool signals the active driver, which integrates, r
 	assert.equal(harness.calls.finishResult?.terminate, true);
 });
 
-test("finish tool in a recovered session prefills the explicit finish command instead of claiming an absent driver", async () => {
+test("finish tool in a recovered session queues the explicit finish command", async () => {
 	const harness = createHarness();
 	isolateExtension(harness.api as any, harness.dependencies as any);
 	harness.state = harness.activeState();
-	const finish = harness.tool("isolate_finish");
+	const finish = harness.tool("worktree_finish");
 
 	const result = await finish.execute("finish-1", {}, undefined, undefined, harness.isolatedContext);
 
 	assert.equal(harness.state?.phase, "finish_requested");
-	assert.deepEqual(harness.calls.editorTexts, ["/isolate finish"]);
-	assert.match(result.content[0].text, /prefilled/i);
+	assert.deepEqual(harness.calls.queuedUserMessages, [{
+		message: "/worktree-finish",
+		options: { deliverAs: "followUp" },
+	}]);
+	assert.match(result.content[0].text, /queued/i);
 });
 
 test("fresh isolated extension instance recognizes the surviving automatic driver", async () => {
 	const harness = createHarness({ signalFinishDuringKickoff: true, freshIsolatedExtension: true });
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	assert.equal(harness.calls.integrated, 1);
 	assert.equal(harness.calls.finishResult?.details.automatic, true);
@@ -85,7 +107,7 @@ test("fresh isolated extension instance recognizes the surviving automatic drive
 test("blocks manual session replacement while isolation is unresolved", async () => {
 	const harness = createHarness();
 	isolateExtension(harness.api as any, harness.dependencies as any);
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	const result = await harness.emitFirst("session_before_switch", { reason: "resume", targetSessionFile: "/sessions/other.jsonl" }, harness.isolatedContext);
 	assert.deepEqual(result, { cancel: true });
@@ -96,7 +118,7 @@ test("cleanup failure leaves the manifest and shuts down the parent runtime befo
 	const harness = createHarness({ signalFinishDuringKickoff: true, cleanupError: new Error("worktree is locked") });
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	assert.equal(harness.state?.phase, "cleanup_pending");
 	assert.match(harness.state?.lastError ?? "", /worktree is locked/i);
@@ -130,7 +152,7 @@ test("parent startup shuts down while active isolated work is unresolved", async
 test("session pointer keeps the source governed when Git discovery fails", async () => {
 	const harness = createHarness({ gitDiscoveryError: new Error("repository moved") });
 	isolateExtension(harness.api as any, harness.dependencies as any);
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	await harness.emitFirst("session_start", { reason: "startup" }, harness.sourceContext);
 
@@ -176,7 +198,7 @@ test("non-interactive parent input and commands are blocked while isolation is u
 	);
 	assert.deepEqual(
 		await harness.emitFirst("tool_call", { toolName: "bash", input: { command: "touch unsafe" } }, harness.sourceContext),
-		{ block: true, reason: "The original session is locked by unresolved Pi isolation." },
+		{ block: true, reason: "The original session is locked by an unresolved managed worktree." },
 	);
 	const bash = await harness.emitFirst("user_bash", { command: "touch unsafe" }, harness.sourceContext);
 	assert.equal(bash.result.exitCode, 1);
@@ -186,7 +208,7 @@ test("switch cancellation with failed rollback shuts down the original runtime",
 	const harness = createHarness({ cancelInitialSwitch: true, cleanupError: new Error("worktree is locked") });
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
-	await harness.command("isolate").handler("Implement the feature", harness.sourceContext);
+	await harness.command("worktree-start").handler("Implement the feature", harness.sourceContext);
 
 	assert.equal(harness.state?.phase, "cleanup_pending");
 	assert.match(harness.state?.lastError ?? "", /worktree is locked/i);
@@ -199,7 +221,7 @@ test("stale finish cannot mutate or integrate a replacement isolation job", asyn
 	const stale = harness.activeState();
 	harness.state = stale;
 
-	await harness.command("isolate").handler("finish", {
+	await harness.command("worktree-finish").handler("", {
 		...harness.isolatedContext,
 		sessionManager: {
 			getSessionFile: () => stale.isolatedSessionFile,
@@ -225,14 +247,14 @@ test("discard requires confirmation and never runs after integration", async () 
 	const cancelled = createHarness({ confirmDiscard: false });
 	isolateExtension(cancelled.api as any, cancelled.dependencies as any);
 	cancelled.state = cancelled.activeState();
-	await cancelled.command("isolate").handler("discard", cancelled.isolatedContext);
+	await cancelled.command("worktree-discard").handler("", cancelled.isolatedContext);
 	assert.equal(cancelled.calls.switches.length, 0);
 	assert.equal(cancelled.calls.cleaned, 0);
 
 	const integrated = createHarness({ confirmDiscard: true });
 	isolateExtension(integrated.api as any, integrated.dependencies as any);
 	integrated.state = { ...integrated.activeState(), phase: "integrated", integratedHead: "cafebabe" };
-	await integrated.command("isolate").handler("discard", integrated.isolatedContext);
+	await integrated.command("worktree-discard").handler("", integrated.isolatedContext);
 	assert.equal(integrated.calls.switches.length, 0);
 	assert.match(integrated.calls.notifications.at(-1)?.message ?? "", /already integrated/i);
 });
@@ -268,6 +290,7 @@ function createHarness(options: {
 		sourceShutdowns: 0,
 		hardStops: 0,
 		finishResult: undefined as any,
+		queuedUserMessages: [] as Array<{ message: string; options: unknown }>,
 	};
 	let state: IsolationState | undefined;
 	let saveCalls = 0;
@@ -339,7 +362,7 @@ function createHarness(options: {
 	isolatedContext.sendUserMessage = async (message: string) => {
 		calls.kickoffs.push(message);
 		if (options.signalFinishDuringKickoff) {
-			const finish = isolatedTools.find((tool) => tool.name === "isolate_finish");
+			const finish = isolatedTools.find((tool) => tool.name === "worktree_finish");
 			calls.finishResult = await finish.execute("finish-1", {}, undefined, undefined, isolatedContext);
 		}
 	};
@@ -359,6 +382,9 @@ function createHarness(options: {
 		registerTool(tool: any) {
 			registeredTools.push(tool);
 		},
+		sendUserMessage(message: string, options: unknown) {
+			calls.queuedUserMessages.push({ message, options });
+		},
 	};
 
 	const activeState = (): IsolationState => ({
@@ -375,7 +401,7 @@ function createHarness(options: {
 		sourceSessionFile,
 		worktreePath: isolatedContext.cwd,
 		worktreeCwd: isolatedContext.cwd,
-		worktreeBranch: "pi-isolate/implement-the-feature-abcd1234",
+		worktreeBranch: "pi-worktree/implement-the-feature-abcd1234",
 		isolatedSessionFile,
 	});
 
