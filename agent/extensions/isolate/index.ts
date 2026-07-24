@@ -568,7 +568,6 @@ export default function isolateExtension(pi: ExtensionAPI, dependencies: Isolati
 			return {
 				content: [{ type: "text" as const, text: "Queued the task to start in a managed worktree after this turn settles." }],
 				details: { status: "start_queued" },
-				terminate: true,
 			};
 		},
 	});
