@@ -17,7 +17,7 @@ test("creates a worktree session and sends the isolated task with a unique job t
 	assert.equal(harness.state?.phase, "active");
 });
 
-test("start tool queues the worktree command from natural-language requests", async () => {
+test("start tool lets the current turn persist before running the queued worktree command", async () => {
 	const harness = createHarness();
 	isolateExtension(harness.api as any, harness.dependencies as any);
 
@@ -33,7 +33,7 @@ test("start tool queues the worktree command from natural-language requests", as
 		message: "/worktree-start Implement the feature",
 		options: { deliverAs: "followUp" },
 	}]);
-	assert.equal(result.terminate, true);
+	assert.equal(result.terminate, undefined);
 });
 
 test("initial manifest write failure clears the source pointer before returning", async () => {
